@@ -1,7 +1,9 @@
 import {
   AlertTriangle,
+  Bot,
   CheckCircle2,
   ChevronDown,
+  CircleStop,
   Cloud,
   Copy,
   Download,
@@ -12,6 +14,7 @@ import {
   LogOut,
   MapPin,
   RotateCcw,
+  Send,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -64,6 +67,9 @@ import {
   STYLE_PRESETS,
   resolutionTierForSize,
   validateImageSize,
+  type AgentLlmConfigView,
+  type AgentSelectedCanvasReference,
+  type AgentServerEvent,
   type AuthStatusResponse,
   type AssetMetadataResponse,
   type CodexDevicePollResponse,
@@ -71,6 +77,7 @@ import {
   type CodexLogoutResponse,
   type GalleryImageItem,
   type GenerationCount,
+  type GenerationPlan,
   type GenerationRecord,
   type GenerationResponse,
   type GenerationStatus,
@@ -190,13 +197,33 @@ type PersistedSnapshot = TLEditorSnapshot | TLStoreSnapshot;
 type AppRoute = "home" | "canvas" | "gallery";
 type SaveStatus = "loading" | "saved" | "pending" | "saving" | "error";
 type GenerationMode = "text" | "reference";
+type PanelTab = "manual" | "agent";
 type PanelStatusTone = "progress" | "success" | "warning" | "error";
 type CodexLoginStatus = "idle" | "starting" | "pending" | "authorized" | "expired" | "denied" | "error";
+type AgentRunStatus = "idle" | "connecting" | "running";
+type AgentChatMessageRole = "user" | "assistant" | "system" | "error" | "plan";
 
 interface PanelStatus {
   tone: PanelStatusTone;
   message: string;
   testId: "generation-progress" | "generation-message" | "generation-warning" | "validation-message" | "generation-error";
+}
+
+interface AgentChatAssetPreview {
+  id: string;
+  assetId: string;
+  jobId: string;
+  shapeId?: TLShapeId;
+  url: string;
+}
+
+interface AgentChatMessage {
+  id: string;
+  role: AgentChatMessageRole;
+  content: string;
+  timestamp: string;
+  plan?: GenerationPlan;
+  previews?: AgentChatAssetPreview[];
 }
 
 interface GenerationSubmitInput {
@@ -268,10 +295,27 @@ type ReferenceSelection =
       hint: string;
     };
 
+interface AgentReferenceSelection {
+  references: ReferenceSelectionItem[];
+  selectedImageCount: number;
+  totalSelectedCount: number;
+  hint: string;
+  warning?: string;
+}
+
 function missingReferenceSelection(t: Translate): ReferenceSelection {
   return {
     status: "none",
     hint: t("generationReferenceNeed", { max: MAX_REFERENCE_IMAGES })
+  };
+}
+
+function emptyAgentReferenceSelection(t: Translate): AgentReferenceSelection {
+  return {
+    references: [],
+    selectedImageCount: 0,
+    totalSelectedCount: 0,
+    hint: t("agentReferenceEmpty")
   };
 }
 
@@ -941,6 +985,72 @@ function resolveReferenceSelection(editor: Editor, t: Translate): ReferenceSelec
   };
 }
 
+function resolveAgentReferenceSelection(editor: Editor, t: Translate): AgentReferenceSelection {
+  const selectedShapes = editor.getSelectedShapes();
+  const selectedImages = selectedShapes
+    .flatMap((shape) => (shape.type === "image" ? [shape as TLImageShape] : []))
+    .map((imageShape) => ({
+      imageShape,
+      bounds: editor.getShapePageBounds(imageShape)
+    }))
+    .sort((left, right) => {
+      const leftY = left.bounds?.y ?? 0;
+      const rightY = right.bounds?.y ?? 0;
+      return leftY === rightY ? (left.bounds?.x ?? 0) - (right.bounds?.x ?? 0) : leftY - rightY;
+    });
+
+  if (selectedImages.length === 0) {
+    return {
+      ...emptyAgentReferenceSelection(t),
+      totalSelectedCount: selectedShapes.length
+    };
+  }
+
+  const warnings: string[] = [];
+  if (selectedImages.length > MAX_REFERENCE_IMAGES) {
+    warnings.push(t("agentReferenceTooMany", { count: selectedImages.length, max: MAX_REFERENCE_IMAGES }));
+  }
+  const nonImageCount = selectedShapes.length - selectedImages.length;
+  if (nonImageCount > 0) {
+    warnings.push(t("agentReferenceIgnoredNonImages", { count: nonImageCount }));
+  }
+
+  const references: ReferenceSelectionItem[] = [];
+  let unreadableCount = 0;
+  for (const { imageShape } of selectedImages.slice(0, MAX_REFERENCE_IMAGES)) {
+    const asset = imageShape.props.assetId ? editor.getAsset(imageShape.props.assetId) : undefined;
+    const sourceUrl = getImageSourceUrl(imageShape, asset);
+    if (!sourceUrl || !isReadableReferenceSource(sourceUrl, asset)) {
+      unreadableCount += 1;
+      continue;
+    }
+
+    references.push({
+      assetId: imageShape.props.assetId,
+      localAssetId: getLocalAssetId(asset, sourceUrl),
+      name: getReferenceName(asset, sourceUrl),
+      sourceUrl,
+      width: asset?.type === "image" ? asset.props.w : imageShape.props.w,
+      height: asset?.type === "image" ? asset.props.h : imageShape.props.h
+    });
+  }
+
+  if (unreadableCount > 0) {
+    warnings.push(t("agentReferenceUnreadableSkipped", { count: unreadableCount }));
+  }
+
+  return {
+    references,
+    selectedImageCount: selectedImages.length,
+    totalSelectedCount: selectedShapes.length,
+    hint:
+      references.length > 0
+        ? t("agentReferenceReady", { count: references.length, max: MAX_REFERENCE_IMAGES })
+        : t("agentReferenceEmpty"),
+    warning: warnings.join(t("commonListSeparator")) || undefined
+  };
+}
+
 function areReferenceSelectionsEqual(left: ReferenceSelection, right: ReferenceSelection): boolean {
   if (left.status !== right.status) {
     return false;
@@ -952,6 +1062,28 @@ function areReferenceSelectionsEqual(left: ReferenceSelection, right: ReferenceS
 
   return (
     left.hint === right.hint &&
+    left.references.length === right.references.length &&
+    left.references.every((leftReference, index) => {
+      const rightReference = right.references[index];
+      return (
+        rightReference !== undefined &&
+        leftReference.assetId === rightReference.assetId &&
+        leftReference.localAssetId === rightReference.localAssetId &&
+        leftReference.name === rightReference.name &&
+        leftReference.sourceUrl === rightReference.sourceUrl &&
+        leftReference.width === rightReference.width &&
+        leftReference.height === rightReference.height
+      );
+    })
+  );
+}
+
+function areAgentReferenceSelectionsEqual(left: AgentReferenceSelection, right: AgentReferenceSelection): boolean {
+  return (
+    left.hint === right.hint &&
+    left.warning === right.warning &&
+    left.selectedImageCount === right.selectedImageCount &&
+    left.totalSelectedCount === right.totalSelectedCount &&
     left.references.length === right.references.length &&
     left.references.every((leftReference, index) => {
       const rightReference = right.references[index];
@@ -1337,6 +1469,28 @@ function findCanvasImageShape(editor: Editor, record: GenerationRecord): TLShape
   return undefined;
 }
 
+function findCanvasImageShapeByAssetId(editor: Editor, assetId: string, shapeId?: TLShapeId): TLShapeId | undefined {
+  if (shapeId && editor.getShape(shapeId)?.type === "image") {
+    return shapeId;
+  }
+
+  for (const shape of editor.getCurrentPageShapes()) {
+    if (shape.type !== "image") {
+      continue;
+    }
+
+    const imageShape = shape as TLImageShape;
+    const asset = imageShape.props.assetId ? editor.getAsset(imageShape.props.assetId) : undefined;
+    const sourceUrl = getImageSourceUrl(imageShape, asset);
+    const localAssetId = getLocalAssetId(asset, sourceUrl);
+    if (localAssetId === assetId || imageShape.props.assetId === assetId || asset?.id === assetId) {
+      return imageShape.id;
+    }
+  }
+
+  return undefined;
+}
+
 function fileNameWithImageExtension(name: string, mimeType: string): string {
   if (/\.(png|jpe?g|webp|gif)$/iu.test(name)) {
     return name;
@@ -1369,6 +1523,7 @@ async function blobToDataUrl(blob: Blob, t?: Translate): Promise<string> {
 async function readReferenceImage(selection: ReferenceSelectionItem, signal: AbortSignal, t: Translate): Promise<{
   dataUrl: string;
   fileName: string;
+  mimeType: string;
 }> {
   let response: Response;
 
@@ -1392,7 +1547,8 @@ async function readReferenceImage(selection: ReferenceSelectionItem, signal: Abo
 
   return {
     dataUrl: await blobToDataUrl(blob, t),
-    fileName: fileNameWithImageExtension(selection.name, blob.type)
+    fileName: fileNameWithImageExtension(selection.name, blob.type),
+    mimeType: blob.type
   };
 }
 
@@ -1414,6 +1570,76 @@ async function readStoredReferenceImage(assetId: string, signal: AbortSignal, t:
     dataUrl: await blobToDataUrl(blob, t),
     fileName: fileNameWithImageExtension(assetId, blob.type)
   };
+}
+
+function agentWebSocketUrl(): string {
+  const url = new URL("/api/agent/ws", window.location.href);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
+}
+
+function agentReferenceAssetId(reference: ReferenceSelectionItem, index: number): string {
+  return reference.localAssetId ?? reference.assetId ?? `selected-canvas-image-${index + 1}`;
+}
+
+function agentReferenceLabel(reference: ReferenceSelectionItem, index: number, t: Translate): string {
+  const name = reference.name.trim();
+  if (name && name !== "reference-image") {
+    return name;
+  }
+
+  return t("agentReferenceFallbackLabel", { index: index + 1 });
+}
+
+async function buildAgentSelectedReferences(input: {
+  references: ReferenceSelectionItem[];
+  supportsVision: boolean;
+  t: Translate;
+}): Promise<AgentSelectedCanvasReference[]> {
+  const controller = new AbortController();
+  return Promise.all(
+    input.references.slice(0, MAX_REFERENCE_IMAGES).map(async (reference, index) => {
+      const selectedReference: AgentSelectedCanvasReference = {
+        id: `selected-${index + 1}`,
+        assetId: agentReferenceAssetId(reference, index),
+        label: agentReferenceLabel(reference, index, input.t),
+        width: Math.round(reference.width),
+        height: Math.round(reference.height)
+      };
+
+      if (!input.supportsVision) {
+        return selectedReference;
+      }
+
+      const readableReference = await readReferenceImage(reference, controller.signal, input.t);
+      return {
+        ...selectedReference,
+        mimeType: readableReference.mimeType,
+        dataUrl: readableReference.dataUrl
+      };
+    })
+  );
+}
+
+function parseAgentServerEvent(data: MessageEvent["data"]): AgentServerEvent | undefined {
+  if (typeof data !== "string") {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(data) as unknown;
+    return isRecord(parsed) && typeof parsed.type === "string" ? (parsed as unknown as AgentServerEvent) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function generationPlanOutputCount(plan: GenerationPlan): number {
+  return plan.jobs.reduce((total, job) => total + job.count, 0);
+}
+
+function optionalShapeIdFromEvent(event: AgentServerEvent): TLShapeId | undefined {
+  return isRecord(event) && typeof event.shapeId === "string" ? (event.shapeId as TLShapeId) : undefined;
 }
 
 async function readErrorMessage(response: Response, locale: Locale, t: Translate): Promise<string> {
@@ -1815,6 +2041,7 @@ export function App() {
   });
   const [route, setRoute] = useState<AppRoute>(() => routeFromLocation());
   const shouldAutoOpenCanvasRef = useRef(route !== "gallery");
+  const [panelTab, setPanelTab] = useState<PanelTab>("manual");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("text");
   const [prompt, setPrompt] = useState("");
   const [stylePreset, setStylePreset] = useState<StylePresetId>("none");
@@ -1853,6 +2080,18 @@ export function App() {
   const [isStorageSaving, setIsStorageSaving] = useState(false);
   const [isStorageTesting, setIsStorageTesting] = useState(false);
   const [referenceSelection, setReferenceSelection] = useState<ReferenceSelection>(() => missingReferenceSelection(t));
+  const [agentSizePresetId, setAgentSizePresetId] = useState(SIZE_PRESETS[0].id);
+  const [agentWidth, setAgentWidth] = useState(SIZE_PRESETS[0].width);
+  const [agentHeight, setAgentHeight] = useState(SIZE_PRESETS[0].height);
+  const [agentQuality, setAgentQuality] = useState<ImageQuality>("auto");
+  const [agentOutputFormat, setAgentOutputFormat] = useState<OutputFormat>("png");
+  const [agentInput, setAgentInput] = useState("");
+  const [agentConfig, setAgentConfig] = useState<AgentLlmConfigView | null>(null);
+  const [isAgentConfigLoading, setIsAgentConfigLoading] = useState(true);
+  const [agentConfigError, setAgentConfigError] = useState("");
+  const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
+  const [agentRunStatus, setAgentRunStatus] = useState<AgentRunStatus>("idle");
+  const [agentReferenceSelection, setAgentReferenceSelection] = useState<AgentReferenceSelection>(() => emptyAgentReferenceSelection(t));
   const [isCanvasDarkMode, setIsCanvasDarkMode] = useState(false);
   const canvasShellRef = useRef<HTMLElement | null>(null);
   const panelCloseButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -1860,11 +2099,33 @@ export function App() {
   const generationModeRef = useRef<GenerationMode>("text");
   const activeGenerationsRef = useRef<Map<number, ActiveGenerationTask>>(new Map());
   const generationRequestRef = useRef(0);
+  const agentRequestRef = useRef(0);
+  const agentSocketRef = useRef<WebSocket | null>(null);
+  const agentSocketOpenPromiseRef = useRef<Promise<WebSocket> | null>(null);
+  const activeAgentRunIdRef = useRef<string | null>(null);
   const saveTimerRef = useRef<number | undefined>();
   const codexPollTimerRef = useRef<number | undefined>();
   const saveRequestRef = useRef(0);
   const isGenerating = activeGenerationCount > 0;
   const hasGenerationProvider = authStatus?.provider === "openai" || authStatus?.provider === "codex";
+  const isAgentRunning = agentRunStatus === "connecting" || agentRunStatus === "running";
+  const trimmedAgentInput = agentInput.trim();
+  const isAgentConfigured = Boolean(agentConfig?.configured);
+  const agentDefaultsValidationMessage = sizeValidationMessage(agentWidth, agentHeight, t, locale);
+  const canSendAgentMessage = Boolean(
+    trimmedAgentInput && isAgentConfigured && !isAgentConfigLoading && !isAgentRunning && !agentDefaultsValidationMessage
+  );
+  const agentDefaults = useMemo(
+    () => ({
+      size: {
+        width: agentWidth,
+        height: agentHeight
+      },
+      quality: agentQuality,
+      outputFormat: agentOutputFormat
+    }),
+    [agentHeight, agentOutputFormat, agentQuality, agentWidth]
+  );
 
   const trimmedPrompt = prompt.trim();
   const promptValidationMessage = prompt.trim() ? "" : t("promptRequired");
@@ -1912,6 +2173,32 @@ export function App() {
   const hiddenHistoryCount = Math.max(0, generationHistory.length - HISTORY_COLLAPSED_LIMIT);
   const hasAdditionalHistory = hiddenHistoryCount > 0;
   const isExtendedCountSelected = EXTENDED_GENERATION_COUNTS.includes(count);
+  const loadAgentConfig = useCallback(async (signal?: AbortSignal): Promise<AgentLlmConfigView | null> => {
+    setIsAgentConfigLoading(true);
+    setAgentConfigError("");
+
+    try {
+      const response = await fetch("/api/agent-config", { signal });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response, locale, t));
+      }
+
+      const config = (await response.json()) as AgentLlmConfigView;
+      if (!signal?.aborted) {
+        setAgentConfig(config);
+      }
+      return config;
+    } catch (error) {
+      if (!signal?.aborted) {
+        setAgentConfigError(error instanceof Error ? error.message : t("agentConfigLoadFailed"));
+      }
+      return null;
+    } finally {
+      if (!signal?.aborted) {
+        setIsAgentConfigLoading(false);
+      }
+    }
+  }, [locale, t]);
   const loadAuthStatus = useCallback(async (signal?: AbortSignal): Promise<AuthStatusResponse | null> => {
     setIsAuthLoading(true);
     setAuthError("");
@@ -2009,6 +2296,10 @@ export function App() {
         task.controller.abort();
       }
       activeGenerationsRef.current.clear();
+      agentSocketRef.current?.close();
+      agentSocketRef.current = null;
+      agentSocketOpenPromiseRef.current = null;
+      activeAgentRunIdRef.current = null;
       window.clearTimeout(codexPollTimerRef.current);
     };
   }, []);
@@ -2066,6 +2357,16 @@ export function App() {
       controller.abort();
     };
   }, [loadAuthStatus]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void loadAgentConfig(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [loadAgentConfig]);
 
   useEffect(() => {
     if (isAuthLoading || !authStatus || route === "gallery") {
@@ -2400,6 +2701,11 @@ export function App() {
     generationModeRef.current = generationMode;
 
     const editor = editorRef.current;
+    const nextAgentSelection = editor ? resolveAgentReferenceSelection(editor, t) : emptyAgentReferenceSelection(t);
+    setAgentReferenceSelection((currentSelection) =>
+      areAgentReferenceSelectionsEqual(currentSelection, nextAgentSelection) ? currentSelection : nextAgentSelection
+    );
+
     if (generationMode === "reference" && editor) {
       const nextSelection = resolveReferenceSelection(editor, t);
       setReferenceSelection((currentSelection) =>
@@ -2421,6 +2727,11 @@ export function App() {
 
     let referenceSelectionFrame: number | undefined;
     const commitReferenceSelection = (): void => {
+      const nextAgentSelection = resolveAgentReferenceSelection(editor, t);
+      setAgentReferenceSelection((currentSelection) =>
+        areAgentReferenceSelectionsEqual(currentSelection, nextAgentSelection) ? currentSelection : nextAgentSelection
+      );
+
       if (generationModeRef.current !== "reference") {
         return;
       }
@@ -2431,7 +2742,7 @@ export function App() {
       );
     };
     const updateReferenceSelection = (): void => {
-      if (generationModeRef.current !== "reference" || referenceSelectionFrame !== undefined) {
+      if (referenceSelectionFrame !== undefined) {
         return;
       }
 
@@ -2899,6 +3210,374 @@ export function App() {
     setGenerationWarning("");
   }
 
+  function addAgentMessage(message: Omit<AgentChatMessage, "id" | "timestamp">): void {
+    setAgentMessages((messages) => [
+      ...messages,
+      {
+        ...message,
+        id: `agent-message-${crypto.randomUUID()}`,
+        timestamp: new Date().toISOString()
+      }
+    ]);
+  }
+
+  function appendAgentAssistantDelta(delta: string): void {
+    if (!delta) {
+      return;
+    }
+
+    setAgentMessages((messages) => {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage?.role === "assistant" && !lastMessage.plan) {
+        return [
+          ...messages.slice(0, -1),
+          {
+            ...lastMessage,
+            content: `${lastMessage.content}${delta}`
+          }
+        ];
+      }
+
+      return [
+        ...messages,
+        {
+          id: `agent-message-${crypto.randomUUID()}`,
+          role: "assistant",
+          content: delta,
+          timestamp: new Date().toISOString()
+        }
+      ];
+    });
+  }
+
+  function addAgentAssetPreview(event: Extract<AgentServerEvent, { type: "asset_preview" }>): void {
+    const preview: AgentChatAssetPreview = {
+      id: `agent-preview-${event.jobId}-${event.assetId}-${crypto.randomUUID()}`,
+      assetId: event.assetId,
+      jobId: event.jobId,
+      shapeId: optionalShapeIdFromEvent(event),
+      url: event.url
+    };
+
+    setAgentMessages((messages) => {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage?.role === "assistant" && lastMessage.previews) {
+        return [
+          ...messages.slice(0, -1),
+          {
+            ...lastMessage,
+            previews: [...lastMessage.previews, preview]
+          }
+        ];
+      }
+
+      return [
+        ...messages,
+        {
+          id: `agent-message-${crypto.randomUUID()}`,
+          role: "assistant",
+          content: t("agentPreviewReady"),
+          timestamp: new Date().toISOString(),
+          previews: [preview]
+        }
+      ];
+    });
+  }
+
+  function handleAgentServerEvent(event: AgentServerEvent): void {
+    switch (event.type) {
+      case "assistant_delta":
+        appendAgentAssistantDelta(event.delta);
+        return;
+      case "plan_created":
+        addAgentMessage({
+          role: "plan",
+          content: t("agentPlanCreated", { title: event.plan.title }),
+          plan: event.plan
+        });
+        return;
+      case "plan_updated":
+        addAgentMessage({
+          role: "plan",
+          content: t("agentPlanUpdated", { title: event.plan.title }),
+          plan: event.plan
+        });
+        return;
+      case "asset_preview":
+        addAgentAssetPreview(event);
+        return;
+      case "job_started":
+        addAgentMessage({
+          role: "system",
+          content: t("agentJobStarted", { jobId: event.jobId })
+        });
+        return;
+      case "job_completed":
+        addAgentMessage({
+          role: "system",
+          content: t("agentJobCompleted", { jobId: event.jobId })
+        });
+        return;
+      case "job_failed":
+        addAgentMessage({
+          role: "error",
+          content: t("agentJobFailed", { jobId: event.jobId, error: event.error })
+        });
+        return;
+      case "job_blocked":
+        addAgentMessage({
+          role: "error",
+          content: t("agentJobBlocked", { jobId: event.jobId, reason: event.reason })
+        });
+        return;
+      case "error":
+        addAgentMessage({
+          role: "error",
+          content: localizedApiErrorMessage({
+            code: event.code,
+            fallbackMessage: event.message,
+            fallbackText: event.message,
+            locale,
+            status: 400
+          })
+        });
+        if (event.runId && activeAgentRunIdRef.current === event.runId) {
+          activeAgentRunIdRef.current = null;
+          setAgentRunStatus("idle");
+        }
+        return;
+      case "run_cancelled":
+        activeAgentRunIdRef.current = null;
+        setAgentRunStatus("idle");
+        addAgentMessage({
+          role: "system",
+          content: event.alreadyCancelled ? t("agentRunAlreadyCancelled") : t("agentRunCancelled")
+        });
+        return;
+      case "run_done":
+        if (!event.runId || activeAgentRunIdRef.current === event.runId) {
+          activeAgentRunIdRef.current = null;
+          setAgentRunStatus("idle");
+        }
+        addAgentMessage({
+          role: event.status === "succeeded" ? "system" : "error",
+          content: t("agentRunDone", { status: event.status })
+        });
+        return;
+      case "connected":
+      case "pong":
+      default:
+        return;
+    }
+  }
+
+  function ensureAgentSocket(): Promise<WebSocket> {
+    const existingSocket = agentSocketRef.current;
+    if (existingSocket?.readyState === WebSocket.OPEN) {
+      return Promise.resolve(existingSocket);
+    }
+    if (existingSocket?.readyState === WebSocket.CONNECTING && agentSocketOpenPromiseRef.current) {
+      return agentSocketOpenPromiseRef.current;
+    }
+
+    setAgentRunStatus("connecting");
+    const socket = new WebSocket(agentWebSocketUrl());
+    agentSocketRef.current = socket;
+
+    const openPromise = new Promise<WebSocket>((resolve, reject) => {
+      let settled = false;
+
+      socket.onopen = () => {
+        settled = true;
+        resolve(socket);
+      };
+      socket.onmessage = (messageEvent) => {
+        const event = parseAgentServerEvent(messageEvent.data);
+        if (!event) {
+          addAgentMessage({
+            role: "error",
+            content: t("agentInvalidEvent")
+          });
+          return;
+        }
+
+        handleAgentServerEvent(event);
+      };
+      socket.onerror = () => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(t("agentSocketFailed")));
+        } else {
+          addAgentMessage({
+            role: "error",
+            content: t("agentSocketFailed")
+          });
+        }
+      };
+      socket.onclose = () => {
+        if (agentSocketRef.current === socket) {
+          agentSocketRef.current = null;
+          agentSocketOpenPromiseRef.current = null;
+        }
+        if (!settled) {
+          settled = true;
+          reject(new Error(t("agentSocketFailed")));
+          return;
+        }
+        if (activeAgentRunIdRef.current) {
+          activeAgentRunIdRef.current = null;
+          setAgentRunStatus("idle");
+          addAgentMessage({
+            role: "error",
+            content: t("agentSocketClosed")
+          });
+        }
+      };
+    });
+
+    agentSocketOpenPromiseRef.current = openPromise;
+    return openPromise;
+  }
+
+  function selectAgentSizePreset(nextPresetId: string): void {
+    if (nextPresetId === CUSTOM_SIZE_PRESET_ID) {
+      setAgentSizePresetId(CUSTOM_SIZE_PRESET_ID);
+      return;
+    }
+
+    const preset = SIZE_PRESETS.find((item) => item.id === nextPresetId);
+    if (!preset) {
+      return;
+    }
+
+    setAgentSizePresetId(preset.id);
+    setAgentWidth(preset.width);
+    setAgentHeight(preset.height);
+  }
+
+  function updateAgentWidth(value: string): void {
+    setAgentWidth(normalizeDimension(value));
+    setAgentSizePresetId(CUSTOM_SIZE_PRESET_ID);
+  }
+
+  function updateAgentHeight(value: string): void {
+    setAgentHeight(normalizeDimension(value));
+    setAgentSizePresetId(CUSTOM_SIZE_PRESET_ID);
+  }
+
+  async function submitAgentMessage(): Promise<void> {
+    if (!trimmedAgentInput || isAgentRunning) {
+      return;
+    }
+
+    if (!isAgentConfigured) {
+      addAgentMessage({
+        role: "error",
+        content: t("agentConfigMissingCopy")
+      });
+      return;
+    }
+
+    if (agentDefaultsValidationMessage) {
+      addAgentMessage({
+        role: "error",
+        content: agentDefaultsValidationMessage
+      });
+      return;
+    }
+
+    const requestId = `agent-request-${agentRequestRef.current + 1}`;
+    const runId = `agent-run-${crypto.randomUUID()}`;
+    agentRequestRef.current += 1;
+    activeAgentRunIdRef.current = runId;
+    setAgentInput("");
+    addAgentMessage({
+      role: "user",
+      content: trimmedAgentInput
+    });
+
+    try {
+      const selectedReferences = await buildAgentSelectedReferences({
+        references: agentReferenceSelection.references,
+        supportsVision: Boolean(agentConfig?.supportsVision),
+        t
+      });
+      const socket = await ensureAgentSocket();
+      socket.send(
+        JSON.stringify({
+          type: "user_message",
+          requestId,
+          runId,
+          text: trimmedAgentInput,
+          defaults: agentDefaults,
+          selectedReferences,
+          selectedReferenceIds: selectedReferences.map((reference) => reference.assetId)
+        })
+      );
+      setAgentRunStatus("running");
+    } catch (error) {
+      activeAgentRunIdRef.current = null;
+      setAgentRunStatus("idle");
+      addAgentMessage({
+        role: "error",
+        content: error instanceof Error ? error.message : t("agentSendFailed")
+      });
+    }
+  }
+
+  function cancelAgentRun(): void {
+    const runId = activeAgentRunIdRef.current;
+    const socket = agentSocketRef.current;
+    if (!runId || !socket || socket.readyState !== WebSocket.OPEN) {
+      activeAgentRunIdRef.current = null;
+      setAgentRunStatus("idle");
+      addAgentMessage({
+        role: "system",
+        content: t("agentRunCancelled")
+      });
+      return;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: "cancel_run",
+        requestId: `agent-cancel-${crypto.randomUUID()}`,
+        runId
+      })
+    );
+  }
+
+  function locateAgentPreview(preview: AgentChatAssetPreview): void {
+    const editor = editorRef.current;
+    if (!editor) {
+      addAgentMessage({
+        role: "error",
+        content: t("generationCanvasNotReady")
+      });
+      return;
+    }
+
+    const shapeId = findCanvasImageShapeByAssetId(editor, preview.assetId, preview.shapeId);
+    if (!shapeId) {
+      addAgentMessage({
+        role: "system",
+        content: t("agentPreviewShapePending")
+      });
+      return;
+    }
+
+    const bounds = editor.getShapePageBounds(shapeId);
+    editor.select(shapeId);
+    if (bounds) {
+      editor.zoomToBounds(bounds, {
+        animation: { duration: 220 },
+        inset: 96
+      });
+    } else {
+      editor.zoomToSelection({ animation: { duration: 220 } });
+    }
+  }
+
   return (
     <div className="app-root" data-canvas-theme={route !== "home" && isCanvasDarkMode ? "dark" : "light"}>
       <TopNavigation
@@ -3038,6 +3717,32 @@ export function App() {
           </div>
         </div>
 
+        <div className="panel-tab-switcher" data-testid="right-panel-tab-switcher" role="tablist" aria-label={t("panelTabAria")}>
+          <button
+            aria-selected={panelTab === "manual"}
+            className={panelTab === "manual" ? "panel-tab-switcher__button is-active" : "panel-tab-switcher__button"}
+            data-testid="panel-tab-manual"
+            role="tab"
+            type="button"
+            onClick={() => setPanelTab("manual")}
+          >
+            {t("panelTabManual")}
+          </button>
+          <button
+            aria-selected={panelTab === "agent"}
+            className={panelTab === "agent" ? "panel-tab-switcher__button is-active" : "panel-tab-switcher__button"}
+            data-testid="panel-tab-agent"
+            role="tab"
+            type="button"
+            onClick={() => setPanelTab("agent")}
+          >
+            <Bot className="size-3.5" aria-hidden="true" />
+            {t("panelTabAgent")}
+          </button>
+        </div>
+
+        {panelTab === "manual" ? (
+        <>
         <div className="ai-panel-body flex-1 space-y-5 overflow-y-auto px-5 py-5">
           {saveError ? (
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="save-error">
@@ -3504,6 +4209,251 @@ export function App() {
             {generationMode === "reference" ? t("generationStartReference") : t("generationStartText")}
           </button>
         </div>
+        </>
+        ) : (
+        <>
+        <div className="ai-panel-body agent-panel-body flex-1 overflow-y-auto px-5 py-4" data-testid="agent-tab-panel">
+          {saveError ? (
+            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" data-testid="save-error">
+              {saveError}
+            </p>
+          ) : null}
+
+          <section className="agent-status-card" data-testid="agent-config-state" data-configured={isAgentConfigured}>
+            <div className="agent-status-card__icon" data-state={isAgentConfigured ? "ready" : "missing"}>
+              {isAgentConfigLoading ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : isAgentConfigured ? (
+                <ShieldCheck className="size-4" aria-hidden="true" />
+              ) : (
+                <AlertTriangle className="size-4" aria-hidden="true" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="agent-status-card__title">
+                {isAgentConfigLoading
+                  ? t("agentConfigLoading")
+                  : isAgentConfigured
+                    ? t(agentConfig?.supportsVision ? "agentVisionMode" : "agentTextOnlyMode")
+                    : t("agentConfigMissingTitle")}
+              </p>
+              <p className="agent-status-card__copy">
+                {agentConfigError || (isAgentConfigured ? t("agentConfigReadyCopy", { model: agentConfig?.model ?? "" }) : t("agentConfigMissingCopy"))}
+              </p>
+            </div>
+            <button
+              aria-label={t("agentConfigRefresh")}
+              className="history-icon-action"
+              data-testid="agent-config-refresh"
+              disabled={isAgentConfigLoading}
+              type="button"
+              onClick={() => void loadAgentConfig()}
+            >
+              {isAgentConfigLoading ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <RotateCcw className="size-4" aria-hidden="true" />}
+            </button>
+          </section>
+
+          <section className="agent-defaults" aria-labelledby="agent-defaults-title">
+            <div className="agent-section-heading">
+              <h2 id="agent-defaults-title">{t("agentDefaultsTitle")}</h2>
+              <span>{agentWidth} x {agentHeight}</span>
+            </div>
+            <label className="block">
+              <span className="control-label">{t("generationSizeLabel")}</span>
+              <select
+                className="field-control"
+                data-testid="agent-size-preset"
+                value={agentSizePresetId}
+                onChange={(event) => selectAgentSizePreset(event.target.value)}
+              >
+                {SIZE_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {sizePresetOptionLabel(preset, t)}
+                  </option>
+                ))}
+                <option value={CUSTOM_SIZE_PRESET_ID}>{t("customSizeOption")}</option>
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label>
+                <span className="control-label">{t("generationWidthLabel")}</span>
+                <input
+                  className="field-control"
+                  data-testid="agent-width"
+                  max={MAX_IMAGE_DIMENSION}
+                  min={MIN_IMAGE_DIMENSION}
+                  step={1}
+                  type="number"
+                  value={Number.isNaN(agentWidth) ? "" : agentWidth}
+                  onChange={(event) => updateAgentWidth(event.target.value)}
+                />
+              </label>
+              <label>
+                <span className="control-label">{t("generationHeightLabel")}</span>
+                <input
+                  className="field-control"
+                  data-testid="agent-height"
+                  max={MAX_IMAGE_DIMENSION}
+                  min={MIN_IMAGE_DIMENSION}
+                  step={1}
+                  type="number"
+                  value={Number.isNaN(agentHeight) ? "" : agentHeight}
+                  onChange={(event) => updateAgentHeight(event.target.value)}
+                />
+              </label>
+            </div>
+            {agentDefaultsValidationMessage ? (
+              <p className="agent-inline-warning" role="alert">
+                {agentDefaultsValidationMessage}
+              </p>
+            ) : null}
+            <div className="grid grid-cols-2 gap-3">
+              <label>
+                <span className="control-label">{t("generationQualityLabel")}</span>
+                <select
+                  className="field-control"
+                  data-testid="agent-quality"
+                  value={agentQuality}
+                  onChange={(event) => setAgentQuality(event.target.value as ImageQuality)}
+                >
+                  {IMAGE_QUALITIES.map((item) => (
+                    <option key={item} value={item}>
+                      {t("qualityLabel", { quality: item })}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className="control-label">{t("generationOutputFormatLabel")}</span>
+                <select
+                  className="field-control"
+                  data-testid="agent-format"
+                  value={agentOutputFormat}
+                  onChange={(event) => setAgentOutputFormat(event.target.value as OutputFormat)}
+                >
+                  {OUTPUT_FORMATS.map((item) => (
+                    <option key={item} value={item}>
+                      {t("outputFormatLabel", { format: item })}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section className="agent-references" data-testid="agent-reference-state" aria-labelledby="agent-references-title">
+            <div className="agent-section-heading">
+              <h2 id="agent-references-title">{t("agentReferencesTitle")}</h2>
+              <span>{agentReferenceSelection.references.length} / {MAX_REFERENCE_IMAGES}</span>
+            </div>
+            <p className="agent-reference-hint">{agentReferenceSelection.hint}</p>
+            {agentReferenceSelection.warning ? (
+              <p className="agent-inline-warning" data-testid="agent-reference-warning" role="alert">
+                {agentReferenceSelection.warning}
+              </p>
+            ) : null}
+            {agentReferenceSelection.references.length > 0 ? (
+              <div className="agent-reference-list">
+                {agentReferenceSelection.references.map((reference, index) => (
+                  <article className="agent-reference-item" data-testid="agent-reference-item" key={`${reference.sourceUrl}-${index}`}>
+                    <img
+                      alt={t("generationReferenceAlt", { index: index + 1, name: agentReferenceLabel(reference, index, t) })}
+                      className="agent-reference-item__image"
+                      src={reference.sourceUrl}
+                    />
+                    <div className="min-w-0">
+                      <p>{agentReferenceLabel(reference, index, t)}</p>
+                      <span>{Math.round(reference.width)} x {Math.round(reference.height)}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </section>
+
+          <section className="agent-transcript" aria-label={t("agentTranscriptLabel")} data-testid="agent-transcript">
+            {agentMessages.length === 0 ? (
+              <div className="agent-empty-state">
+                <Bot className="size-5" aria-hidden="true" />
+                <p>{t("agentEmptyTitle")}</p>
+                <span>{t("agentEmptyCopy")}</span>
+              </div>
+            ) : (
+              agentMessages.map((message) => (
+                <article className={`agent-message agent-message--${message.role}`} data-testid="agent-message" key={message.id}>
+                  <div className="agent-message__meta">
+                    <span>{t("agentMessageRole", { role: message.role })}</span>
+                    <time dateTime={message.timestamp}>{formatDateTime(message.timestamp, { hour: "2-digit", minute: "2-digit" })}</time>
+                  </div>
+                  <p>{message.content}</p>
+                  {message.plan ? (
+                    <div className="agent-plan-card" data-testid="agent-plan-card">
+                      <strong>{message.plan.title}</strong>
+                      <span>{t("agentPlanSummary", { jobs: message.plan.jobs.length, outputs: generationPlanOutputCount(message.plan) })}</span>
+                    </div>
+                  ) : null}
+                  {message.previews?.length ? (
+                    <div className="agent-preview-list">
+                      {message.previews.map((preview) => (
+                        <button
+                          aria-label={t("agentPreviewLocate")}
+                          className="agent-preview-button"
+                          key={preview.id}
+                          type="button"
+                          onClick={() => locateAgentPreview(preview)}
+                        >
+                          <img alt="" src={preview.url} />
+                          <MapPin className="size-3.5" aria-hidden="true" />
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              ))
+            )}
+          </section>
+        </div>
+
+        <div className="ai-panel-actions agent-panel-actions border-t border-neutral-200 bg-white px-5 py-4">
+          <label className="block">
+            <span className="sr-only">{t("agentInputLabel")}</span>
+            <textarea
+              className="agent-input"
+              data-testid="agent-message-input"
+              disabled={isAgentRunning}
+              placeholder={isAgentConfigured ? t("agentInputPlaceholder") : t("agentConfigMissingInputPlaceholder")}
+              rows={3}
+              value={agentInput}
+              onChange={(event) => setAgentInput(event.target.value)}
+            />
+          </label>
+          <div className="agent-action-row">
+            <span className="agent-run-state" data-state={agentRunStatus} data-testid="agent-run-state">
+              {isAgentRunning ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Sparkles className="size-3.5" aria-hidden="true" />}
+              {t("agentRunStatus", { status: agentRunStatus })}
+            </span>
+            {isAgentRunning ? (
+              <button className="secondary-action h-10" data-testid="agent-cancel-button" type="button" onClick={cancelAgentRun}>
+                <CircleStop className="size-4" aria-hidden="true" />
+                {t("agentCancelRun")}
+              </button>
+            ) : (
+              <button
+                className="primary-action h-10"
+                data-testid="agent-send-button"
+                disabled={!canSendAgentMessage}
+                title={!isAgentConfigured ? t("agentConfigMissingTitle") : agentDefaultsValidationMessage || undefined}
+                type="button"
+                onClick={() => void submitAgentMessage()}
+              >
+                <Send className="size-4" aria-hidden="true" />
+                {t("agentSend")}
+              </button>
+            )}
+          </div>
+        </div>
+        </>
+        )}
       </aside>
 
       {isStorageDialogOpen ? (
