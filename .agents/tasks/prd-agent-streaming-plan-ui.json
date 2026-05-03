@@ -157,7 +157,7 @@
     {
       "id": "AS-004",
       "title": "Verify and document Agent streaming fixes",
-      "status": "open",
+      "status": "done",
       "dependsOn": [
         "AS-003"
       ],
@@ -172,6 +172,22 @@
         "Record any Node engine warnings, Vite warnings, credential/environment limitations, and residual risks in story verification notes.",
         "Confirm git status excludes .env, .ralph, .codex-temp, data, generated images, SQLite databases, screenshots, build output, and machine-specific paths from commits.",
         "Verification: final story records changed files, commands run, browser findings, and commit hashes."
+      ],
+      "startedAt": "2026-05-03T18:16:26.208788+00:00",
+      "completedAt": "2026-05-03T19:17:32.5536405Z",
+      "updatedAt": "2026-05-03T19:17:32.5536405Z",
+      "verificationNotes": [
+        "Ralph AS-004 generated .ralph/runs/run-20260504-021626-1569-iter-1.md before the outer command timed out.",
+        "AS-004 verification commit: 5abc7c6 Document native dependency rebuild note.",
+        "Related implementation commits: b0ea34c Stream direct agent planner output, 6df4906 Fix agent transcript streaming layout, 66edd7b Make agent plan details inspectable.",
+        "Ralph recorded node -v v24.15.0, pnpm -v 9.14.2, pnpm --filter @gpt-image-canvas/api smoke:planner PASS, pnpm typecheck PASS, and pnpm build PASS.",
+        "Ralph rebuilt better-sqlite3 after a non-secret NODE_MODULE_VERSION mismatch and documented that guidance in AGENTS.md.",
+        "pnpm dev was partial on Windows because the API tsx watch child stayed alive without binding 127.0.0.1:8787; built API start was used as the browser verification fallback.",
+        "Ralph browser-verified desktop 1440x1000 and mobile 390x844 with configured model deepseek-v4-flash without logging credentials.",
+        "Verified visible streamed thinking, no transcript/composer overlap, valid plan creation, clickable plan card, canvas node selection, and expanded plan-node details.",
+        "Observed non-blocking warnings: tldraw zh-cn missing translation keys, Canvas2D willReadFrequently, React DevTools info, Chrome form-field advisory, and existing Vite large chunk warning.",
+        "Residual risks: Windows pnpm dev API startup issue remains documented; first model attempt produced unsupported job quality and surfaced a recoverable HTTP 400 before a corrected prompt produced a valid plan.",
+        "Confirmed ignored files and secret/runtime directories were excluded from commits."
       ]
     }
   ]
