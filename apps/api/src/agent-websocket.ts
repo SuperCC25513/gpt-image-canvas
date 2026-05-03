@@ -7,6 +7,7 @@ import type {
   AgentServerEvent
 } from "./contracts.js";
 import { getUsableAgentLlmConfig } from "./agent-config.js";
+import { createGenerationPlan } from "./agent-planner.js";
 
 const OPEN_READY_STATE = 1;
 const CLIENT_MESSAGE_TYPES: readonly AgentClientMessageType[] = [
@@ -119,7 +120,7 @@ function handleAgentMessage(data: WSMessageReceive, ws: WSContext, session: Agen
   }
 
   if (AGENT_WORK_MESSAGE_TYPES.has(message.type)) {
-    handleAgentWorkMessage(message, ws);
+    handleAgentWorkMessage(message, ws, session);
     return;
   }
 
@@ -132,8 +133,9 @@ function handleAgentMessage(data: WSMessageReceive, ws: WSContext, session: Agen
   });
 }
 
-function handleAgentWorkMessage(message: AgentClientMessage, ws: WSContext): void {
-  if (!getUsableAgentLlmConfig()) {
+function handleAgentWorkMessage(message: AgentClientMessage, ws: WSContext, session: AgentSocketSession): void {
+  const llmConfig = getUsableAgentLlmConfig();
+  if (!llmConfig) {
     sendError(ws, {
       code: "missing_agent_config",
       message: "Configure an Agent LLM before using the Agent.",
@@ -144,12 +146,99 @@ function handleAgentWorkMessage(message: AgentClientMessage, ws: WSContext): voi
     return;
   }
 
+  if (message.type === "user_message") {
+    if (session.activeRun) {
+      sendError(ws, {
+        code: "agent_run_in_progress",
+        message: "An Agent run is already in progress for this connection.",
+        requestId: message.requestId,
+        runId: session.activeRun.id,
+        recoverable: true
+      });
+      return;
+    }
+
+    const runId = message.runId ?? randomUUID();
+    const activeRun: ActiveAgentRun = {
+      id: runId,
+      controller: new AbortController(),
+      cancelled: false
+    };
+    session.activeRun = activeRun;
+    void handleAgentPlanMessage(message, ws, session, activeRun, llmConfig);
+    return;
+  }
+
   sendError(ws, {
     code: "agent_work_unavailable",
-    message: "Agent planning and execution are not available in this build yet.",
+    message: "This Agent action is not available in this build yet.",
     requestId: message.requestId,
     runId: message.runId,
     recoverable: true
+  });
+}
+
+async function handleAgentPlanMessage(
+  message: Extract<AgentClientMessage, { type: "user_message" }>,
+  ws: WSContext,
+  session: AgentSocketSession,
+  activeRun: ActiveAgentRun,
+  llmConfig: NonNullable<ReturnType<typeof getUsableAgentLlmConfig>>
+): Promise<void> {
+  let result: Awaited<ReturnType<typeof createGenerationPlan>>;
+  try {
+    result = await createGenerationPlan({
+      userText: message.text,
+      defaults: message.defaults,
+      selectedReferences: message.selectedReferences,
+      llmConfig,
+      signal: activeRun.controller.signal
+    });
+  } catch {
+    result = {
+      ok: false,
+      code: "agent_planner_failed",
+      message: "Agent planner request failed."
+    };
+  }
+
+  if (session.activeRun?.id !== activeRun.id || activeRun.cancelled) {
+    return;
+  }
+
+  session.activeRun = undefined;
+
+  if (!result.ok) {
+    sendError(ws, {
+      code: result.code,
+      message: result.message,
+      requestId: message.requestId,
+      runId: activeRun.id,
+      recoverable: true
+    });
+    sendEvent(ws, {
+      type: "run_done",
+      requestId: message.requestId,
+      runId: activeRun.id,
+      status: "failed",
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+
+  sendEvent(ws, {
+    type: "plan_created",
+    requestId: message.requestId,
+    runId: activeRun.id,
+    plan: result.plan,
+    timestamp: new Date().toISOString()
+  });
+  sendEvent(ws, {
+    type: "run_done",
+    requestId: message.requestId,
+    runId: activeRun.id,
+    status: "succeeded",
+    timestamp: new Date().toISOString()
   });
 }
 

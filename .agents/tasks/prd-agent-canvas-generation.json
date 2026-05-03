@@ -199,7 +199,7 @@
     {
       "id": "AG-001",
       "title": "Add Agent LLM configuration and WebSocket foundation",
-      "status": "in_progress",
+      "status": "done",
       "dependsOn": [],
       "description": "As a creator, I want to configure one OpenAI-compatible Agent LLM and establish a safe WebSocket channel so the Agent can later chat, plan, execute, and cancel without exposing secrets.",
       "acceptanceCriteria": [
@@ -217,13 +217,13 @@
         "Verification: pnpm typecheck and pnpm build pass."
       ],
       "startedAt": "2026-05-03T13:20:06.727008+00:00",
-      "completedAt": null,
-      "updatedAt": "2026-05-03T13:20:06.727008+00:00"
+      "completedAt": "2026-05-03T13:39:12.423235+00:00",
+      "updatedAt": "2026-05-03T13:39:12.423235+00:00"
     },
     {
       "id": "AG-002",
       "title": "Define GenerationPlan contracts and DeepAgentsjs planning skill",
-      "status": "open",
+      "status": "in_progress",
       "dependsOn": [
         "AG-001"
       ],
@@ -241,7 +241,10 @@
         "Negative case: invalid or non-JSON model output is converted into a clear error event and no plan node is created.",
         "Verification: focused tests or deterministic smoke scripts cover valid simple plan, multi-prompt plan, selected-reference plan, generated-anchor dependency plan, over-limit plan rejection, cycle rejection, and no-vision reference handling.",
         "Verification: pnpm typecheck and pnpm build pass."
-      ]
+      ],
+      "startedAt": "2026-05-03T13:39:14.679968+00:00",
+      "completedAt": null,
+      "updatedAt": "2026-05-03T13:39:14.679968+00:00"
     },
     {
       "id": "AG-003",
