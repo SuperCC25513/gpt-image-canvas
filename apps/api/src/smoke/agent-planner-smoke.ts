@@ -8,6 +8,13 @@ import {
   type AgentPlannerResult,
   validateGenerationPlan
 } from "../domain/agent/planner.js";
+import {
+  CANVAS_IMAGE_PLANNING_SKILL_PATH,
+  ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES_PATH,
+  ECOMMERCE_VISUAL_COPYWRITING_SKILL_PATH,
+  createPlanningSkillSelectionForRequest,
+  hasEcommercePlanningIntent
+} from "../domain/agent/planning-skill.js";
 import type { UsableAgentLlmConfig } from "../domain/agent/config.js";
 import type {
   AgentSelectedCanvasReference,
@@ -53,8 +60,12 @@ async function main(): Promise<void> {
   smokeInvalidJsonRejection();
   smokeNoVisionReferenceHandling();
   smokePlannerConversationContextPrompt();
+  smokeEcommerceSkillIntentDetection();
   smokeDeepSeekPlannerKwargs();
   smokeReasoningExtraction();
+  await smokeNonEcommerceRequestLoadsOnlyCanvasSkill();
+  await smokeEcommerceRequestLoadsEcommerceSkill();
+  await smokeDirectPlannerUsesSelectedSkills();
   await smokePlannerQuestionOutput();
   await smokeMissingSelectedReferenceQuestion();
   await smokeSelectedEditPlanWithoutReferenceQuestion();
@@ -430,6 +441,25 @@ function smokePlannerConversationContextPrompt(): void {
   expect(content.includes("Resolved follow-up image references from previous Agent outputs"), "planner prompt explains resolved references");
 }
 
+function smokeEcommerceSkillIntentDetection(): void {
+  expect(
+    !hasEcommercePlanningIntent("Create a clean product photography render."),
+    "product photography alone does not trigger ecommerce skill"
+  );
+  expect(
+    !createPlanningSkillSelectionForRequest("Add a short title to each selected image.").includeEcommerce,
+    "generic image text edits do not trigger ecommerce skill"
+  );
+  expect(
+    hasEcommercePlanningIntent("Create marketplace listing copy for this SKU."),
+    "marketplace listing requests trigger ecommerce skill"
+  );
+  expect(
+    hasEcommercePlanningIntent("\u6dd8\u5b9d\u4e3b\u56fe\u6587\u6848"),
+    "Chinese marketplace main-image copy requests trigger ecommerce skill"
+  );
+}
+
 function smokeDeepSeekPlannerKwargs(): void {
   const kwargs = agentModelKwargsForConfig({
     baseUrl: "https://api.deepseek.com",
@@ -495,6 +525,101 @@ function smokeReasoningExtraction(): void {
   });
 
   expect(reasoning === "I should split the request into four scenes.", "reasoning content is extracted");
+}
+
+async function smokeNonEcommerceRequestLoadsOnlyCanvasSkill(): Promise<void> {
+  const runner = capturingPlannerRunner(planFixture());
+  const result = await createGenerationPlan({
+    userText: "Create a clean product photography render.",
+    defaults,
+    selectedReferences,
+    llmConfig: llmConfigFixture(),
+    now,
+    runner
+  });
+
+  expectPlannerOk(result, "non-ecommerce planner request");
+  const files = runner.calls[0]?.files;
+  expect(isRecord(files), "non-ecommerce planner receives skill files");
+  expect(CANVAS_IMAGE_PLANNING_SKILL_PATH in files, "non-ecommerce planner receives canvas skill");
+  expect(
+    !(ECOMMERCE_VISUAL_COPYWRITING_SKILL_PATH in files),
+    "non-ecommerce planner does not receive ecommerce skill"
+  );
+  expect(
+    !(ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES_PATH in files),
+    "non-ecommerce planner does not receive ecommerce compliance rules"
+  );
+}
+
+async function smokeEcommerceRequestLoadsEcommerceSkill(): Promise<void> {
+  const runner = capturingPlannerRunner(planFixture());
+  const result = await createGenerationPlan({
+    userText: "Create marketplace listing copy for this SKU.",
+    defaults,
+    selectedReferences: [],
+    llmConfig: llmConfigFixture(),
+    now,
+    runner
+  });
+
+  expectPlannerOk(result, "ecommerce planner request");
+  const files = runner.calls[0]?.files;
+  expect(isRecord(files), "ecommerce planner receives skill files");
+  expect(CANVAS_IMAGE_PLANNING_SKILL_PATH in files, "ecommerce planner receives canvas skill");
+  expect(ECOMMERCE_VISUAL_COPYWRITING_SKILL_PATH in files, "ecommerce planner receives ecommerce skill");
+  expect(
+    ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES_PATH in files,
+    "ecommerce planner receives ecommerce compliance rules"
+  );
+}
+
+async function smokeDirectPlannerUsesSelectedSkills(): Promise<void> {
+  const nonEcommerceModel = capturingStreamingModel([JSON.stringify(planFixture())]);
+  const nonEcommerceRunner = createDirectChatPlanner(
+    nonEcommerceModel,
+    createPlanningSkillSelectionForRequest("Create a clean product photography render.")
+  );
+  await nonEcommerceRunner.invoke({
+    messages: [
+      buildPlannerUserMessage({
+        userText: "Create a clean product photography render.",
+        defaults,
+        selectedReferences: [],
+        supportsVision: false
+      })
+    ]
+  });
+  const nonEcommerceSystemPrompt = firstSystemPrompt(nonEcommerceModel.calls[0]);
+  expect(
+    !nonEcommerceSystemPrompt.includes("ecommerce-visual-copywriting"),
+    "direct planner omits ecommerce skill from non-ecommerce system prompt"
+  );
+
+  const ecommerceModel = capturingStreamingModel([JSON.stringify(planFixture())]);
+  const ecommerceRunner = createDirectChatPlanner(
+    ecommerceModel,
+    createPlanningSkillSelectionForRequest("Create marketplace listing copy for this SKU.")
+  );
+  await ecommerceRunner.invoke({
+    messages: [
+      buildPlannerUserMessage({
+        userText: "Create marketplace listing copy for this SKU.",
+        defaults,
+        selectedReferences: [],
+        supportsVision: false
+      })
+    ]
+  });
+  const ecommerceSystemPrompt = firstSystemPrompt(ecommerceModel.calls[0]);
+  expect(
+    ecommerceSystemPrompt.includes("ecommerce-visual-copywriting"),
+    "direct planner includes ecommerce skill for ecommerce system prompt"
+  );
+  expect(
+    ecommerceSystemPrompt.includes(ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES_PATH),
+    "direct planner includes ecommerce compliance reference for ecommerce system prompt"
+  );
 }
 
 async function smokePlannerQuestionOutput(): Promise<void> {
@@ -1268,6 +1393,28 @@ function staticPlannerRunner(output: unknown): NonNullable<Parameters<typeof cre
   };
 }
 
+function capturingPlannerRunner(output: unknown): NonNullable<Parameters<typeof createGenerationPlan>[0]["runner"]> & {
+  calls: Array<{ messages: unknown[]; files?: Record<string, unknown> }>;
+} {
+  const calls: Array<{ messages: unknown[]; files?: Record<string, unknown> }> = [];
+  return {
+    calls,
+    async invoke(input) {
+      calls.push({
+        messages: input.messages,
+        files: input.files as Record<string, unknown> | undefined
+      });
+      return {
+        messages: [
+          {
+            content: JSON.stringify(output)
+          }
+        ]
+      };
+    }
+  };
+}
+
 function sequencedPlannerRunner(outputs: unknown[]): NonNullable<Parameters<typeof createGenerationPlan>[0]["runner"]> & {
   calls: Array<{ messages: unknown[] }>;
 } {
@@ -1286,6 +1433,33 @@ function sequencedPlannerRunner(outputs: unknown[]): NonNullable<Parameters<type
       };
     }
   };
+}
+
+function capturingStreamingModel(chunks: unknown[]): Parameters<typeof createDirectChatPlanner>[0] & {
+  calls: unknown[];
+} {
+  const calls: unknown[] = [];
+  return {
+    calls,
+    async stream(input: unknown, options?: { signal?: AbortSignal }) {
+      calls.push(input);
+      return (async function* () {
+        for (const chunk of chunks) {
+          if (options?.signal?.aborted) {
+            return;
+          }
+          yield chunk;
+        }
+      })();
+    }
+  } as unknown as Parameters<typeof createDirectChatPlanner>[0] & { calls: unknown[] };
+}
+
+function firstSystemPrompt(input: unknown): string {
+  expect(Array.isArray(input), "direct planner model input is a message array");
+  const firstMessage = input[0];
+  expect(isRecord(firstMessage), "direct planner first message is an object");
+  return String(firstMessage.content ?? "");
 }
 
 function streamingModel(chunks: unknown[]): Parameters<typeof createDirectChatPlanner>[0] {

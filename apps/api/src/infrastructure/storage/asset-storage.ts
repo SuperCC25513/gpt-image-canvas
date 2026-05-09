@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { rm, readFile, writeFile } from "node:fs/promises";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import COS from "cos-nodejs-sdk-v5";
 
 export interface AssetStorageAdapter<TPutInput, TLocation> {
@@ -40,6 +41,30 @@ export interface CosAssetLocation {
   bucket: string;
   region: string;
   key: string;
+}
+
+export interface S3StorageAdapterConfig {
+  accessKeyId: string;
+  secretAccessKey: string;
+  bucket: string;
+  region: string;
+  keyPrefix: string;
+  endpoint: string;
+  forcePathStyle: boolean;
+}
+
+export interface S3AssetPutInput {
+  key: string;
+  bytes: Buffer;
+  mimeType: string;
+}
+
+export interface S3AssetLocation {
+  bucket: string;
+  region: string;
+  key: string;
+  endpoint: string;
+  forcePathStyle: boolean;
 }
 
 export class LocalAssetStorageAdapter implements AssetStorageAdapter<LocalAssetPutInput, LocalAssetLocation> {
@@ -117,7 +142,80 @@ export class CosAssetStorageAdapter implements AssetStorageAdapter<CosAssetPutIn
   }
 }
 
+export class S3CompatibleAssetStorageAdapter implements AssetStorageAdapter<S3AssetPutInput, S3AssetLocation> {
+  private readonly client: S3Client;
+
+  constructor(private readonly config: S3StorageAdapterConfig) {
+    this.client = new S3Client({
+      credentials: {
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey
+      },
+      endpoint: config.endpoint,
+      forcePathStyle: config.forcePathStyle,
+      region: config.region || "auto"
+    });
+  }
+
+  async putObject(input: S3AssetPutInput): Promise<AssetStoragePutResult> {
+    const result = await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.config.bucket,
+        Key: input.key,
+        Body: input.bytes,
+        ContentLength: input.bytes.length,
+        ContentType: input.mimeType
+      })
+    );
+
+    return {
+      etag: result.ETag,
+      requestId: result.$metadata.requestId
+    };
+  }
+
+  async getObject(location: S3AssetLocation): Promise<Buffer> {
+    const result = await this.client.send(
+      new GetObjectCommand({
+        Bucket: location.bucket,
+        Key: location.key
+      })
+    );
+
+    return bodyToBuffer(result.Body);
+  }
+
+  async deleteObject(location: S3AssetLocation): Promise<void> {
+    await this.client.send(
+      new DeleteObjectCommand({
+        Bucket: location.bucket,
+        Key: location.key
+      })
+    );
+  }
+
+  async testConfig(): Promise<void> {
+    const key = buildCloudObjectKey(this.config.keyPrefix, `.storage-test-${randomUUID()}.txt`, new Date().toISOString());
+    await this.putObject({
+      key,
+      bytes: Buffer.from("gpt-image-canvas storage test\n", "utf8"),
+      mimeType: "text/plain; charset=utf-8"
+    });
+    await this.deleteObject({
+      bucket: this.config.bucket,
+      endpoint: this.config.endpoint,
+      forcePathStyle: this.config.forcePathStyle,
+      region: this.config.region,
+      key
+    });
+  }
+}
+
 export function buildCosObjectKey(keyPrefix: string, fileName: string, createdAt: string): string {
+  return buildCloudObjectKey(keyPrefix, fileName, createdAt);
+}
+
+export function buildCloudObjectKey(keyPrefix: string, fileName: string, createdAt: string): string {
   const date = new Date(createdAt);
   const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
   const year = String(safeDate.getUTCFullYear()).padStart(4, "0");
@@ -147,4 +245,41 @@ export function storageErrorMessage(error: unknown): string {
   }
 
   return "Cloud storage request failed.";
+}
+
+async function bodyToBuffer(body: unknown): Promise<Buffer> {
+  if (!body) {
+    return Buffer.alloc(0);
+  }
+
+  if (Buffer.isBuffer(body)) {
+    return body;
+  }
+
+  if (body instanceof Uint8Array) {
+    return Buffer.from(body);
+  }
+
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "transformToByteArray" in body &&
+    typeof body.transformToByteArray === "function"
+  ) {
+    return Buffer.from(await body.transformToByteArray());
+  }
+
+  if (isAsyncIterable(body)) {
+    const chunks: Buffer[] = [];
+    for await (const chunk of body) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
+
+  return Buffer.from(String(body));
+}
+
+function isAsyncIterable(value: unknown): value is AsyncIterable<Uint8Array | Buffer | string> {
+  return typeof value === "object" && value !== null && Symbol.asyncIterator in value;
 }

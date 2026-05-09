@@ -17,7 +17,7 @@ Current version: `v0.2.0`.
 - Save project state, generation history, and generated assets locally.
 - Configure image providers from `.env`, the in-app provider dialog, or Codex login.
 - Plan multi-image work in the Agent tab, then execute DAG-based generation jobs around a plan node.
-- Optionally back up new generated images to Tencent Cloud COS.
+- Optionally back up new generated images to Tencent Cloud COS or Cloudflare R2 / S3-compatible storage.
 - Browse local outputs in Gallery, including rerun, locate, download, and upload status.
 
 ## Requirements
@@ -104,19 +104,27 @@ Plan execution is DAG-based. Independent jobs can run in parallel, jobs that ref
 
 ## Cloud Backup
 
-Generated images are always saved locally first. If Tencent Cloud COS is enabled from the in-app cloud storage dialog, new images are also uploaded to:
+Generated images are always saved locally first. If Tencent Cloud COS or Cloudflare R2 / S3-compatible storage is enabled from the in-app cloud storage dialog, new images are also uploaded to:
 
 ```text
 <key-prefix>/YYYY/MM/<assetId>.<ext>
 ```
 
-The COS dialog is prefilled from:
+The COS fields are prefilled from:
 
 - `COS_DEFAULT_BUCKET`
 - `COS_DEFAULT_REGION`
 - `COS_DEFAULT_KEY_PREFIX`
 
-Saving COS settings performs a test upload and delete before the config is persisted. `SecretKey` is stored in local SQLite and only returned as a masked value. COS upload failures do not fail image generation; the image remains available locally and the history item shows the upload failure.
+The S3/R2 fields are prefilled from:
+
+- `S3_DEFAULT_BUCKET`
+- `S3_DEFAULT_REGION`
+- `S3_DEFAULT_KEY_PREFIX`
+- `R2_DEFAULT_ACCOUNT_ID`
+- `S3_DEFAULT_ENDPOINT`
+
+Saving cloud storage settings performs a test upload and delete before the config is persisted. Provider secrets are stored in local SQLite and only returned as masked values. Cloud upload failures do not fail image generation; the image remains available locally and the history item shows the upload failure.
 
 ## Project Layout
 
@@ -196,12 +204,12 @@ The default `NODE_IMAGE` is `node:24.15.0-bookworm-slim`.
 
 `DATA_DIR` defaults to `./data` locally and `/app/data` in Docker. It contains:
 
-- `gpt-image-canvas.sqlite`: project state, generation history, asset metadata, provider config, Agent LLM config, optional COS config, and Codex OAuth token records.
+- `gpt-image-canvas.sqlite`: project state, generation history, asset metadata, provider config, Agent LLM config, optional cloud storage config, and Codex OAuth token records.
 - `assets/`: generated image files.
 
 Do not commit `.env`, `.ralph/`, `.codex-temp/`, `data/`, generated images, SQLite databases, or build output.
 
-Treat `data/gpt-image-canvas.sqlite` as sensitive after saving local provider keys, Agent LLM keys, COS secrets, or Codex tokens. The app is designed for local workstation use; do not expose it publicly without adding your own authentication and network controls.
+Treat `data/gpt-image-canvas.sqlite` as sensitive after saving local provider keys, Agent LLM keys, cloud storage secrets, or Codex tokens. The app is designed for local workstation use; do not expose it publicly without adding your own authentication and network controls.
 
 If a real API key was ever committed, rotate the key. Git ignore rules prevent future leaks, but they do not remove secrets from existing Git history.
 

@@ -10,7 +10,7 @@ Make generated outputs easy to browse, inspect, locate, download, rerun, and und
 - Generation records store prompt, effective prompt, mode, preset, size, quality, format, count, status, references, and outputs.
 - Gallery lists generated outputs and remains available without credentials.
 - Assets expose metadata, preview, download, and raw routes.
-- Optional COS upload status is attached to asset metadata.
+- Optional cloud upload status is attached to asset metadata.
 
 ## Quality Rules
 

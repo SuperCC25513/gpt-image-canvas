@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { ChatOpenAI } from "@langchain/openai";
 import { createDeepAgent } from "deepagents";
 import type { UsableAgentLlmConfig } from "./config.js";
-import { createEmbeddedPlanningSkillsPrompt, createPlanningSkillFiles, createPlanningSystemPrompt } from "./planning-skill.js";
+import {
+  createEmbeddedPlanningSkillsPrompt,
+  createPlanningSkillFiles,
+  createPlanningSkillSelectionForRequest,
+  createPlanningSystemPrompt,
+  type PlanningSkillSelection
+} from "./planning-skill.js";
 import {
   GENERATION_PLAN_SCHEMA_VERSION,
   IMAGE_QUALITIES,
@@ -212,7 +218,8 @@ export async function createGenerationPlan(input: AgentPlannerInput): Promise<Ag
   }
 
   const plannerOptions = normalizeAgentPlannerOptions(input.plannerOptions);
-  const runner = input.runner ?? createDeepAgentsPlanner(input.llmConfig, plannerOptions);
+  const planningSkillSelection = createPlanningSkillSelectionForRequest(userText);
+  const runner = input.runner ?? createDeepAgentsPlanner(input.llmConfig, plannerOptions, planningSkillSelection);
   const now = input.now ?? new Date();
   const planId = `plan-${randomUUID()}`;
   const message = buildPlannerUserMessage({
@@ -223,7 +230,7 @@ export async function createGenerationPlan(input: AgentPlannerInput): Promise<Ag
     conversationContext: input.conversationContext
   });
 
-  const planningSkillFiles = createPlanningSkillFiles(now);
+  const planningSkillFiles = createPlanningSkillFiles(now, planningSkillSelection);
   const invokePlannerAttempt = async (
     messages: PlannerMessage[],
     attemptIndex: number
@@ -414,18 +421,22 @@ function emitAssistantDelta(onAssistantDelta: AgentPlannerInput["onAssistantDelt
   }
 }
 
-export function createDeepAgentsPlanner(config: UsableAgentLlmConfig, plannerOptions?: AgentPlannerOptions): GenerationPlanAgentRunner {
+export function createDeepAgentsPlanner(
+  config: UsableAgentLlmConfig,
+  plannerOptions?: AgentPlannerOptions,
+  skillSelection?: PlanningSkillSelection
+): GenerationPlanAgentRunner {
   const isDeepSeek = isDeepSeekAgentConfig(config);
   const model = createAgentChatModel(config, isDeepSeek, plannerOptions);
 
   if (isDeepSeek) {
-    return createDirectChatPlanner(model);
+    return createDirectChatPlanner(model, skillSelection);
   }
 
   return createDeepAgent({
     model,
     skills: ["/skills/"],
-    systemPrompt: createPlanningSystemPrompt(),
+    systemPrompt: createPlanningSystemPrompt(skillSelection),
     tools: []
   }) as unknown as GenerationPlanAgentRunner;
 }
@@ -449,7 +460,10 @@ function createAgentChatModel(
   });
 }
 
-export function createDirectChatPlanner(model: ChatOpenAI): GenerationPlanAgentRunner {
+export function createDirectChatPlanner(
+  model: ChatOpenAI,
+  skillSelection?: PlanningSkillSelection
+): GenerationPlanAgentRunner {
   return {
     streamsThinkingDeltas: true,
     async invoke(input, options) {
@@ -457,7 +471,7 @@ export function createDirectChatPlanner(model: ChatOpenAI): GenerationPlanAgentR
         [
           {
             role: "system",
-            content: createDirectPlanningSystemPrompt()
+            content: createDirectPlanningSystemPrompt(skillSelection)
           },
           ...input.messages
         ] as never,
@@ -519,11 +533,11 @@ function extractReasoningDeltasFromStreamChunk(chunk: unknown, seen: Set<string>
   return deltas;
 }
 
-function createDirectPlanningSystemPrompt(): string {
+function createDirectPlanningSystemPrompt(skillSelection?: PlanningSkillSelection): string {
   return [
-    createPlanningSystemPrompt(),
+    createPlanningSystemPrompt(skillSelection),
     "The full built-in planning skills are embedded below for this single chat completion request.",
-    createEmbeddedPlanningSkillsPrompt()
+    createEmbeddedPlanningSkillsPrompt(skillSelection)
   ].join("\n\n");
 }
 

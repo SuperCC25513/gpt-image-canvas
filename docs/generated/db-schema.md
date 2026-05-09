@@ -37,22 +37,28 @@ Stores generated and reference asset metadata.
 | `cloud_uploaded_at` | text | Optional upload timestamp. |
 | `cloud_etag` | text | Optional cloud ETag. |
 | `cloud_request_id` | text | Optional cloud request ID. |
+| `cloud_endpoint` | text | Optional S3-compatible endpoint used for fallback reads. |
+| `cloud_force_path_style` | integer | Optional S3-compatible path-style flag. |
 | `created_at` | text | Required ISO timestamp. |
 
 ## `storage_configs`
 
-Stores optional Tencent Cloud COS backup configuration.
+Stores optional Tencent Cloud COS or S3-compatible backup configuration.
 
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | text | Primary key. |
 | `provider` | text | Required storage provider. |
 | `enabled` | integer | Required boolean flag stored as integer. |
-| `secret_id` | text | Optional COS secret ID. |
-| `secret_key` | text | Optional COS secret key. |
+| `secret_id` | text | Optional COS SecretId or S3 access key ID. |
+| `secret_key` | text | Optional COS SecretKey or S3 secret access key. |
 | `bucket` | text | Optional bucket. |
 | `region` | text | Optional region. |
 | `key_prefix` | text | Optional object key prefix. |
+| `endpoint_mode` | text | Optional S3 endpoint mode (`r2-account` or `custom`). |
+| `account_id` | text | Optional Cloudflare R2 Account ID. |
+| `endpoint` | text | Optional S3-compatible endpoint URL. |
+| `force_path_style` | integer | Optional S3-compatible path-style flag. |
 | `created_at` | text | Required ISO timestamp. |
 | `updated_at` | text | Required ISO timestamp. |
 

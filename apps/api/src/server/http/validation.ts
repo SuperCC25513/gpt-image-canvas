@@ -236,26 +236,65 @@ export function parseStorageConfigPayload(input: unknown): ParseResult<SaveStora
     };
   }
 
+  const provider = parseOptionalString(input.provider) ?? "cos";
+  if (provider !== "cos" && provider !== "s3") {
+    return {
+      ok: false,
+      error: errorResponse("invalid_storage_provider", "Only Tencent COS and S3-compatible storage are supported.")
+    };
+  }
+
   const enabled = input.enabled === true;
   if (!enabled) {
     return {
       ok: true,
       value: {
         enabled: false,
-        provider: "cos"
+        provider
       }
     };
   }
 
-  const provider = parseOptionalString(input.provider) ?? "cos";
-  if (provider !== "cos") {
+  if (provider === "cos" && !isRecord(input.cos)) {
     return {
       ok: false,
-      error: errorResponse("invalid_storage_provider", "Only Tencent COS storage is supported.")
+      error: errorResponse("invalid_storage_config", "COS config must be a JSON object.")
     };
   }
 
-  if (!isRecord(input.cos)) {
+  const s3Config = input.s3;
+  if (provider === "s3" && !isRecord(s3Config)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_storage_config", "S3-compatible config must be a JSON object.")
+    };
+  }
+
+  if (provider === "s3" && isRecord(s3Config)) {
+    const endpointMode = parseOptionalString(s3Config.endpointMode) === "custom" ? "custom" : "r2-account";
+    return {
+      ok: true,
+      value: {
+        enabled: true,
+        provider: "s3",
+        s3: {
+          accessKeyId: stringValue(s3Config.accessKeyId) ?? "",
+          secretAccessKey: stringValue(s3Config.secretAccessKey),
+          preserveSecret: s3Config.preserveSecret === true,
+          bucket: stringValue(s3Config.bucket) ?? "",
+          region: stringValue(s3Config.region) ?? "",
+          keyPrefix: stringValue(s3Config.keyPrefix) ?? "",
+          endpointMode,
+          accountId: stringValue(s3Config.accountId),
+          endpoint: stringValue(s3Config.endpoint),
+          forcePathStyle: s3Config.forcePathStyle === true
+        }
+      }
+    };
+  }
+
+  const cosConfig = input.cos;
+  if (!isRecord(cosConfig)) {
     return {
       ok: false,
       error: errorResponse("invalid_storage_config", "COS config must be a JSON object.")
@@ -268,12 +307,12 @@ export function parseStorageConfigPayload(input: unknown): ParseResult<SaveStora
       enabled: true,
       provider: "cos",
       cos: {
-        secretId: stringValue(input.cos.secretId) ?? "",
-        secretKey: stringValue(input.cos.secretKey),
-        preserveSecret: input.cos.preserveSecret === true,
-        bucket: stringValue(input.cos.bucket) ?? "",
-        region: stringValue(input.cos.region) ?? "",
-        keyPrefix: stringValue(input.cos.keyPrefix) ?? ""
+        secretId: stringValue(cosConfig.secretId) ?? "",
+        secretKey: stringValue(cosConfig.secretKey),
+        preserveSecret: cosConfig.preserveSecret === true,
+        bucket: stringValue(cosConfig.bucket) ?? "",
+        region: stringValue(cosConfig.region) ?? "",
+        keyPrefix: stringValue(cosConfig.keyPrefix) ?? ""
       }
     }
   };

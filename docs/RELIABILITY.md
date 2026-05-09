@@ -54,9 +54,9 @@ Agent plans are dependency-aware DAGs. Reliability-sensitive rules:
 
 ## Cloud Backup
 
-Tencent Cloud COS is optional. Saving COS settings performs a test upload and delete before persistence.
+Tencent Cloud COS and Cloudflare R2 / S3-compatible storage are optional. Saving cloud storage settings performs a test upload and delete before persistence.
 
-COS failures must not fail local image generation. Store upload status and error metadata on the asset so the UI can explain what happened.
+Cloud upload failures must not fail local image generation. Store upload status and error metadata on the asset so the UI can explain what happened.
 
 ## Docker And Build Checks
 

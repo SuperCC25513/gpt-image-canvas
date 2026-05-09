@@ -4,7 +4,7 @@ Use this before changing credential handling, provider config, OAuth, cloud stor
 
 ## Security Model
 
-`gpt-image-canvas` is designed for local workstation use. It stores project state, generated assets, generation history, provider settings, Agent LLM settings, optional COS settings, and Codex OAuth token records in local runtime data.
+`gpt-image-canvas` is designed for local workstation use. It stores project state, generated assets, generation history, provider settings, Agent LLM settings, optional cloud storage settings, and Codex OAuth token records in local runtime data.
 
 Do not treat the app as safe for public internet exposure without adding explicit authentication and network controls.
 
@@ -15,13 +15,13 @@ Secrets may come from:
 - `.env` or runtime environment variables.
 - Local provider config stored in SQLite.
 - Agent LLM config stored in SQLite.
-- COS `SecretId` and `SecretKey` stored in SQLite.
+- Cloud storage credentials such as COS `SecretId` / `SecretKey` or S3-compatible access keys stored in SQLite.
 - Codex OAuth tokens stored in SQLite.
 
 Rules:
 
 - Never commit `.env`, `data/`, SQLite databases, generated images, `.ralph/`, `.codex-temp/`, or build output.
-- Never log raw API keys, OAuth tokens, COS secrets, or saved provider values.
+- Never log raw API keys, OAuth tokens, cloud storage secrets, or saved provider values.
 - Read APIs should return masked secrets only.
 - Preserve existing secret values only when the request explicitly uses a preserve flag or leaves a masked value unchanged.
 - If a real key was committed, rotate it. `.gitignore` does not remove secrets from Git history.

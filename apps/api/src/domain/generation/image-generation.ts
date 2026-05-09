@@ -28,13 +28,15 @@ import {
 import {
   CosAssetStorageAdapter,
   LocalAssetStorageAdapter,
-  buildCosObjectKey,
+  S3CompatibleAssetStorageAdapter,
+  buildCloudObjectKey,
   storageErrorMessage,
-  type CosAssetLocation
+  type CosAssetLocation,
+  type S3AssetLocation
 } from "../../infrastructure/storage/asset-storage.js";
 import { runtimePaths } from "../../infrastructure/runtime.js";
 import { assets, generationOutputs, generationRecords, generationReferenceAssets } from "../../infrastructure/schema.js";
-import { getActiveCosStorageConfig } from "../storage/storage-config.js";
+import { getActiveCloudStorageConfig } from "../storage/storage-config.js";
 
 const BATCH_CONCURRENCY = 2;
 const MAX_REFERENCE_IMAGE_BYTES = 50 * 1024 * 1024;
@@ -48,7 +50,7 @@ export interface StoredAssetFile {
   fileName: string;
   filePath: string;
   mimeType: string;
-  cloud?: CosAssetLocation;
+  cloud?: StoredCloudAssetLocation;
 }
 
 interface BatchOutputResult {
@@ -65,16 +67,26 @@ interface SavedProviderImage {
 }
 
 interface AssetCloudStorageRecord {
-  provider: "cos";
+  provider: "cos" | "s3";
   bucket: string;
   region: string;
   objectKey: string;
   status: "uploaded" | "failed";
+  endpoint?: string;
+  forcePathStyle?: boolean;
   error?: string;
   uploadedAt?: string;
   etag?: string;
   requestId?: string;
 }
+
+type StoredCloudAssetLocation =
+  | ({
+      provider: "cos";
+    } & CosAssetLocation)
+  | ({
+      provider: "s3";
+    } & S3AssetLocation);
 
 type PersistedGenerationInput = ImageProviderInput & {
   mode: "generate" | "edit";
@@ -354,7 +366,7 @@ export function getStoredAssetFile(assetId: string): StoredAssetFile | undefined
     fileName: asset.fileName,
     filePath,
     mimeType: asset.mimeType,
-    cloud: toCosAssetLocation(asset)
+    cloud: toCloudAssetLocation(asset)
   };
 }
 
@@ -695,6 +707,8 @@ function saveCompletedGenerationRecord(generationId: string, input: PersistedGen
           cloudUploadedAt: output.cloudStorage?.uploadedAt ?? null,
           cloudEtag: output.cloudStorage?.etag ?? null,
           cloudRequestId: output.cloudStorage?.requestId ?? null,
+          cloudEndpoint: output.cloudStorage?.endpoint ?? null,
+          cloudForcePathStyle: output.cloudStorage?.provider === "s3" ? (output.cloudStorage.forcePathStyle ? 1 : 0) : null,
           createdAt
         })
         .run();
@@ -753,6 +767,8 @@ function insertGenerationOutputs(generationId: string, outputs: BatchOutputResul
           cloudUploadedAt: output.cloudStorage?.uploadedAt ?? null,
           cloudEtag: output.cloudStorage?.etag ?? null,
           cloudRequestId: output.cloudStorage?.requestId ?? null,
+          cloudEndpoint: output.cloudStorage?.endpoint ?? null,
+          cloudForcePathStyle: output.cloudStorage?.provider === "s3" ? (output.cloudStorage.forcePathStyle ? 1 : 0) : null,
           createdAt
         })
         .run();
@@ -863,7 +879,7 @@ function toGeneratedAsset(asset: (typeof assets.$inferSelect) | undefined): Gene
     width: asset.width,
     height: asset.height,
     cloud:
-      asset.cloudProvider === "cos" && (asset.cloudStatus === "uploaded" || asset.cloudStatus === "failed")
+      (asset.cloudProvider === "cos" || asset.cloudProvider === "s3") && (asset.cloudStatus === "uploaded" || asset.cloudStatus === "failed")
         ? {
             provider: asset.cloudProvider,
             status: asset.cloudStatus,
@@ -899,59 +915,83 @@ async function saveAssetToConfiguredCloud(input: {
   mimeType: string;
   createdAt: string;
 }): Promise<AssetCloudStorageRecord | undefined> {
-  const config = getActiveCosStorageConfig();
-  if (!config) {
+  const active = getActiveCloudStorageConfig();
+  if (!active) {
     return undefined;
   }
 
-  const objectKey = buildCosObjectKey(config.keyPrefix, input.fileName, input.createdAt);
-  const adapter = new CosAssetStorageAdapter(config);
+  const objectKey = buildCloudObjectKey(active.config.keyPrefix, input.fileName, input.createdAt);
 
   try {
-    const result = await adapter.putObject({
-      key: objectKey,
-      bytes: input.bytes,
-      mimeType: input.mimeType
-    });
+    const result =
+      active.provider === "cos"
+        ? await new CosAssetStorageAdapter(active.config).putObject({
+            key: objectKey,
+            bytes: input.bytes,
+            mimeType: input.mimeType
+          })
+        : await new S3CompatibleAssetStorageAdapter(active.config).putObject({
+            key: objectKey,
+            bytes: input.bytes,
+            mimeType: input.mimeType
+          });
 
     return {
-      provider: "cos",
-      bucket: config.bucket,
-      region: config.region,
+      provider: active.provider,
+      bucket: active.config.bucket,
+      region: active.config.region,
       objectKey,
       status: "uploaded",
+      endpoint: active.provider === "s3" ? active.config.endpoint : undefined,
+      forcePathStyle: active.provider === "s3" ? active.config.forcePathStyle : undefined,
       uploadedAt: new Date().toISOString(),
       etag: result.etag,
       requestId: result.requestId
     };
   } catch (error) {
     return {
-      provider: "cos",
-      bucket: config.bucket,
-      region: config.region,
+      provider: active.provider,
+      bucket: active.config.bucket,
+      region: active.config.region,
       objectKey,
       status: "failed",
+      endpoint: active.provider === "s3" ? active.config.endpoint : undefined,
+      forcePathStyle: active.provider === "s3" ? active.config.forcePathStyle : undefined,
       error: storageErrorMessage(error)
     };
   }
 }
 
-async function readCloudAsset(location: CosAssetLocation | undefined): Promise<Buffer | undefined> {
-  const config = getActiveCosStorageConfig();
-  if (!location || !config) {
+async function readCloudAsset(location: StoredCloudAssetLocation | undefined): Promise<Buffer | undefined> {
+  const active = getActiveCloudStorageConfig();
+  if (!location || !active || location.provider !== active.provider) {
     return undefined;
   }
 
   try {
-    return await new CosAssetStorageAdapter(config).getObject(location);
+    if (active.provider === "cos" && location.provider === "cos") {
+      return await new CosAssetStorageAdapter(active.config).getObject(location);
+    }
+
+    if (active.provider !== "s3" || location.provider !== "s3") {
+      return undefined;
+    }
+
+    return await new S3CompatibleAssetStorageAdapter({
+      ...active.config,
+      bucket: location.bucket,
+      region: location.region,
+      endpoint: location.endpoint,
+      forcePathStyle: location.forcePathStyle
+    }).getObject(location);
   } catch {
     return undefined;
   }
 }
 
-function toCosAssetLocation(asset: typeof assets.$inferSelect): CosAssetLocation | undefined {
+function toCloudAssetLocation(asset: typeof assets.$inferSelect): StoredCloudAssetLocation | undefined {
   if (
-    asset.cloudProvider !== "cos" ||
+    (asset.cloudProvider !== "cos" && asset.cloudProvider !== "s3") ||
     asset.cloudStatus !== "uploaded" ||
     !asset.cloudBucket ||
     !asset.cloudRegion ||
@@ -960,10 +1000,26 @@ function toCosAssetLocation(asset: typeof assets.$inferSelect): CosAssetLocation
     return undefined;
   }
 
+  if (asset.cloudProvider === "cos") {
+    return {
+      provider: "cos",
+      bucket: asset.cloudBucket,
+      region: asset.cloudRegion,
+      key: asset.cloudObjectKey
+    };
+  }
+
+  if (!asset.cloudEndpoint) {
+    return undefined;
+  }
+
   return {
+    provider: "s3",
     bucket: asset.cloudBucket,
     region: asset.cloudRegion,
-    key: asset.cloudObjectKey
+    key: asset.cloudObjectKey,
+    endpoint: asset.cloudEndpoint,
+    forcePathStyle: asset.cloudForcePathStyle === 1
   };
 }
 

@@ -22,7 +22,7 @@ Do not assume a configured image provider means Agent planning is configured.
 
 ## Cloud Storage
 
-Tencent Cloud COS backup is optional. Saving COS settings should test upload and delete before persistence. COS failure should show on the asset but must not make local generation unavailable.
+Tencent Cloud COS and Cloudflare R2 / S3-compatible backups are optional. Saving cloud storage settings should test upload and delete before persistence. Cloud upload failure should show on the asset but must not make local generation unavailable.
 
 ## Acceptance Criteria For Changes
 

@@ -7,6 +7,41 @@ export const ECOMMERCE_VISUAL_COPYWRITING_SKILL_PATH = "/skills/ecommerce-visual
 export const ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES_PATH =
   "/skills/ecommerce-visual-copywriting/references/compliance-rules.md" as const;
 
+export interface PlanningSkillSelection {
+  includeEcommerce: boolean;
+}
+
+const DEFAULT_PLANNING_SKILL_SELECTION: PlanningSkillSelection = {
+  includeEcommerce: false
+};
+
+const ECOMMERCE_DIRECT_INTENT_PATTERN =
+  /e-?commerce|marketplace|listing|product\s+detail\s+page|\bpdp\b|\bsku\b|\bctr\b|shopify|amazon|taobao|tmall|jd\.?com|pinduoduo|douyin\s+shop|xiaohongshu|\u7535\u5546|\u6dd8\u5b9d|\u5929\u732b|\u4eac\u4e1c|\u62fc\u591a\u591a|\u6296\u97f3\u5c0f\u5e97|\u5c0f\u7ea2\u4e66|\u5e97\u94fa|\u5546\u8be6|\u8be6\u60c5\u9875|\u5546\u54c1\u8be6\u60c5|\u4e3b\u56fe|\u5546\u54c1\u4e3b\u56fe|\u5e7f\u544a\u6cd5|\u5e73\u53f0\u5ba1\u6838|\u5ba1\u6838\u5408\u89c4|\u654f\u611f\u8bcd/iu;
+const ECOMMERCE_PRODUCT_COPY_INTENT_PATTERN =
+  /(?:product|\bsku\b|\u5546\u54c1|\u4ea7\u54c1).{0,24}(?:copy|selling\s+point|listing|detail|marketplace|shop|store|compliance|\u6587\u6848|\u5356\u70b9|\u8be6\u60c5|\u5408\u89c4)|(?:copy|selling\s+point|\u6587\u6848|\u5356\u70b9).{0,24}(?:product|\bsku\b|\u5546\u54c1|\u4ea7\u54c1)/iu;
+
+export function createPlanningSkillSelectionForRequest(userText: string): PlanningSkillSelection {
+  return {
+    includeEcommerce: hasEcommercePlanningIntent(userText)
+  };
+}
+
+export function hasEcommercePlanningIntent(userText: string): boolean {
+  const text = userText.trim();
+  if (!text) {
+    return false;
+  }
+
+  return ECOMMERCE_DIRECT_INTENT_PATTERN.test(text) || ECOMMERCE_PRODUCT_COPY_INTENT_PATTERN.test(text);
+}
+
+function normalizePlanningSkillSelection(selection?: PlanningSkillSelection): PlanningSkillSelection {
+  return {
+    ...DEFAULT_PLANNING_SKILL_SELECTION,
+    ...selection
+  };
+}
+
 export const CANVAS_IMAGE_PLANNING_SKILL = `---
 name: canvas-image-planning
 description: Turn a creator image request into strict GenerationPlan JSON for the canvas.
@@ -264,45 +299,68 @@ export const ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES = `# 电商文案合�
 8. 提交平台预审，通过后再正式上线。
 `;
 
-export function createEmbeddedPlanningSkillsPrompt(): string {
-  return [
-    CANVAS_IMAGE_PLANNING_SKILL,
-    ECOMMERCE_VISUAL_COPYWRITING_SKILL,
-    `# Reference: ${ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES_PATH}`,
-    ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES
-  ].join("\n\n");
+export function createEmbeddedPlanningSkillsPrompt(selection?: PlanningSkillSelection): string {
+  const normalizedSelection = normalizePlanningSkillSelection(selection);
+  const sections = [CANVAS_IMAGE_PLANNING_SKILL];
+  if (normalizedSelection.includeEcommerce) {
+    sections.push(
+      ECOMMERCE_VISUAL_COPYWRITING_SKILL,
+      `# Reference: ${ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES_PATH}`,
+      ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES
+    );
+  }
+
+  return sections.join("\n\n");
 }
 
-export function createPlanningSkillFiles(now = new Date()): Record<string, FileData> {
+export function createPlanningSkillFiles(
+  now = new Date(),
+  selection?: PlanningSkillSelection
+): Record<string, FileData> {
   const timestamp = now.toISOString();
-
-  return {
+  const normalizedSelection = normalizePlanningSkillSelection(selection);
+  const files: Record<string, FileData> = {
     [CANVAS_IMAGE_PLANNING_SKILL_PATH]: {
       content: CANVAS_IMAGE_PLANNING_SKILL.split("\n"),
       created_at: timestamp,
       modified_at: timestamp
-    },
-    [ECOMMERCE_VISUAL_COPYWRITING_SKILL_PATH]: {
+    }
+  };
+
+  if (normalizedSelection.includeEcommerce) {
+    files[ECOMMERCE_VISUAL_COPYWRITING_SKILL_PATH] = {
       content: ECOMMERCE_VISUAL_COPYWRITING_SKILL.split("\n"),
       created_at: timestamp,
       modified_at: timestamp
-    },
-    [ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES_PATH]: {
+    };
+    files[ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES_PATH] = {
       content: ECOMMERCE_VISUAL_COPYWRITING_COMPLIANCE_RULES.split("\n"),
       created_at: timestamp,
       modified_at: timestamp
-    }
-  };
+    };
+  }
+
+  return files;
 }
 
-export function createPlanningSystemPrompt(): string {
-  return [
+export function createPlanningSystemPrompt(selection?: PlanningSkillSelection): string {
+  const normalizedSelection = normalizePlanningSkillSelection(selection);
+  const lines = [
     "You are the gpt-image-canvas planning agent.",
     `Use the built-in ${CANVAS_IMAGE_PLANNING_SKILL_VERSION} skill.`,
-    `For ecommerce, product listing, marketplace, or advertising-compliance requests, also use the built-in ${ECOMMERCE_VISUAL_COPYWRITING_SKILL_VERSION} skill.`,
     "Your only task is to produce strict GenerationPlan JSON for the canvas.",
     "Do not call tools unless needed for your internal planning state.",
     "Do not expose filesystem, shell, database, or environment details.",
     "Return exactly one JSON object that follows the skill schema."
-  ].join("\n");
+  ];
+
+  if (normalizedSelection.includeEcommerce) {
+    lines.splice(
+      2,
+      0,
+      `This request has explicit ecommerce, product listing, marketplace, or advertising-compliance intent; also use the built-in ${ECOMMERCE_VISUAL_COPYWRITING_SKILL_VERSION} skill.`
+    );
+  }
+
+  return lines.join("\n");
 }

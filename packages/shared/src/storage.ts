@@ -9,10 +9,25 @@ export interface CosStorageConfigView {
   keyPrefix: string;
 }
 
+export type S3EndpointMode = "r2-account" | "custom";
+
+export interface S3StorageConfigView {
+  accessKeyId: string;
+  secretAccessKey: MaskedSecret;
+  bucket: string;
+  region: string;
+  keyPrefix: string;
+  endpointMode: S3EndpointMode;
+  accountId: string;
+  endpoint: string;
+  forcePathStyle: boolean;
+}
+
 export interface StorageConfigResponse {
   enabled: boolean;
   provider: CloudStorageProvider;
   cos: CosStorageConfigView;
+  s3: S3StorageConfigView;
 }
 
 export interface SaveCosStorageConfig {
@@ -24,10 +39,24 @@ export interface SaveCosStorageConfig {
   keyPrefix: string;
 }
 
+export interface SaveS3StorageConfig {
+  accessKeyId: string;
+  secretAccessKey?: string;
+  preserveSecret?: boolean;
+  bucket: string;
+  region: string;
+  keyPrefix: string;
+  endpointMode: S3EndpointMode;
+  accountId?: string;
+  endpoint?: string;
+  forcePathStyle?: boolean;
+}
+
 export interface SaveStorageConfigRequest {
   enabled: boolean;
   provider: CloudStorageProvider;
   cos?: SaveCosStorageConfig;
+  s3?: SaveS3StorageConfig;
 }
 
 export interface StorageTestResult {

@@ -112,6 +112,7 @@ export type {
   SaveLocalOpenAIProviderConfig,
   SaveProviderConfigRequest,
   SaveStorageConfigRequest,
+  S3EndpointMode,
   SizePreset,
   StorageConfigResponse,
   StorageTestResult,
