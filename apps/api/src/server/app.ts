@@ -17,7 +17,6 @@ import { registerProjectRoutes } from "./routes/project.js";
 import { registerPromptFavoriteRoutes } from "./routes/prompt-favorites.js";
 import { registerPromptPoolRoutes } from "./routes/prompt-pool.js";
 import { registerProviderConfigRoutes } from "./routes/provider-config.js";
-import { registerStorageRoutes } from "./routes/storage.js";
 
 export const agentWebSocketServer = new WebSocketServer({ noServer: true });
 export const app = createApp();
@@ -40,7 +39,6 @@ export function createApp(): Hono {
   registerGalleryRoutes(app);
   registerPromptPoolRoutes(app);
   registerPromptFavoriteRoutes(app);
-  registerStorageRoutes(app);
   registerAssetRoutes(app);
   registerImageRoutes(app);
   registerAgentWebSocketRoutes(app);

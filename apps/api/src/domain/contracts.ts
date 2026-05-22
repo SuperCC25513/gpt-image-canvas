@@ -24,8 +24,6 @@ export type {
   AppConfig,
   AuthStatusResponse,
   AssetMetadataResponse,
-  AssetCloudUploadStatus,
-  CloudStorageProvider,
   CodexAuthSessionView,
   CodexDevicePollResponse,
   CodexDevicePollStatus,
@@ -34,7 +32,6 @@ export type {
   EditImageRequest,
   GenerateImageRequest,
   GeneratedAsset,
-  GeneratedAssetCloudInfo,
   GalleryExportRequest,
   GalleryImageItem,
   GalleryResponse,
@@ -145,11 +142,7 @@ export type {
   SaveAgentLlmConfigRequest,
   SaveLocalOpenAIProviderConfig,
   SaveProviderConfigRequest,
-  SaveStorageConfigRequest,
-  S3EndpointMode,
   SizePreset,
-  StorageConfigResponse,
-  StorageTestResult,
   StylePresetId,
   ValidationResult
 } from "@gpt-image-canvas/shared";

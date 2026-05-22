@@ -1,10 +1,10 @@
 # Security And Privacy Guide
 
-Use this before changing credential handling, provider config, OAuth, cloud storage, generated assets, logs, Docker, or local runtime data.
+变更凭据处理、提供方配置、OAuth、生成资产、日志、Docker 或本地运行时数据前阅读本文。
 
 ## Security Model
 
-`gpt-image-canvas` is designed for local workstation use. It stores project state, generated assets, generation history, provider settings, Agent LLM settings, optional cloud storage settings, and Codex OAuth token records in local runtime data.
+`gpt-image-canvas` 面向本地工作站使用。项目状态、生成资产、生成历史、提供方设置、Agent LLM 设置和 Codex OAuth token 记录都保存在本地运行时数据中。
 
 Do not treat the app as safe for public internet exposure without adding explicit authentication and network controls.
 
@@ -15,13 +15,12 @@ Secrets may come from:
 - `.env` or runtime environment variables.
 - Local provider config stored in SQLite.
 - Agent LLM config stored in SQLite.
-- Cloud storage credentials such as COS `SecretId` / `SecretKey` or S3-compatible access keys stored in SQLite.
 - Codex OAuth tokens stored in SQLite.
 
 Rules:
 
 - Never commit `.env`, `data/`, SQLite databases, generated images, `.ralph/`, `.codex-temp/`, or build output.
-- Never log raw API keys, OAuth tokens, cloud storage secrets, or saved provider values.
+- 不要记录原始 API key、OAuth token 或已保存的提供方配置值。
 - Read APIs should return masked secrets only.
 - Preserve existing secret values only when the request explicitly uses a preserve flag or leaves a masked value unchanged.
 - If a real key was committed, rotate it. `.gitignore` does not remove secrets from Git history.
@@ -57,4 +56,3 @@ Avoid plain `docker compose config` because it can expand and print env values.
 - Are generated files written only under `DATA_DIR`?
 - Are asset reads constrained to the expected asset directory?
 - Does the change avoid exposing the local app publicly by default?
-

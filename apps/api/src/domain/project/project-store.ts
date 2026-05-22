@@ -301,15 +301,6 @@ function toGeneratedAsset(asset: (typeof assets.$inferSelect) | undefined): Gene
     fileName: asset.fileName,
     mimeType: asset.mimeType,
     width: asset.width,
-    height: asset.height,
-    cloud:
-      (asset.cloudProvider === "cos" || asset.cloudProvider === "s3") && (asset.cloudStatus === "uploaded" || asset.cloudStatus === "failed")
-        ? {
-            provider: asset.cloudProvider,
-            status: asset.cloudStatus,
-            lastError: asset.cloudError ?? undefined,
-            uploadedAt: asset.cloudUploadedAt ?? undefined
-          }
-        : undefined
+    height: asset.height
   };
 }

@@ -5,7 +5,6 @@ import sharp from "sharp";
 import type {
   AssetMetadataResponse,
   GeneratedAsset,
-  GeneratedAssetCloudInfo,
   GenerationOutput,
   GenerationRecord,
   GenerationResponse,
@@ -25,18 +24,9 @@ import {
   type ImageProviderInput,
   type ProviderImage
 } from "../../infrastructure/providers/image-provider.js";
-import {
-  CosAssetStorageAdapter,
-  LocalAssetStorageAdapter,
-  S3CompatibleAssetStorageAdapter,
-  buildCloudObjectKey,
-  storageErrorMessage,
-  type CosAssetLocation,
-  type S3AssetLocation
-} from "../../infrastructure/storage/asset-storage.js";
+import { LocalAssetStorageAdapter } from "../../infrastructure/storage/asset-storage.js";
 import { runtimePaths } from "../../infrastructure/runtime.js";
 import { assets, generationOutputs, generationRecords, generationReferenceAssets } from "../../infrastructure/schema.js";
-import { getActiveCloudStorageConfig } from "../storage/storage-config.js";
 
 const BATCH_CONCURRENCY = 2;
 const MAX_REFERENCE_IMAGE_BYTES = 50 * 1024 * 1024;
@@ -50,43 +40,18 @@ export interface StoredAssetFile {
   fileName: string;
   filePath: string;
   mimeType: string;
-  cloud?: StoredCloudAssetLocation;
 }
 
 interface BatchOutputResult {
   id: string;
   status: "succeeded" | "failed";
   asset?: GeneratedAsset;
-  cloudStorage?: AssetCloudStorageRecord;
   error?: string;
 }
 
 interface SavedProviderImage {
   asset: GeneratedAsset;
-  cloudStorage?: AssetCloudStorageRecord;
 }
-
-interface AssetCloudStorageRecord {
-  provider: "cos" | "s3";
-  bucket: string;
-  region: string;
-  objectKey: string;
-  status: "uploaded" | "failed";
-  endpoint?: string;
-  forcePathStyle?: boolean;
-  error?: string;
-  uploadedAt?: string;
-  etag?: string;
-  requestId?: string;
-}
-
-type StoredCloudAssetLocation =
-  | ({
-      provider: "cos";
-    } & CosAssetLocation)
-  | ({
-      provider: "s3";
-    } & S3AssetLocation);
 
 type PersistedGenerationInput = ImageProviderInput & {
   mode: "generate" | "edit";
@@ -365,8 +330,7 @@ export function getStoredAssetFile(assetId: string): StoredAssetFile | undefined
     id: asset.id,
     fileName: asset.fileName,
     filePath,
-    mimeType: asset.mimeType,
-    cloud: toCloudAssetLocation(asset)
+    mimeType: asset.mimeType
   };
 }
 
@@ -382,16 +346,7 @@ export async function readStoredAsset(assetId: string): Promise<{ file: StoredAs
       bytes: await localAssetStorage.getObject({ filePath: file.filePath })
     };
   } catch {
-    const bytes = await readCloudAsset(file.cloud);
-    if (!bytes) {
-      return undefined;
-    }
-
-    void localAssetStorage.putObject({ filePath: file.filePath, bytes }).catch(() => undefined);
-    return {
-      file,
-      bytes
-    };
+    return undefined;
   }
 }
 
@@ -437,8 +392,7 @@ async function generateSingleOutput(input: ImageProviderInput, provider: ImagePr
     return {
       id: outputId,
       status: "succeeded",
-      asset: saved.asset,
-      cloudStorage: saved.cloudStorage
+      asset: saved.asset
     };
   } catch (error) {
     if (isAbortError(error) || signal?.aborted) {
@@ -477,8 +431,7 @@ async function editSingleOutput(input: EditImageProviderInput, provider: ImagePr
     return {
       id: outputId,
       status: "succeeded",
-      asset: saved.asset,
-      cloudStorage: saved.cloudStorage
+      asset: saved.asset
     };
   } catch (error) {
     if (isAbortError(error) || signal?.aborted) {
@@ -507,12 +460,6 @@ async function saveProviderImage(image: ProviderImage, input: ImageProviderInput
   }
 
   await localAssetStorage.putObject({ filePath, bytes });
-  const cloudStorage = await saveAssetToConfiguredCloud({
-    fileName,
-    bytes,
-    mimeType,
-    createdAt: new Date().toISOString()
-  });
 
   return {
     asset: {
@@ -521,10 +468,8 @@ async function saveProviderImage(image: ProviderImage, input: ImageProviderInput
       fileName,
       mimeType,
       width: imageSize.width,
-      height: imageSize.height,
-      cloud: toGeneratedAssetCloud(cloudStorage)
-    },
-    cloudStorage
+      height: imageSize.height
+    }
   };
 }
 
@@ -698,17 +643,6 @@ function saveCompletedGenerationRecord(generationId: string, input: PersistedGen
           mimeType: output.asset.mimeType,
           width: output.asset.width,
           height: output.asset.height,
-          cloudProvider: output.cloudStorage?.provider ?? null,
-          cloudBucket: output.cloudStorage?.bucket ?? null,
-          cloudRegion: output.cloudStorage?.region ?? null,
-          cloudObjectKey: output.cloudStorage?.objectKey ?? null,
-          cloudStatus: output.cloudStorage?.status ?? null,
-          cloudError: output.cloudStorage?.error ?? null,
-          cloudUploadedAt: output.cloudStorage?.uploadedAt ?? null,
-          cloudEtag: output.cloudStorage?.etag ?? null,
-          cloudRequestId: output.cloudStorage?.requestId ?? null,
-          cloudEndpoint: output.cloudStorage?.endpoint ?? null,
-          cloudForcePathStyle: output.cloudStorage?.provider === "s3" ? (output.cloudStorage.forcePathStyle ? 1 : 0) : null,
           createdAt
         })
         .run();
@@ -758,17 +692,6 @@ function insertGenerationOutputs(generationId: string, outputs: BatchOutputResul
           mimeType: output.asset.mimeType,
           width: output.asset.width,
           height: output.asset.height,
-          cloudProvider: output.cloudStorage?.provider ?? null,
-          cloudBucket: output.cloudStorage?.bucket ?? null,
-          cloudRegion: output.cloudStorage?.region ?? null,
-          cloudObjectKey: output.cloudStorage?.objectKey ?? null,
-          cloudStatus: output.cloudStorage?.status ?? null,
-          cloudError: output.cloudStorage?.error ?? null,
-          cloudUploadedAt: output.cloudStorage?.uploadedAt ?? null,
-          cloudEtag: output.cloudStorage?.etag ?? null,
-          cloudRequestId: output.cloudStorage?.requestId ?? null,
-          cloudEndpoint: output.cloudStorage?.endpoint ?? null,
-          cloudForcePathStyle: output.cloudStorage?.provider === "s3" ? (output.cloudStorage.forcePathStyle ? 1 : 0) : null,
           createdAt
         })
         .run();
@@ -877,16 +800,7 @@ function toGeneratedAsset(asset: (typeof assets.$inferSelect) | undefined): Gene
     fileName: asset.fileName,
     mimeType: asset.mimeType,
     width: asset.width,
-    height: asset.height,
-    cloud:
-      (asset.cloudProvider === "cos" || asset.cloudProvider === "s3") && (asset.cloudStatus === "uploaded" || asset.cloudStatus === "failed")
-        ? {
-            provider: asset.cloudProvider,
-            status: asset.cloudStatus,
-            lastError: asset.cloudError ?? undefined,
-            uploadedAt: asset.cloudUploadedAt ?? undefined
-          }
-        : undefined
+    height: asset.height
   };
 }
 
@@ -906,133 +820,6 @@ function toGenerationOutput(output: BatchOutputResult): GenerationOutput {
     status: output.status,
     asset: output.asset,
     error: output.error
-  };
-}
-
-async function saveAssetToConfiguredCloud(input: {
-  fileName: string;
-  bytes: Buffer;
-  mimeType: string;
-  createdAt: string;
-}): Promise<AssetCloudStorageRecord | undefined> {
-  const active = getActiveCloudStorageConfig();
-  if (!active) {
-    return undefined;
-  }
-
-  const objectKey = buildCloudObjectKey(active.config.keyPrefix, input.fileName, input.createdAt);
-
-  try {
-    const result =
-      active.provider === "cos"
-        ? await new CosAssetStorageAdapter(active.config).putObject({
-            key: objectKey,
-            bytes: input.bytes,
-            mimeType: input.mimeType
-          })
-        : await new S3CompatibleAssetStorageAdapter(active.config).putObject({
-            key: objectKey,
-            bytes: input.bytes,
-            mimeType: input.mimeType
-          });
-
-    return {
-      provider: active.provider,
-      bucket: active.config.bucket,
-      region: active.config.region,
-      objectKey,
-      status: "uploaded",
-      endpoint: active.provider === "s3" ? active.config.endpoint : undefined,
-      forcePathStyle: active.provider === "s3" ? active.config.forcePathStyle : undefined,
-      uploadedAt: new Date().toISOString(),
-      etag: result.etag,
-      requestId: result.requestId
-    };
-  } catch (error) {
-    return {
-      provider: active.provider,
-      bucket: active.config.bucket,
-      region: active.config.region,
-      objectKey,
-      status: "failed",
-      endpoint: active.provider === "s3" ? active.config.endpoint : undefined,
-      forcePathStyle: active.provider === "s3" ? active.config.forcePathStyle : undefined,
-      error: storageErrorMessage(error)
-    };
-  }
-}
-
-async function readCloudAsset(location: StoredCloudAssetLocation | undefined): Promise<Buffer | undefined> {
-  const active = getActiveCloudStorageConfig();
-  if (!location || !active || location.provider !== active.provider) {
-    return undefined;
-  }
-
-  try {
-    if (active.provider === "cos" && location.provider === "cos") {
-      return await new CosAssetStorageAdapter(active.config).getObject(location);
-    }
-
-    if (active.provider !== "s3" || location.provider !== "s3") {
-      return undefined;
-    }
-
-    return await new S3CompatibleAssetStorageAdapter({
-      ...active.config,
-      bucket: location.bucket,
-      region: location.region,
-      endpoint: location.endpoint,
-      forcePathStyle: location.forcePathStyle
-    }).getObject(location);
-  } catch {
-    return undefined;
-  }
-}
-
-function toCloudAssetLocation(asset: typeof assets.$inferSelect): StoredCloudAssetLocation | undefined {
-  if (
-    (asset.cloudProvider !== "cos" && asset.cloudProvider !== "s3") ||
-    asset.cloudStatus !== "uploaded" ||
-    !asset.cloudBucket ||
-    !asset.cloudRegion ||
-    !asset.cloudObjectKey
-  ) {
-    return undefined;
-  }
-
-  if (asset.cloudProvider === "cos") {
-    return {
-      provider: "cos",
-      bucket: asset.cloudBucket,
-      region: asset.cloudRegion,
-      key: asset.cloudObjectKey
-    };
-  }
-
-  if (!asset.cloudEndpoint) {
-    return undefined;
-  }
-
-  return {
-    provider: "s3",
-    bucket: asset.cloudBucket,
-    region: asset.cloudRegion,
-    key: asset.cloudObjectKey,
-    endpoint: asset.cloudEndpoint,
-    forcePathStyle: asset.cloudForcePathStyle === 1
-  };
-}
-
-function toGeneratedAssetCloud(cloudStorage: AssetCloudStorageRecord | undefined): GeneratedAssetCloudInfo | undefined {
-  if (!cloudStorage) {
-    return undefined;
-  }
-
-  return {
-    provider: cloudStorage.provider,
-    status: cloudStorage.status,
-    lastError: cloudStorage.error,
-    uploadedAt: cloudStorage.uploadedAt
   };
 }
 

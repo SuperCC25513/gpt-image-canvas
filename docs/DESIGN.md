@@ -34,7 +34,7 @@ The current visual language is warm paper, dark ink, copper accent, teal focus, 
 - Canvas interactions should prioritize direct manipulation: select, place, locate, rerun, retry, download, and inspect without forcing users through extra screens.
 - Provider and Agent configuration should make trust visible: show whether a source is available, which source is active, and whether secrets are masked.
 - Agent plan UI must keep the human in control. Plans are drafts until confirmed, and execution progress should stay inspectable.
-- Gallery and history views should keep prompts, outputs, local assets, and cloud upload status connected.
+- Gallery 和历史记录应保持提示词、输出和本地资产之间的关联清晰可追踪。
 
 ## Accessibility
 

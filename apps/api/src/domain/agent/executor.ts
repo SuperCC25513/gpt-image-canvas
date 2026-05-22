@@ -590,8 +590,7 @@ function cloneGenerationPlan(plan: GenerationPlan): GenerationPlan {
 
 function cloneGeneratedAsset(asset: GeneratedAsset): GeneratedAsset {
   return {
-    ...asset,
-    cloud: asset.cloud ? { ...asset.cloud } : undefined
+    ...asset
   };
 }
 

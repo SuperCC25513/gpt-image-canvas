@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleStop,
-  Cloud,
   Copy,
   Download,
   ExternalLink,
@@ -100,7 +99,6 @@ import {
   type AgentThinkingType,
   type AuthStatusResponse,
   type AssetMetadataResponse,
-  type CloudStorageProvider,
   type CodexDevicePollResponse,
   type CodexDeviceStartResponse,
   type CodexLogoutResponse,
@@ -123,11 +121,7 @@ import {
   type PromptPoolItem,
   type ReferenceImageInput,
   type ResolutionTier,
-  type SaveStorageConfigRequest,
-  type S3EndpointMode,
   type SizePreset,
-  type StorageConfigResponse,
-  type StorageTestResult,
   type StylePresetId
 } from "@gpt-image-canvas/shared";
 import { LOCALES, localizedApiErrorMessage, useI18n, type Locale, type Translate } from "../../shared/i18n";
@@ -239,29 +233,6 @@ function agentPreviewDisclosureLabel(locale: Locale, count: number): string {
 
   return `${count} ${count === 1 ? "thumbnail" : "thumbnails"}`;
 }
-
-const defaultStorageConfigForm: StorageConfigFormState = {
-  enabled: false,
-  provider: "cos",
-  cos: {
-    secretId: "",
-    secretKey: "",
-    bucket: "source-1253253332",
-    region: "ap-nanjing",
-    keyPrefix: "gpt-image-canvas/assets"
-  },
-  s3: {
-    accessKeyId: "",
-    secretAccessKey: "",
-    bucket: "",
-    region: "auto",
-    keyPrefix: "gpt-image-canvas/assets",
-    endpointMode: "r2-account",
-    accountId: "",
-    endpoint: "",
-    forcePathStyle: false
-  }
-};
 
 const canvasAssetStore: TLAssetStore = {
   async upload(_asset, file) {
@@ -506,34 +477,6 @@ interface ActiveGenerationTask {
   placeholderSet: ActiveGenerationPlaceholders;
 }
 
-interface StorageConfigFormState {
-  enabled: boolean;
-  provider: CloudStorageProvider;
-  cos: {
-    secretId: string;
-    secretKey: string;
-    bucket: string;
-    region: string;
-    keyPrefix: string;
-  };
-  s3: {
-    accessKeyId: string;
-    secretAccessKey: string;
-    bucket: string;
-    region: string;
-    keyPrefix: string;
-    endpointMode: S3EndpointMode;
-    accountId: string;
-    endpoint: string;
-    forcePathStyle: boolean;
-  };
-}
-
-interface StorageSecretTouchedState {
-  cos: boolean;
-  s3: boolean;
-}
-
 interface ReferenceSelectionItem {
   assetId: TLAssetId | null;
   localAssetId?: string;
@@ -702,13 +645,10 @@ function generationFailureMessage(record: GenerationRecord, t: Translate): strin
   return summary || t("generationNoSuccessfulImage");
 }
 
-function generationWarningMessage(record: GenerationRecord, insertedCount: number, failedCount: number, cloudFailedCount: number, t: Translate): string {
+function generationWarningMessage(record: GenerationRecord, insertedCount: number, failedCount: number, t: Translate): string {
   const parts = [t("generationImageInsertedPart", { count: insertedCount })];
   if (failedCount > 0) {
     parts.push(t("generationFailedCount", { count: failedCount }));
-  }
-  if (cloudFailedCount > 0) {
-    parts.push(t("generationCloudSavedButFailed", { count: cloudFailedCount }));
   }
 
   const firstFailure = failedOutputMessages(record)[0];
@@ -831,14 +771,6 @@ function firstDownloadableAsset(record: GenerationRecord): GeneratedAsset | unde
 
 function successfulOutputCount(record: GenerationRecord): number {
   return record.outputs.filter((output) => output.status === "succeeded" && output.asset).length;
-}
-
-function cloudFailureCount(record: GenerationRecord): number {
-  return record.outputs.filter((output) => output.asset?.cloud?.status === "failed").length;
-}
-
-function firstCloudFailureMessage(record: GenerationRecord): string | undefined {
-  return record.outputs.find((output) => output.asset?.cloud?.status === "failed")?.asset?.cloud?.lastError;
 }
 
 function generationModeToRecordMode(mode: GenerationMode): GenerationRecord["mode"] {
@@ -2523,91 +2455,6 @@ async function readErrorMessage(response: Response, locale: Locale, t: Translate
   }
 }
 
-function storageConfigToForm(config: StorageConfigResponse | null): StorageConfigFormState {
-  if (!config) {
-    return cloneDefaultStorageConfigForm();
-  }
-
-  return {
-    enabled: config.enabled,
-    provider: config.provider,
-    cos: {
-      secretId: config.cos.secretId,
-      secretKey: config.cos.secretKey.value ?? "",
-      bucket: config.cos.bucket,
-      region: config.cos.region,
-      keyPrefix: config.cos.keyPrefix
-    },
-    s3: {
-      accessKeyId: config.s3.accessKeyId,
-      secretAccessKey: config.s3.secretAccessKey.value ?? "",
-      bucket: config.s3.bucket,
-      region: config.s3.region,
-      keyPrefix: config.s3.keyPrefix,
-      endpointMode: config.s3.endpointMode,
-      accountId: config.s3.accountId,
-      endpoint: config.s3.endpoint,
-      forcePathStyle: config.s3.forcePathStyle
-    }
-  };
-}
-
-function storageConfigRequestBody(
-  form: StorageConfigFormState,
-  options: { preserveSecret: boolean; forceEnabled?: boolean }
-): SaveStorageConfigRequest {
-  const enabled = options.forceEnabled ?? form.enabled;
-  if (form.provider === "s3") {
-    return {
-      enabled,
-      provider: "s3",
-      s3: {
-        accessKeyId: form.s3.accessKeyId.trim(),
-        secretAccessKey: options.preserveSecret ? undefined : form.s3.secretAccessKey,
-        preserveSecret: options.preserveSecret,
-        bucket: form.s3.bucket.trim(),
-        region: form.s3.region.trim(),
-        keyPrefix: form.s3.keyPrefix.trim(),
-        endpointMode: form.s3.endpointMode,
-        accountId: form.s3.accountId.trim(),
-        endpoint: form.s3.endpoint.trim(),
-        forcePathStyle: form.s3.forcePathStyle
-      }
-    };
-  }
-
-  return {
-    enabled,
-    provider: "cos",
-    cos: {
-      secretId: form.cos.secretId.trim(),
-      secretKey: options.preserveSecret ? undefined : form.cos.secretKey,
-      preserveSecret: options.preserveSecret,
-      bucket: form.cos.bucket.trim(),
-      region: form.cos.region.trim(),
-      keyPrefix: form.cos.keyPrefix.trim()
-    }
-  };
-}
-
-function cloneDefaultStorageConfigForm(): StorageConfigFormState {
-  return {
-    ...defaultStorageConfigForm,
-    cos: { ...defaultStorageConfigForm.cos },
-    s3: { ...defaultStorageConfigForm.s3 }
-  };
-}
-
-function shouldPreserveStorageSecret(
-  form: StorageConfigFormState,
-  config: StorageConfigResponse | null,
-  touched: StorageSecretTouchedState
-): boolean {
-  return form.provider === "s3"
-    ? !touched.s3 && Boolean(config?.s3.secretAccessKey.hasSecret)
-    : !touched.cos && Boolean(config?.cos.secretKey.hasSecret);
-}
-
 function requestGenerationNotificationPermission(): void {
   if (typeof window === "undefined" || !("Notification" in window) || Notification.permission !== "default") {
     return;
@@ -2660,7 +2507,7 @@ function SaveStatusIcon({ status }: { status: SaveStatus }) {
     return <CheckCircle2 className="size-3.5" aria-hidden="true" />;
   }
 
-  return <Cloud className="size-3.5" aria-hidden="true" />;
+  return <CircleStop className="size-3.5" aria-hidden="true" />;
 }
 
 function BrandMark({ className = "" }: { className?: string }) {
@@ -3193,10 +3040,8 @@ export function App() {
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const [isMobileDrawer, setIsMobileDrawer] = useState(false);
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
-  const [isStorageDialogOpen, setIsStorageDialogOpen] = useState(false);
   const [isProviderConfigDialogOpen, setIsProviderConfigDialogOpen] = useState(false);
   const [isAgentSkillDialogOpen, setIsAgentSkillDialogOpen] = useState(false);
-  const [storageConfig, setStorageConfig] = useState<StorageConfigResponse | null>(null);
   const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState("");
@@ -3204,12 +3049,6 @@ export function App() {
   const [codexDevice, setCodexDevice] = useState<CodexDeviceStartResponse | null>(null);
   const [codexLoginStatus, setCodexLoginStatus] = useState<CodexLoginStatus>("idle");
   const [codexLoginMessage, setCodexLoginMessage] = useState("");
-  const [storageForm, setStorageForm] = useState<StorageConfigFormState>(() => cloneDefaultStorageConfigForm());
-  const [storageSecretTouched, setStorageSecretTouched] = useState<StorageSecretTouchedState>({ cos: false, s3: false });
-  const [storageError, setStorageError] = useState("");
-  const [storageMessage, setStorageMessage] = useState("");
-  const [isStorageSaving, setIsStorageSaving] = useState(false);
-  const [isStorageTesting, setIsStorageTesting] = useState(false);
   const [referenceSelection, setReferenceSelection] = useState<ReferenceSelection>(() => missingReferenceSelection(t));
   const [agentSizePresetId, setAgentSizePresetId] = useState(DEFAULT_SIZE_PRESET.id);
   const [agentWidth, setAgentWidth] = useState(DEFAULT_SIZE_PRESET.width);
@@ -3684,40 +3523,6 @@ export function App() {
   }, [authStatus, hasGenerationProvider, isAuthLoading, navigateToRoute, route]);
 
   useEffect(() => {
-    const controller = new AbortController();
-
-    async function loadStorageConfig(): Promise<void> {
-      try {
-        const response = await fetch("/api/storage/config", {
-          signal: controller.signal
-        });
-        if (!response.ok) {
-          throw new Error(`Storage config load failed with ${response.status}`);
-        }
-
-        const config = (await response.json()) as StorageConfigResponse;
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        setStorageConfig(config);
-        setStorageForm(storageConfigToForm(config));
-        setStorageSecretTouched({ cos: false, s3: false });
-      } catch {
-        if (!controller.signal.aborted) {
-          setStorageError(t("storageLoadFailed"));
-        }
-      }
-    }
-
-    void loadStorageConfig();
-
-    return () => {
-      controller.abort();
-    };
-  }, [t]);
-
-  useEffect(() => {
     const mediaQuery = window.matchMedia(MOBILE_DRAWER_MEDIA_QUERY);
     const updateDrawerMode = (): void => {
       setIsMobileDrawer(mediaQuery.matches);
@@ -3737,20 +3542,6 @@ export function App() {
       canvasShellRef.current?.focus({ preventScroll: true });
     });
   }, []);
-
-  function openStorageDialog(): void {
-    setStorageForm(storageConfigToForm(storageConfig));
-    setStorageSecretTouched({ cos: false, s3: false });
-    setStorageError("");
-    setStorageMessage("");
-    setIsStorageDialogOpen(true);
-  }
-
-  function closeStorageDialog(): void {
-    setIsStorageDialogOpen(false);
-    setStorageError("");
-    setStorageMessage("");
-  }
 
   function closeProviderConfigDialog(): void {
     setIsProviderConfigDialogOpen(false);
@@ -3879,121 +3670,6 @@ export function App() {
     }
 
     await writeClipboardText(codexDevice.userCode).catch(() => undefined);
-  }
-
-  function updateStorageForm(patch: Partial<StorageConfigFormState>): void {
-    setStorageForm((current) => ({
-      ...current,
-      ...patch
-    }));
-    setStorageError("");
-    setStorageMessage("");
-  }
-
-  function updateStorageProvider(provider: CloudStorageProvider): void {
-    setStorageForm((current) => ({
-      ...current,
-      provider
-    }));
-    setStorageError("");
-    setStorageMessage("");
-  }
-
-  function updateStorageCosForm(patch: Partial<StorageConfigFormState["cos"]>): void {
-    setStorageForm((current) => ({
-      ...current,
-      cos: {
-        ...current.cos,
-        ...patch
-      }
-    }));
-    setStorageError("");
-    setStorageMessage("");
-  }
-
-  function updateStorageS3Form(patch: Partial<StorageConfigFormState["s3"]>): void {
-    setStorageForm((current) => ({
-      ...current,
-      s3: {
-        ...current.s3,
-        ...patch
-      }
-    }));
-    setStorageError("");
-    setStorageMessage("");
-  }
-
-  async function testStorageSettings(): Promise<void> {
-    setIsStorageTesting(true);
-    setStorageError("");
-    setStorageMessage("");
-
-    try {
-      const response = await fetch("/api/storage/config/test", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(
-          storageConfigRequestBody(storageForm, {
-            preserveSecret: shouldPreserveStorageSecret(storageForm, storageConfig, storageSecretTouched),
-            forceEnabled: true
-          })
-        )
-      });
-
-      if (!response.ok) {
-        throw new Error(await readErrorMessage(response, locale, t));
-      }
-
-      const result = (await response.json()) as StorageTestResult;
-      if (!result.ok) {
-        setStorageError(result.message);
-        return;
-      }
-
-      setStorageMessage(result.message);
-    } catch (error) {
-      setStorageError(error instanceof Error ? error.message : t("storageTestFailed"));
-    } finally {
-      setIsStorageTesting(false);
-    }
-  }
-
-  async function saveStorageSettings(): Promise<void> {
-    setIsStorageSaving(true);
-    setStorageError("");
-    setStorageMessage("");
-
-    try {
-      const response = await fetch("/api/storage/config", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(
-          storageConfigRequestBody(storageForm, {
-            preserveSecret: shouldPreserveStorageSecret(storageForm, storageConfig, storageSecretTouched)
-          })
-        )
-      });
-
-      if (!response.ok) {
-        throw new Error(await readErrorMessage(response, locale, t));
-      }
-
-      const config = (await response.json()) as StorageConfigResponse;
-      setStorageConfig(config);
-      setStorageForm(storageConfigToForm(config));
-      setStorageSecretTouched({ cos: false, s3: false });
-      setStorageMessage(t("storageSaved"));
-      setGenerationMessage(config.enabled ? t("storageEnabledMessage") : t("storageDisabledMessage"));
-      setGenerationWarning("");
-    } catch (error) {
-      setStorageError(error instanceof Error ? error.message : t("storageSaveFailed"));
-    } finally {
-      setIsStorageSaving(false);
-    }
   }
 
   useEffect(() => {
@@ -4192,15 +3868,14 @@ export function App() {
     const failedCount =
       record.outputs.filter((output) => output.status === "failed").length +
       Math.max(0, livePlaceholderSet.placements.length - record.outputs.length);
-    const cloudFailedCount = cloudFailureCount(record);
 
     if (!notify) {
       return;
     }
 
     if (insertedCount > 0) {
-      if (cloudFailedCount > 0 || failedCount > 0) {
-        setGenerationWarning(generationWarningMessage(record, insertedCount, failedCount, cloudFailedCount, t));
+      if (failedCount > 0) {
+        setGenerationWarning(generationWarningMessage(record, insertedCount, failedCount, t));
       } else {
         setGenerationMessage(t("generationImageInserted", { count: insertedCount }));
       }
@@ -6238,20 +5913,6 @@ export function App() {
                 onLogoutCodex={logoutCodexSession}
                 onStartCodexLogin={startCodexLogin}
               />
-              <button
-                aria-label={t("storageSettings")}
-                className={`inline-flex h-7 w-7 items-center justify-center rounded-md border text-xs transition focus:outline-none focus:ring-2 focus:ring-cyan-100 ${
-                  storageConfig?.enabled
-                    ? "border-cyan-200 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
-                    : "border-neutral-200 bg-white text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900"
-                }`}
-                data-testid="storage-settings-button"
-                title={storageConfig?.enabled ? t("storageEnabledTitle") : t("storageSettings")}
-                type="button"
-                onClick={openStorageDialog}
-              >
-                <Cloud className="size-4" aria-hidden="true" />
-              </button>
               <div
                 className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium ${
                   saveStatus === "error" ? "bg-red-50 text-red-700" : "bg-neutral-100 text-neutral-600"
@@ -6631,8 +6292,6 @@ export function App() {
                   const totalOutputs = record.outputs.length || record.count;
                   const activeTask = activeGenerationsRef.current.get(record.id);
                   const isRecordRunning = isActiveGenerationRecord(record) && Boolean(activeTask);
-                  const cloudFailedCount = cloudFailureCount(record);
-                  const cloudFailureMessage = firstCloudFailureMessage(record);
 
                   return (
                     <article
@@ -6667,15 +6326,6 @@ export function App() {
                             <dt className="sr-only">{t("generationHistoryCreatedAt")}</dt>
                             <dd>{formatCreatedTime(record.createdAt, formatDateTime)}</dd>
                           </div>
-                          {cloudFailedCount > 0 ? (
-                            <div className="inline-flex items-center gap-1 text-amber-700" title={cloudFailureMessage}>
-                              <dt className="sr-only">{t("generationHistoryCloudBackup")}</dt>
-                              <dd className="inline-flex items-center gap-1">
-                                <Cloud className="size-3" aria-hidden="true" />
-                                {t("generationCloudFailed", { count: cloudFailedCount })}
-                              </dd>
-                            </div>
-                          ) : null}
                         </dl>
                       </div>
 
@@ -7315,297 +6965,6 @@ export function App() {
       ) : null}
 
       {isAgentSkillDialogOpen ? <AgentSkillDialog onClose={() => setIsAgentSkillDialogOpen(false)} /> : null}
-
-      {isStorageDialogOpen ? (
-        <div className="app-modal-backdrop fixed inset-0 z-[3000] flex items-center justify-center bg-neutral-950/45 px-4 py-6" data-testid="storage-dialog">
-          <div
-            aria-labelledby="storage-dialog-title"
-            aria-modal="true"
-            className="app-modal-surface flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-2xl"
-            role="dialog"
-          >
-            <div className="flex items-start justify-between gap-3 border-b border-neutral-200 px-5 py-4">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold text-neutral-950" id="storage-dialog-title">
-                  {t("storageSettings")}
-                </h2>
-                <p className="mt-1 text-xs leading-5 text-neutral-500">{t("storageSubtitle")}</p>
-              </div>
-              <button
-                aria-label={t("storageClose")}
-                className="history-icon-action"
-                type="button"
-                onClick={closeStorageDialog}
-              >
-                <X className="size-4" aria-hidden="true" />
-              </button>
-            </div>
-
-            <div className="space-y-4 overflow-y-auto px-5 py-5">
-              {storageError ? (
-                <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm leading-5 text-red-700" role="alert">
-                  {storageError}
-                </p>
-              ) : null}
-              {storageMessage ? (
-                <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm leading-5 text-emerald-700" role="status">
-                  {storageMessage}
-                </p>
-              ) : null}
-
-              <label className="flex items-center justify-between gap-3 rounded-md border border-neutral-200 px-3 py-3">
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold text-neutral-900">{t("storageEnabledLabel")}</span>
-                  <span className="mt-0.5 block text-xs leading-5 text-neutral-500">{t("storageEnabledCopy")}</span>
-                </span>
-                <input
-                  checked={storageForm.enabled}
-                  className="size-4 accent-amber-600"
-                  data-testid="storage-enabled"
-                  id="storage-enabled"
-                  name="storageEnabled"
-                  type="checkbox"
-                  onChange={(event) => updateStorageForm({ enabled: event.target.checked })}
-                />
-              </label>
-
-              <div className="space-y-2">
-                <p className="control-label">{t("storageProviderLabel")}</p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <button
-                    className={`rounded-md border px-3 py-3 text-left transition-colors ${
-                      storageForm.provider === "cos"
-                        ? "border-amber-500 bg-amber-50 text-neutral-950"
-                        : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300"
-                    }`}
-                    type="button"
-                    onClick={() => updateStorageProvider("cos")}
-                  >
-                    <span className="block text-sm font-semibold">{t("storageProviderCosTitle")}</span>
-                    <span className="mt-1 block text-xs leading-5 text-neutral-500">{t("storageProviderCosCopy")}</span>
-                  </button>
-                  <button
-                    className={`rounded-md border px-3 py-3 text-left transition-colors ${
-                      storageForm.provider === "s3"
-                        ? "border-emerald-500 bg-emerald-50 text-neutral-950"
-                        : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300"
-                    }`}
-                    type="button"
-                    onClick={() => updateStorageProvider("s3")}
-                  >
-                    <span className="block text-sm font-semibold">{t("storageProviderS3Title")}</span>
-                    <span className="mt-1 block text-xs leading-5 text-neutral-500">{t("storageProviderS3Copy")}</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {storageForm.provider === "cos" ? (
-                  <>
-                    <label className="block sm:col-span-2">
-                      <span className="control-label">SecretId</span>
-                      <input
-                        className="field-control"
-                        data-testid="storage-secret-id"
-                        id="storage-secret-id"
-                        name="storageSecretId"
-                        value={storageForm.cos.secretId}
-                        onChange={(event) => updateStorageCosForm({ secretId: event.target.value })}
-                      />
-                    </label>
-                    <label className="block sm:col-span-2">
-                      <span className="control-label">SecretKey</span>
-                      <input
-                        className="field-control"
-                        data-testid="storage-secret-key"
-                        id="storage-secret-key"
-                        name="storageSecretKey"
-                        type={storageSecretTouched.cos ? "password" : "text"}
-                        value={storageForm.cos.secretKey}
-                        onChange={(event) => {
-                          setStorageSecretTouched((current) => ({ ...current, cos: true }));
-                          updateStorageCosForm({ secretKey: event.target.value });
-                        }}
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="control-label">{t("storageBucket")}</span>
-                      <input
-                        className="field-control"
-                        data-testid="storage-bucket"
-                        id="storage-bucket"
-                        name="storageBucket"
-                        value={storageForm.cos.bucket}
-                        onChange={(event) => updateStorageCosForm({ bucket: event.target.value })}
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="control-label">{t("storageRegion")}</span>
-                      <input
-                        className="field-control"
-                        data-testid="storage-region"
-                        id="storage-region"
-                        name="storageRegion"
-                        value={storageForm.cos.region}
-                        onChange={(event) => updateStorageCosForm({ region: event.target.value })}
-                      />
-                    </label>
-                    <label className="block sm:col-span-2">
-                      <span className="control-label">{t("storageKeyPrefix")}</span>
-                      <input
-                        className="field-control"
-                        data-testid="storage-prefix"
-                        id="storage-prefix"
-                        name="storagePrefix"
-                        value={storageForm.cos.keyPrefix}
-                        onChange={(event) => updateStorageCosForm({ keyPrefix: event.target.value })}
-                      />
-                    </label>
-                  </>
-                ) : (
-                  <>
-                    <label className="block sm:col-span-2">
-                      <span className="control-label">{t("storageEndpointMode")}</span>
-                      <select
-                        className="field-control"
-                        data-testid="storage-s3-endpoint-mode"
-                        id="storage-s3-endpoint-mode"
-                        name="storageS3EndpointMode"
-                        value={storageForm.s3.endpointMode}
-                        onChange={(event) => updateStorageS3Form({ endpointMode: event.target.value === "custom" ? "custom" : "r2-account" })}
-                      >
-                        <option value="r2-account">{t("storageEndpointModeR2")}</option>
-                        <option value="custom">{t("storageEndpointModeCustom")}</option>
-                      </select>
-                    </label>
-                    {storageForm.s3.endpointMode === "r2-account" ? (
-                      <label className="block sm:col-span-2">
-                        <span className="control-label">{t("storageAccountId")}</span>
-                        <input
-                          className="field-control"
-                          data-testid="storage-s3-account-id"
-                          id="storage-s3-account-id"
-                          name="storageS3AccountId"
-                          value={storageForm.s3.accountId}
-                          onChange={(event) => updateStorageS3Form({ accountId: event.target.value })}
-                        />
-                      </label>
-                    ) : (
-                      <label className="block sm:col-span-2">
-                        <span className="control-label">{t("storageEndpointUrl")}</span>
-                        <input
-                          className="field-control"
-                          data-testid="storage-s3-endpoint"
-                          id="storage-s3-endpoint"
-                          name="storageS3Endpoint"
-                          value={storageForm.s3.endpoint}
-                          onChange={(event) => updateStorageS3Form({ endpoint: event.target.value })}
-                        />
-                      </label>
-                    )}
-                    <label className="block sm:col-span-2">
-                      <span className="control-label">{t("storageAccessKeyId")}</span>
-                      <input
-                        className="field-control"
-                        data-testid="storage-s3-access-key-id"
-                        id="storage-s3-access-key-id"
-                        name="storageS3AccessKeyId"
-                        value={storageForm.s3.accessKeyId}
-                        onChange={(event) => updateStorageS3Form({ accessKeyId: event.target.value })}
-                      />
-                    </label>
-                    <label className="block sm:col-span-2">
-                      <span className="control-label">{t("storageSecretAccessKey")}</span>
-                      <input
-                        className="field-control"
-                        data-testid="storage-s3-secret-access-key"
-                        id="storage-s3-secret-access-key"
-                        name="storageS3SecretAccessKey"
-                        type={storageSecretTouched.s3 ? "password" : "text"}
-                        value={storageForm.s3.secretAccessKey}
-                        onChange={(event) => {
-                          setStorageSecretTouched((current) => ({ ...current, s3: true }));
-                          updateStorageS3Form({ secretAccessKey: event.target.value });
-                        }}
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="control-label">{t("storageBucket")}</span>
-                      <input
-                        className="field-control"
-                        data-testid="storage-s3-bucket"
-                        id="storage-s3-bucket"
-                        name="storageS3Bucket"
-                        value={storageForm.s3.bucket}
-                        onChange={(event) => updateStorageS3Form({ bucket: event.target.value })}
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="control-label">{t("storageRegion")}</span>
-                      <input
-                        className="field-control"
-                        data-testid="storage-s3-region"
-                        id="storage-s3-region"
-                        name="storageS3Region"
-                        value={storageForm.s3.region}
-                        onChange={(event) => updateStorageS3Form({ region: event.target.value })}
-                      />
-                    </label>
-                    <label className="block sm:col-span-2">
-                      <span className="control-label">{t("storageKeyPrefix")}</span>
-                      <input
-                        className="field-control"
-                        data-testid="storage-s3-prefix"
-                        id="storage-s3-prefix"
-                        name="storageS3Prefix"
-                        value={storageForm.s3.keyPrefix}
-                        onChange={(event) => updateStorageS3Form({ keyPrefix: event.target.value })}
-                      />
-                    </label>
-                    {storageForm.s3.endpointMode === "custom" ? (
-                      <label className="flex items-center gap-2 sm:col-span-2">
-                        <input
-                          checked={storageForm.s3.forcePathStyle}
-                          className="size-4 accent-emerald-600"
-                          data-testid="storage-s3-force-path-style"
-                          id="storage-s3-force-path-style"
-                          name="storageS3ForcePathStyle"
-                          type="checkbox"
-                          onChange={(event) => updateStorageS3Form({ forcePathStyle: event.target.checked })}
-                        />
-                        <span className="text-sm text-neutral-700">{t("storageForcePathStyle")}</span>
-                      </label>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 border-t border-neutral-200 px-5 py-4">
-              <button
-                className="secondary-action h-10"
-                data-testid="storage-test"
-                disabled={isStorageTesting || isStorageSaving}
-                type="button"
-                onClick={() => void testStorageSettings()}
-              >
-                {isStorageTesting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Cloud className="size-4" aria-hidden="true" />}
-                {t("storageTest")}
-              </button>
-              <button
-                className="primary-action h-10"
-                data-testid="storage-save"
-                disabled={isStorageSaving || isStorageTesting}
-                type="button"
-                onClick={() => void saveStorageSettings()}
-              >
-                {isStorageSaving ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <CheckCircle2 className="size-4" aria-hidden="true" />}
-                {t("storageSave")}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {isCodexLoginOpen ? createPortal(
         (

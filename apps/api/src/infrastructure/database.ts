@@ -54,35 +54,7 @@ CREATE TABLE IF NOT EXISTS assets (
   mime_type TEXT NOT NULL,
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
-  cloud_provider TEXT,
-  cloud_bucket TEXT,
-  cloud_region TEXT,
-  cloud_object_key TEXT,
-  cloud_status TEXT,
-  cloud_error TEXT,
-  cloud_uploaded_at TEXT,
-  cloud_etag TEXT,
-  cloud_request_id TEXT,
-  cloud_endpoint TEXT,
-  cloud_force_path_style INTEGER,
   created_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS storage_configs (
-  id TEXT PRIMARY KEY NOT NULL,
-  provider TEXT NOT NULL,
-  enabled INTEGER NOT NULL,
-  secret_id TEXT,
-  secret_key TEXT,
-  bucket TEXT,
-  region TEXT,
-  key_prefix TEXT,
-  endpoint_mode TEXT,
-  account_id TEXT,
-  endpoint TEXT,
-  force_path_style INTEGER,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS provider_configs (
@@ -221,21 +193,6 @@ CREATE INDEX IF NOT EXISTS prompt_favorites_group_id_idx ON prompt_favorites(gro
 CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites(last_used_at);
 `);
 
-ensureColumn("assets", "cloud_provider", "cloud_provider TEXT");
-ensureColumn("assets", "cloud_bucket", "cloud_bucket TEXT");
-ensureColumn("assets", "cloud_region", "cloud_region TEXT");
-ensureColumn("assets", "cloud_object_key", "cloud_object_key TEXT");
-ensureColumn("assets", "cloud_status", "cloud_status TEXT");
-ensureColumn("assets", "cloud_error", "cloud_error TEXT");
-ensureColumn("assets", "cloud_uploaded_at", "cloud_uploaded_at TEXT");
-ensureColumn("assets", "cloud_etag", "cloud_etag TEXT");
-ensureColumn("assets", "cloud_request_id", "cloud_request_id TEXT");
-ensureColumn("assets", "cloud_endpoint", "cloud_endpoint TEXT");
-ensureColumn("assets", "cloud_force_path_style", "cloud_force_path_style INTEGER");
-ensureColumn("storage_configs", "endpoint_mode", "endpoint_mode TEXT");
-ensureColumn("storage_configs", "account_id", "account_id TEXT");
-ensureColumn("storage_configs", "endpoint", "endpoint TEXT");
-ensureColumn("storage_configs", "force_path_style", "force_path_style INTEGER");
 ensureColumn("codex_oauth_tokens", "access_token", "access_token TEXT");
 ensureColumn("codex_oauth_tokens", "refresh_token", "refresh_token TEXT");
 ensureColumn("codex_oauth_tokens", "id_token", "id_token TEXT");
@@ -267,7 +224,6 @@ ensureColumn("agent_skills", "trigger_mode", "trigger_mode TEXT NOT NULL DEFAULT
 ensureColumn("agent_skills", "trigger_keywords_json", "trigger_keywords_json TEXT NOT NULL DEFAULT '[]'");
 ensureColumn("agent_skills", "files_json", "files_json TEXT NOT NULL DEFAULT '{}'");
 
-migrateStorageConfigRows();
 backfillGenerationReferenceAssets();
 ensureProviderConfigRow();
 ensureAgentLlmConfigRow();
@@ -286,57 +242,6 @@ function ensureColumn(tableName: string, columnName: string, definition: string)
   }
 
   sqlite.exec(`ALTER TABLE ${tableName} ADD COLUMN ${definition}`);
-}
-
-function migrateStorageConfigRows(): void {
-  const active = sqlite.prepare("SELECT * FROM storage_configs WHERE id = ?").get("active") as StorageConfigSqlRow | undefined;
-  if (active) {
-    const cos = sqlite.prepare("SELECT id FROM storage_configs WHERE id = ?").get("cos");
-    if (!cos) {
-      sqlite
-        .prepare(
-          `INSERT INTO storage_configs
-            (id, provider, enabled, secret_id, secret_key, bucket, region, key_prefix, endpoint_mode, account_id, endpoint, force_path_style, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          "cos",
-          "cos",
-          active.enabled,
-          active.secret_id,
-          active.secret_key,
-          active.bucket,
-          active.region,
-          active.key_prefix,
-          null,
-          null,
-          null,
-          null,
-          active.created_at,
-          active.updated_at
-        );
-    }
-
-    sqlite.prepare("DELETE FROM storage_configs WHERE id = ?").run("active");
-  }
-
-  const enabledRows = sqlite
-    .prepare("SELECT id FROM storage_configs WHERE enabled = 1 ORDER BY updated_at DESC, id ASC")
-    .all() as Array<{ id: string }>;
-  for (const row of enabledRows.slice(1)) {
-    sqlite.prepare("UPDATE storage_configs SET enabled = 0 WHERE id = ?").run(row.id);
-  }
-}
-
-interface StorageConfigSqlRow {
-  enabled: number;
-  secret_id: string | null;
-  secret_key: string | null;
-  bucket: string | null;
-  region: string | null;
-  key_prefix: string | null;
-  created_at: string;
-  updated_at: string;
 }
 
 function backfillGenerationReferenceAssets(): void {

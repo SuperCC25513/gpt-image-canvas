@@ -35,8 +35,7 @@ Every important state should have a visible treatment:
 - Missing provider.
 - Provider available.
 - Generating.
-- Uploading or cloud upload failed.
+- 本地资产保存失败或生成输出不可用。
 - Plan awaiting confirmation.
 - Job running, failed, blocked, cancelled, or succeeded.
 - Selection, hover, focus, and disabled controls.
-

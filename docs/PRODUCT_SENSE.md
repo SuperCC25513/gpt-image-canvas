@@ -4,7 +4,7 @@ Use this before changing product behavior, user flows, prompt planning, provider
 
 ## Product Promise
 
-`gpt-image-canvas` is a local-first AI image canvas for creators. It combines tldraw, GPT Image 2 or OpenAI-compatible image providers, local SQLite storage, Agent planning, and optional Tencent Cloud COS or Cloudflare R2 / S3-compatible backup into one workstation.
+`gpt-image-canvas` 是面向创作者的本地优先 AI 图像画布。它把 tldraw、GPT Image 2 或 OpenAI-compatible 图像提供方、本地 SQLite 存储、Agent 规划和本地资产管理整合到一个工作台中。
 
 The product should help users move from intent to usable image assets without losing control of prompts, references, plans, outputs, or credentials.
 
@@ -20,9 +20,9 @@ The product should help users move from intent to usable image assets without lo
 - Local first: project state, history, provider settings, generated assets, and optional credentials live on the user's machine.
 - Creator control: every plan can be inspected before execution. Users decide when to execute, retry, cancel, rerun, download, or locate assets.
 - Reference fidelity: when selected canvas images are used as references, preserve their subject, composition, and intended role unless the user asks otherwise.
-- Trust over magic: make active provider, credential state, upload state, errors, and missing configuration visible.
+- 信任优先于魔法：让当前提供方、凭据状态、资产保存状态、错误和缺失配置保持可见。
 - Useful defaults: default generation settings should be fast enough to try and clear enough to upgrade to higher quality.
-- Recoverable workflows: failed jobs, blocked jobs, cloud upload failures, and missing providers should lead to clear next actions.
+- 可恢复流程：失败任务、阻塞任务、本地资产保存失败和缺失提供方都应给出清晰的下一步。
 
 ## Core Workflows
 
@@ -47,7 +47,7 @@ Important plan limits:
 
 ### Gallery And Assets
 
-Gallery should make local outputs easy to browse, locate, download, rerun, and inspect. Cloud backup status is useful metadata, not a blocker for local availability.
+Gallery 应让本地输出易于浏览、定位、下载、重跑和检查。本地资产文件是唯一可用性来源。
 
 ### Provider Configuration
 
@@ -58,6 +58,5 @@ Provider configuration is part of the product, not an admin afterthought. Users 
 - Do not hide provider or credential problems behind generic failure messages.
 - Do not create Agent plans that imply execution already happened.
 - Do not invent selected image contents when vision is not available.
-- Do not discard local assets just because cloud upload failed.
+- 不要因为其他位置发生提供方错误或本地保存错误而丢弃已经可用的本地资产。
 - Do not make onboarding require credentials before the user can understand the app.
-

@@ -1,6 +1,4 @@
 import type {
-  AssetCloudUploadStatus,
-  CloudStorageProvider,
   GenerationCount,
   GenerationStatus,
   ImageMode,
@@ -167,14 +165,6 @@ export interface GeneratedAsset {
   mimeType: string;
   width: number;
   height: number;
-  cloud?: GeneratedAssetCloudInfo;
-}
-
-export interface GeneratedAssetCloudInfo {
-  provider: CloudStorageProvider;
-  status: AssetCloudUploadStatus;
-  lastError?: string;
-  uploadedAt?: string;
 }
 
 export interface GenerationOutput {

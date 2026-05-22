@@ -20,10 +20,6 @@ Agent planning uses a separate OpenAI-compatible chat configuration. It has its 
 
 Do not assume a configured image provider means Agent planning is configured.
 
-## Cloud Storage
-
-Tencent Cloud COS and Cloudflare R2 / S3-compatible backups are optional. Saving cloud storage settings should test upload and delete before persistence. Cloud upload failure should show on the asset but must not make local generation unavailable.
-
 ## Acceptance Criteria For Changes
 
 - Active source, source order, and missing source states are visible.
@@ -31,4 +27,3 @@ Tencent Cloud COS and Cloudflare R2 / S3-compatible backups are optional. Saving
 - Preserve-secret behavior is explicit.
 - Provider errors are actionable and localized.
 - Security rules in `docs/SECURITY.md` are preserved.
-

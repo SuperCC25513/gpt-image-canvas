@@ -6,7 +6,7 @@ Use this before changing API routes, provider selection, Agent execution, asset 
 
 - `apps/api`: Hono API, WebSocket upgrade handling, SQLite persistence, provider selection, image generation, Agent planning and execution, asset storage.
 - `apps/web`: Vite React and tldraw client, served by Vite in development and by the built API app in production.
-- `packages/shared`: shared contracts, image presets, validation helpers, provider types, storage types, and Agent event types.
+- `packages/shared`：共享契约、图片预设、验证工具、提供方类型和 Agent 事件类型。
 
 ## Persistence
 
@@ -40,7 +40,7 @@ Provider errors should become stable API errors where possible. Avoid exposing r
 - Reference image inputs are size and MIME checked.
 - Batch generation uses bounded concurrency.
 - Individual output failures should be represented in output status instead of erasing the whole record when partial results exist.
-- Generated images must remain locally available even if cloud upload fails.
+- 生成图片成功后必须能从本地资产目录读取；本地写入失败时不能记录成成功资产。
 
 ## Agent Execution
 
@@ -52,11 +52,9 @@ Agent plans are dependency-aware DAGs. Reliability-sensitive rules:
 - Cancellation should stop in-flight work where possible and leave the plan in an inspectable state.
 - WebSocket events should be stable, typed through `packages/shared`, and safe for reconnect behavior.
 
-## Cloud Backup
+## 本地资产存储
 
-Tencent Cloud COS and Cloudflare R2 / S3-compatible storage are optional. Saving cloud storage settings performs a test upload and delete before persistence.
-
-Cloud upload failures must not fail local image generation. Store upload status and error metadata on the asset so the UI can explain what happened.
+图片资产只写入 `DATA_DIR/assets`，读取、预览和下载都以本地文件为唯一来源。旧 SQLite 中残留的已废弃远端备份字段或配置表只作为历史数据存在，新代码不应读取、写入或回退到远端对象。
 
 ## Docker And Build Checks
 
@@ -82,4 +80,3 @@ docker compose config --quiet --no-env-resolution
 ```
 
 Do not run plain `docker compose config` when `.env` may contain real secrets.
-

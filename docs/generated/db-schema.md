@@ -2,7 +2,7 @@
 
 Generated documentation for the SQLite schema defined in `apps/api/src/infrastructure/schema.ts`.
 
-Last reviewed: 2026-05-11.
+最后检查：2026-05-21。
 
 ## `projects`
 
@@ -28,39 +28,7 @@ Stores generated and reference asset metadata.
 | `mime_type` | text | Required asset MIME type. |
 | `width` | integer | Required image width. |
 | `height` | integer | Required image height. |
-| `cloud_provider` | text | Optional cloud provider ID. |
-| `cloud_bucket` | text | Optional cloud bucket. |
-| `cloud_region` | text | Optional cloud region. |
-| `cloud_object_key` | text | Optional object key. |
-| `cloud_status` | text | Optional cloud upload status. |
-| `cloud_error` | text | Optional cloud upload error. |
-| `cloud_uploaded_at` | text | Optional upload timestamp. |
-| `cloud_etag` | text | Optional cloud ETag. |
-| `cloud_request_id` | text | Optional cloud request ID. |
-| `cloud_endpoint` | text | Optional S3-compatible endpoint used for fallback reads. |
-| `cloud_force_path_style` | integer | Optional S3-compatible path-style flag. |
 | `created_at` | text | Required ISO timestamp. |
-
-## `storage_configs`
-
-Stores optional Tencent Cloud COS or S3-compatible backup configuration.
-
-| Column | Type | Notes |
-| --- | --- | --- |
-| `id` | text | Primary key. |
-| `provider` | text | Required storage provider. |
-| `enabled` | integer | Required boolean flag stored as integer. |
-| `secret_id` | text | Optional COS SecretId or S3 access key ID. |
-| `secret_key` | text | Optional COS SecretKey or S3 secret access key. |
-| `bucket` | text | Optional bucket. |
-| `region` | text | Optional region. |
-| `key_prefix` | text | Optional object key prefix. |
-| `endpoint_mode` | text | Optional S3 endpoint mode (`r2-account` or `custom`). |
-| `account_id` | text | Optional Cloudflare R2 Account ID. |
-| `endpoint` | text | Optional S3-compatible endpoint URL. |
-| `force_path_style` | integer | Optional S3-compatible path-style flag. |
-| `created_at` | text | Required ISO timestamp. |
-| `updated_at` | text | Required ISO timestamp. |
 
 ## `provider_configs`
 
@@ -199,4 +167,3 @@ Stores multiple reference assets used by one generation.
 - `generation_outputs.asset_id` optionally references `assets.id`.
 - `generation_reference_assets.generation_id` references `generation_records.id` with cascade delete.
 - `generation_reference_assets.asset_id` references `assets.id`.
-

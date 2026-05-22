@@ -496,7 +496,7 @@ function clonePlan(plan: GenerationPlan): GenerationPlan {
       references: job.references.map((reference) => ({ ...reference })),
       outputs: job.outputs.map((output) => ({
         ...output,
-        asset: output.asset ? { ...output.asset, cloud: output.asset.cloud ? { ...output.asset.cloud } : undefined } : undefined
+        asset: output.asset ? { ...output.asset } : undefined
       }))
     })),
     edges: plan.edges.map((edge) => ({ ...edge }))

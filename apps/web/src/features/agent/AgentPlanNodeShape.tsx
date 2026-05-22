@@ -289,8 +289,7 @@ function isGeneratedAsset(value: unknown): value is GeneratedAsset {
     typeof value.width === "number" &&
     Number.isFinite(value.width) &&
     typeof value.height === "number" &&
-    Number.isFinite(value.height) &&
-    (value.cloud === undefined || isRecord(value.cloud))
+    Number.isFinite(value.height)
   );
 }
 

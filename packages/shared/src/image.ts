@@ -6,8 +6,6 @@ export type ImageQuality = "auto" | "low" | "medium" | "high";
 export type OutputFormat = "png" | "jpeg" | "webp";
 export type GenerationStatus = "pending" | "running" | "succeeded" | "partial" | "failed" | "cancelled";
 export type OutputStatus = "succeeded" | "failed";
-export type CloudStorageProvider = "cos" | "s3";
-export type AssetCloudUploadStatus = "uploaded" | "failed";
 
 export interface SizePreset {
   id: string;
