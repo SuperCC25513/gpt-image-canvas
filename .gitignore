@@ -1,5 +1,13 @@
 node_modules/
 .codex-temp/
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.pnpm-store/
+package-lock.json
 .env
 .env.*
 !.env.example
