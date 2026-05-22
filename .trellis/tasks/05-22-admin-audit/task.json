@@ -3,7 +3,7 @@
   "name": "admin-audit",
   "title": "后台管理与生成审计",
   "description": "新增管理员用户管理、系统设置、积分调整和生成审计后台。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "web",
