@@ -180,3 +180,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: 完成后台管理与生成审计
+
+**Date**: 2026-05-22
+**Task**: 完成后台管理与生成审计
+**Branch**: `main`
+
+### Summary
+
+实现管理员用户管理、系统设置、积分调整和生成审计；完成 MySQL/API smoke、typecheck、build 和浏览器验证；按后端、前端、文档三组提交。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `65d27be` | (see git log) |
+| `ed87390` | (see git log) |
+| `455b054` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
