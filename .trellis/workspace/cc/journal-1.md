@@ -75,3 +75,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: 用户会话与权限归属
+
+**Date**: 2026-05-22
+**Task**: 用户会话与权限归属
+**Branch**: `main`
+
+### Summary
+
+实现注册登录、会话 token hash、管理员初始化、私有数据 owner 判权和 Web 登录门禁；完成 SQLite/MySQL smoke、内置浏览器验证、文档与规范更新。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4003d76` | (see git log) |
+| `615d313` | (see git log) |
+| `a399c5d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

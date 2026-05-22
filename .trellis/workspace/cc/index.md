@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 2
+- **Total Sessions**: 3
 - **Last Active**: 2026-05-22
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~77 | Active |
+| `journal-1.md` | ~112 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 3 | 2026-05-22 | 用户会话与权限归属 | `4003d76`, `615d313`, `a399c5d` | `main` |
 | 2 | 2026-05-22 | 完成 MySQL 存储底座 | `c43bdbf`, `b4b435d`, `875d72f` | `main` |
 | 1 | 2026-05-22 | 移除云存储功能 | `4ecbebf`, `a43525d` | `main` |
 <!-- @@@/auto:session-history -->
