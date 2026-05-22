@@ -111,3 +111,63 @@ await db.insert(assets).values({ id, relativePath, cloudStatus: "failed" });
 ```ts
 await db.insert(assets).values({ id, fileName, relativePath, mimeType, width, height, createdAt });
 ```
+
+## 场景：SQLite / MySQL 双驱动存储底座
+
+### 1. 范围 / 触发
+
+- 触发：修改数据库驱动选择、连接配置、建表逻辑、项目/资产/生成/Gallery 持久化。
+- 范围：`apps/api/src/infrastructure/database-config.ts`、`sqlite-database.ts`、`mysql-database.ts`、`database.ts`，以及 `domain/storage/store.ts` 暴露的异步 store facade。
+
+### 2. 签名
+
+- 环境：`DATABASE_DRIVER=sqlite|mysql`，空值等同 `sqlite`。
+- MySQL 环境：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE`、`MYSQL_CONNECTION_LIMIT`、`MYSQL_CREATE_DATABASE`。
+- SQLite 入口：`db` 只在 `DATABASE_DRIVER=sqlite` 时可用。
+- MySQL 入口：`getMySqlPool()` 只在 `DATABASE_DRIVER=mysql` 时可用。
+- 业务入口：项目、资产、生成记录和 Gallery 通过 `domain/storage/store.ts` 的异步函数访问。
+
+### 3. 契约
+
+- 默认不设置 `DATABASE_DRIVER` 时必须保持 SQLite 行为和现有数据路径不变。
+- 设置 `DATABASE_DRIVER=mysql` 时不得打开或读取 SQLite 数据库；未迁到 MySQL 的旧 Drizzle store 必须返回显式不支持或空状态，不能偷偷 fallback 到 SQLite。
+- MySQL 建库只在 `MYSQL_CREATE_DATABASE=true` 时执行，库名必须通过内部白名单校验后再拼接为 identifier。
+- MySQL 只存元数据和 `assets/<file>` 相对路径，图片二进制仍在 `DATA_DIR/assets`。
+- 两种驱动都不创建云存储表、云资产字段或远端 fallback 字段。
+
+### 4. 验证与错误矩阵
+
+- `DATABASE_DRIVER` 非 `sqlite/mysql` -> 启动失败，提示合法值。
+- `DATABASE_DRIVER=mysql` 且缺少 `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_DATABASE` -> 启动失败，指出缺失变量。
+- `MYSQL_DATABASE` 包含非白名单字符 -> 启动失败，禁止拼接不可信 identifier。
+- MySQL 连接失败 -> 启动失败，不降级读取 SQLite。
+- 未迁移的 SQLite-only 写路径在 MySQL 模式被调用 -> 返回稳定错误，不访问 SQLite。
+
+### 5. 良好 / 基线 / 错误
+
+- 良好：`DATABASE_DRIVER=mysql` 下 `smoke:executor` 能创建表、写资产元数据、写 generation records/outputs/reference assets，并读取 Gallery/history。
+- 基线：空 `DATABASE_DRIVER` 下 `pnpm typecheck`、`pnpm build` 和 SQLite smoke 行为不变。
+- 错误：在 MySQL store 中直接拼用户输入 SQL、把真实 MySQL 密码写入 `.env.example`、或让 MySQL 模式打开旧 SQLite 读配置。
+
+### 6. 必跑测试
+
+- `pnpm typecheck`
+- `pnpm build`
+- SQLite：空 `DATA_DIR` 启动后检查新库无 cloud/COS/S3/R2/remote/backup 表或字段。
+- MySQL：用未提交 `.env` 或 `.codex-temp` 临时 env 跑核心 smoke，断言项目/资产/生成/Gallery 写读成功。
+
+### 7. 错误写法 vs 正确写法
+
+错误：
+
+```ts
+// MySQL 模式下继续让 domain 直接访问 SQLite Drizzle。
+const row = db.select().from(generationRecords).where(eq(generationRecords.id, id)).get();
+```
+
+正确：
+
+```ts
+// 业务层走异步 store facade，由 facade 按当前 driver 分发。
+const record = await readGenerationRecord(id);
+```

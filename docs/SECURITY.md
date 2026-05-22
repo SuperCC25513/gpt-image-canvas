@@ -14,12 +14,14 @@ Secrets may come from:
 
 - `.env` or runtime environment variables.
 - Local provider config stored in SQLite.
+- `DATABASE_DRIVER=mysql` 时使用的 MySQL 连接凭据。
 - Agent LLM config stored in SQLite.
 - Codex OAuth tokens stored in SQLite.
 
 Rules:
 
 - Never commit `.env`, `data/`, SQLite databases, generated images, `.ralph/`, `.codex-temp/`, or build output.
+- 不要把本机 MySQL 密码写入 `.env.example`、文档示例、日志或提交信息。
 - 不要记录原始 API key、OAuth token 或已保存的提供方配置值。
 - Read APIs should return masked secrets only.
 - Preserve existing secret values only when the request explicitly uses a preserve flag or leaves a masked value unchanged.

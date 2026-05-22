@@ -1,8 +1,23 @@
-# Database Schema
+# 数据库 Schema
 
-Generated documentation for the SQLite schema defined in `apps/api/src/infrastructure/schema.ts`.
+本文档记录当前持久化表结构。SQLite schema 定义在 `apps/api/src/infrastructure/schema.ts`，MySQL 建表 SQL 定义在 `apps/api/src/infrastructure/mysql-database.ts`。
 
-最后检查：2026-05-21。
+最后检查：2026-05-22。
+
+## 驱动行为
+
+- 默认不设置 `DATABASE_DRIVER` 时使用 SQLite，数据文件为 `DATA_DIR/gpt-image-canvas.sqlite`。
+- 设置 `DATABASE_DRIVER=mysql` 时只连接 MySQL，不读取 SQLite 数据，也不执行 SQLite 到 MySQL 的迁移。
+- MySQL 配置来自环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE`、`MYSQL_CONNECTION_LIMIT`、`MYSQL_CREATE_DATABASE`。
+- 生成图片文件仍只写入 `DATA_DIR/assets`。数据库中的 `assets.relative_path` 只保存相对路径。
+- 新库不创建云存储配置表，也不创建云资产备份字段。
+
+## SQLite / MySQL 类型差异
+
+- SQLite 文本列使用 `text`，MySQL 对主键和索引字段使用 `VARCHAR`，对快照、prompt、JSON 内容使用 `TEXT`/`LONGTEXT`。
+- SQLite 布尔值使用 `integer` 的 `0/1`，MySQL 使用 `TINYINT` 的 `0/1`。
+- 两种驱动都用 ISO 字符串保存时间，排序依赖 ISO 字符串的字典序。
+- MySQL 第一阶段覆盖当前已有表；用户、owner、公开状态、积分、签到和审计表由后续任务追加。
 
 ## `projects`
 
