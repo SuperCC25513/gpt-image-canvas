@@ -2,6 +2,7 @@ import type { Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { CurrentUser } from "../../domain/contracts.js";
 import { currentUserFromToken, getAuthSettings } from "../../domain/auth/auth-store.js";
+import { getCheckinStatus } from "../../domain/credits/credit-store.js";
 import { errorResponse } from "./errors.js";
 
 export const SESSION_COOKIE_NAME = "gic_session";
@@ -72,7 +73,8 @@ export async function authMeResponse(c: Context) {
   return c.json({
     authenticated: Boolean(user),
     user,
-    settings: await getAuthSettings()
+    settings: await getAuthSettings(),
+    checkin: user ? await getCheckinStatus(user.id) : undefined
   });
 }
 

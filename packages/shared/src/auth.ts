@@ -1,3 +1,5 @@
+import type { CheckinStatus } from "./credits.js";
+
 export const USER_ROLES = ["user", "admin"] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
@@ -19,6 +21,9 @@ export interface AuthSettings {
   allowRegistration: boolean;
   requireApproval: boolean;
   defaultCredits: number;
+  generationCreditCost: number;
+  checkinCredit: number;
+  maxImagesPerRequest: number;
   adminConfigured: boolean;
 }
 
@@ -26,6 +31,7 @@ export interface AuthMeResponse {
   authenticated: boolean;
   user?: CurrentUser;
   settings: AuthSettings;
+  checkin?: CheckinStatus;
 }
 
 export interface AuthSessionResponse {
@@ -49,5 +55,7 @@ export type AuthErrorCode =
   | "forbidden"
   | "invalid_auth_request"
   | "invalid_credentials"
+  | "generation_limit_exceeded"
+  | "insufficient_credits"
   | "registration_disabled"
   | "unauthorized";

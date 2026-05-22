@@ -9,11 +9,18 @@ import type {
   UserRole,
   UserStatus
 } from "../contracts.js";
+import {
+  DEFAULT_CHECKIN_CREDIT,
+  DEFAULT_GENERATION_CREDIT_COST,
+  DEFAULT_MAX_IMAGES_PER_REQUEST,
+  DEFAULT_REGISTRATION_CREDITS
+} from "../contracts.js";
 import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import {
   agentConversations,
   appSettings,
   assets,
+  creditTransactions,
   generationOutputs,
   generationRecords,
   projects,
@@ -46,6 +53,9 @@ interface AppSettingsRow {
   allowRegistration: number;
   requireApproval: number;
   defaultCredits: number;
+  generationCreditCost: number;
+  checkinCredit: number;
+  maxImagesPerRequest: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,6 +106,9 @@ export async function getAuthSettings(): Promise<AuthSettings> {
     allowRegistration: row.allowRegistration === 1,
     requireApproval: row.requireApproval === 1,
     defaultCredits: row.defaultCredits,
+    generationCreditCost: row.generationCreditCost,
+    checkinCredit: row.checkinCredit,
+    maxImagesPerRequest: row.maxImagesPerRequest,
     adminConfigured: await hasActiveAdminUser()
   };
 }
@@ -298,7 +311,10 @@ async function ensureAppSettings(): Promise<void> {
         id: APP_SETTINGS_ID,
         allowRegistration: 1,
         requireApproval: 0,
-        defaultCredits: 0,
+        defaultCredits: DEFAULT_REGISTRATION_CREDITS,
+        generationCreditCost: DEFAULT_GENERATION_CREDIT_COST,
+        checkinCredit: DEFAULT_CHECKIN_CREDIT,
+        maxImagesPerRequest: DEFAULT_MAX_IMAGES_PER_REQUEST,
         createdAt: now,
         updatedAt: now
       })
@@ -306,9 +322,19 @@ async function ensureAppSettings(): Promise<void> {
   } else {
     await getMySqlPool().execute(
       `INSERT INTO app_settings
-        (id, allow_registration, require_approval, default_credits, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [APP_SETTINGS_ID, 1, 0, 0, now, now]
+        (id, allow_registration, require_approval, default_credits, generation_credit_cost, checkin_credit, max_images_per_request, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        APP_SETTINGS_ID,
+        1,
+        0,
+        DEFAULT_REGISTRATION_CREDITS,
+        DEFAULT_GENERATION_CREDIT_COST,
+        DEFAULT_CHECKIN_CREDIT,
+        DEFAULT_MAX_IMAGES_PER_REQUEST,
+        now,
+        now
+      ]
     );
   }
 }
@@ -325,7 +351,10 @@ async function getAppSettingsRow(): Promise<AppSettingsRow> {
     id: APP_SETTINGS_ID,
     allowRegistration: 1,
     requireApproval: 0,
-    defaultCredits: 0,
+    defaultCredits: DEFAULT_REGISTRATION_CREDITS,
+    generationCreditCost: DEFAULT_GENERATION_CREDIT_COST,
+    checkinCredit: DEFAULT_CHECKIN_CREDIT,
+    maxImagesPerRequest: DEFAULT_MAX_IMAGES_PER_REQUEST,
     createdAt: now,
     updatedAt: now
   };
@@ -340,6 +369,9 @@ async function getAppSettingsRowOrUndefined(): Promise<AppSettingsRow | undefine
           allowRegistration: row.allowRegistration,
           requireApproval: row.requireApproval,
           defaultCredits: row.defaultCredits,
+          generationCreditCost: row.generationCreditCost,
+          checkinCredit: row.checkinCredit,
+          maxImagesPerRequest: row.maxImagesPerRequest,
           createdAt: row.createdAt,
           updatedAt: row.updatedAt
         }
@@ -351,6 +383,9 @@ async function getAppSettingsRowOrUndefined(): Promise<AppSettingsRow | undefine
             allow_registration AS allowRegistration,
             require_approval AS requireApproval,
             default_credits AS defaultCredits,
+            generation_credit_cost AS generationCreditCost,
+            checkin_credit AS checkinCredit,
+            max_images_per_request AS maxImagesPerRequest,
             created_at AS createdAt,
             updated_at AS updatedAt
      FROM app_settings
@@ -362,42 +397,95 @@ async function getAppSettingsRowOrUndefined(): Promise<AppSettingsRow | undefine
 
 async function insertUser(user: UserRow): Promise<void> {
   if (databaseDriver === "sqlite") {
-    db.insert(users)
-      .values({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        passwordSalt: user.passwordSalt,
-        passwordIterations: user.passwordIterations,
-        passwordHash: user.passwordHash,
-        role: user.role,
-        status: user.status,
-        credits: user.credits,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt
-      })
-      .run();
+    db.transaction((tx) => {
+      tx.insert(users)
+        .values({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          passwordSalt: user.passwordSalt,
+          passwordIterations: user.passwordIterations,
+          passwordHash: user.passwordHash,
+          role: user.role,
+          status: user.status,
+          credits: user.credits,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt
+        })
+        .run();
+
+      if (user.credits > 0) {
+        tx.insert(creditTransactions)
+          .values(registrationCreditTransaction(user.id, user.credits, user.createdAt))
+          .run();
+      }
+    });
     return;
   }
 
-  await getMySqlPool().execute(
-    `INSERT INTO users
-      (id, name, email, password_salt, password_iterations, password_hash, role, status, credits, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      user.id,
-      user.name,
-      user.email,
-      user.passwordSalt,
-      user.passwordIterations,
-      user.passwordHash,
-      user.role,
-      user.status,
-      user.credits,
-      user.createdAt,
-      user.updatedAt
-    ]
-  );
+  const connection = await getMySqlPool().getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.execute(
+      `INSERT INTO users
+        (id, name, email, password_salt, password_iterations, password_hash, role, status, credits, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        user.id,
+        user.name,
+        user.email,
+        user.passwordSalt,
+        user.passwordIterations,
+        user.passwordHash,
+        user.role,
+        user.status,
+        user.credits,
+        user.createdAt,
+        user.updatedAt
+      ]
+    );
+
+    if (user.credits > 0) {
+      const transaction = registrationCreditTransaction(user.id, user.credits, user.createdAt);
+      await connection.execute(
+        `INSERT INTO credit_transactions
+          (id, user_id, delta, reason, related_generation_id, related_output_id, related_checkin_date, admin_note, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          transaction.id,
+          transaction.userId,
+          transaction.delta,
+          transaction.reason,
+          transaction.relatedGenerationId,
+          transaction.relatedOutputId,
+          transaction.relatedCheckinDate,
+          transaction.adminNote,
+          transaction.createdAt
+        ]
+      );
+    }
+
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+function registrationCreditTransaction(userId: string, credits: number, createdAt: string) {
+  return {
+    id: `credit-${randomUUID()}`,
+    userId,
+    delta: credits,
+    reason: "registration_bonus" as const,
+    relatedGenerationId: null,
+    relatedOutputId: null,
+    relatedCheckinDate: null,
+    adminNote: null,
+    createdAt
+  };
 }
 
 async function updateUserRoleAndStatus(userId: string, role: UserRole, status: UserStatus, updatedAt: string): Promise<void> {

@@ -5,11 +5,13 @@ import {
   BookmarkCheck,
   BookOpenCheck,
   BrainCircuit,
+  CalendarCheck,
   Check,
   CheckCircle2,
   ChevronDown,
   CircleStop,
   Copy,
+  Coins,
   Download,
   ExternalLink,
   Globe2,
@@ -74,6 +76,8 @@ import { HomePage } from "../home/HomePage";
 import { ProviderConfigDialog } from "../provider-config/ProviderConfigDialog";
 import {
   CUSTOM_SIZE_PRESET_ID,
+  DEFAULT_GENERATION_CREDIT_COST,
+  DEFAULT_MAX_IMAGES_PER_REQUEST,
   GENERATION_COUNTS,
   IMAGE_SIZE_MULTIPLE,
   IMAGE_QUALITIES,
@@ -100,7 +104,9 @@ import {
   type AgentServerEvent,
   type AgentThinkingType,
   type AuthStatusResponse,
+  type AuthMeResponse,
   type AssetMetadataResponse,
+  type CheckinResponse,
   type CodexDevicePollResponse,
   type CodexDeviceStartResponse,
   type CodexLogoutResponse,
@@ -3073,6 +3079,10 @@ export function App() {
   const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState("");
+  const [accountStatus, setAccountStatus] = useState<AuthMeResponse | null>(null);
+  const [isAccountLoading, setIsAccountLoading] = useState(true);
+  const [accountError, setAccountError] = useState("");
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [isCodexLoginOpen, setIsCodexLoginOpen] = useState(false);
   const [codexDevice, setCodexDevice] = useState<CodexDeviceStartResponse | null>(null);
   const [codexLoginStatus, setCodexLoginStatus] = useState<CodexLoginStatus>("idle");
@@ -3193,7 +3203,18 @@ export function App() {
   const isReferenceMode = generationMode === "reference";
   const isReferenceReady = isReferenceMode && referenceSelection.status === "ready";
   const referenceValidationMessage = isReferenceMode && !isReferenceReady ? referenceSelection.hint : "";
-  const validationMessage = promptValidationMessage || dimensionValidationMessage || referenceValidationMessage;
+  const accountUser = accountStatus?.authenticated ? accountStatus.user : undefined;
+  const creditSettings = accountStatus?.settings;
+  const generationCreditCost = creditSettings?.generationCreditCost ?? DEFAULT_GENERATION_CREDIT_COST;
+  const maxImagesPerRequest = creditSettings?.maxImagesPerRequest ?? DEFAULT_MAX_IMAGES_PER_REQUEST;
+  const estimatedCreditCost = Math.max(0, count * generationCreditCost);
+  const creditValidationMessage =
+    count > maxImagesPerRequest
+      ? t("creditsMaxImages", { max: maxImagesPerRequest })
+      : accountUser && estimatedCreditCost > accountUser.credits
+        ? t("creditsInsufficient", { balance: accountUser.credits, cost: estimatedCreditCost })
+        : "";
+  const validationMessage = promptValidationMessage || dimensionValidationMessage || referenceValidationMessage || creditValidationMessage;
   const shouldShowValidation = Boolean(validationMessage);
   const canGenerate = !validationMessage;
   const tldrawComponents = useMemo(
@@ -3292,6 +3313,39 @@ export function App() {
     } finally {
       if (!signal?.aborted) {
         setIsAuthLoading(false);
+      }
+    }
+  }, [locale, t]);
+
+  const loadAccountStatus = useCallback(async (signal?: AbortSignal): Promise<AuthMeResponse | null> => {
+    setIsAccountLoading(true);
+    setAccountError("");
+
+    try {
+      const response = await fetch("/api/auth/me", {
+        credentials: "same-origin",
+        signal
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response, locale, t));
+      }
+
+      const status = (await response.json()) as AuthMeResponse;
+      if (!signal?.aborted) {
+        setAccountStatus(status);
+      }
+      return status;
+    } catch (error) {
+      if (signal?.aborted) {
+        return null;
+      }
+
+      setAccountError(error instanceof Error ? error.message : t("creditsAccountLoadFailed"));
+      setAccountStatus(null);
+      return null;
+    } finally {
+      if (!signal?.aborted) {
+        setIsAccountLoading(false);
       }
     }
   }, [locale, t]);
@@ -3472,6 +3526,16 @@ export function App() {
       controller.abort();
     };
   }, [loadAuthStatus]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    void loadAccountStatus(controller.signal);
+
+    return () => {
+      controller.abort();
+    };
+  }, [loadAccountStatus]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -3957,6 +4021,7 @@ export function App() {
 
         await preloadGenerationRecordPreviews(record, task.controller.signal);
         finishPolledGeneration(record, task.placeholderSet, notify);
+        void loadAccountStatus();
         activeGenerationsRef.current.delete(recordId);
         setActiveGenerationCount(activeGenerationsRef.current.size);
         return;
@@ -4091,10 +4156,12 @@ export function App() {
       }
 
       upsertGenerationHistoryRecord(body.record);
+      void loadAccountStatus();
       void saveProjectSnapshot(editor);
       if (isTerminalGenerationRecord(body.record)) {
         await preloadGenerationRecordPreviews(body.record, controller.signal);
         finishPolledGeneration(body.record, placeholderSet, true);
+        void loadAccountStatus();
         if (activeGenerationsRef.current.delete(generationId)) {
           setActiveGenerationCount(activeGenerationsRef.current.size);
         }
@@ -4114,6 +4181,7 @@ export function App() {
         if (isTerminalGenerationRecord(recoveredRecord)) {
           await preloadGenerationRecordPreviews(recoveredRecord, controller.signal);
           finishPolledGeneration(recoveredRecord, placeholderSet, true);
+          void loadAccountStatus();
           if (activeGenerationsRef.current.delete(generationId)) {
             setActiveGenerationCount(activeGenerationsRef.current.size);
           }
@@ -4130,6 +4198,7 @@ export function App() {
 
       markGenerationPlaceholdersFailed(editor, placeholderSet, message);
       void saveProjectSnapshot(editor);
+      void loadAccountStatus();
       setGenerationHistory((history) =>
         history.map((record) => (record.id === temporaryRecord.id ? { ...record, status: "failed", error: message } : record))
       );
@@ -4174,6 +4243,44 @@ export function App() {
     }
 
     await executeGeneration(input, "text");
+  }
+
+  async function submitCheckin(): Promise<void> {
+    setAccountError("");
+    setGenerationMessage("");
+    setGenerationWarning("");
+    setIsCheckingIn(true);
+
+    try {
+      const response = await fetch("/api/checkin", {
+        credentials: "same-origin",
+        method: "POST"
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response, locale, t));
+      }
+
+      const body = (await response.json()) as CheckinResponse;
+      setAccountStatus((current) => ({
+        authenticated: true,
+        user: body.user,
+        settings: current?.settings ?? {
+          allowRegistration: true,
+          requireApproval: false,
+          defaultCredits: 0,
+          generationCreditCost: DEFAULT_GENERATION_CREDIT_COST,
+          checkinCredit: body.checkin.creditAward,
+          maxImagesPerRequest: DEFAULT_MAX_IMAGES_PER_REQUEST,
+          adminConfigured: false
+        },
+        checkin: body.checkin
+      }));
+      setGenerationMessage(t("creditsCheckinSuccess", { credits: body.checkin.creditAward }));
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : t("creditsCheckinFailed"));
+    } finally {
+      setIsCheckingIn(false);
+    }
   }
 
   function cancelReferenceSelection(): void {
@@ -4382,6 +4489,7 @@ export function App() {
       activeGenerationsRef.current.delete(requestId);
       setActiveGenerationCount(activeGenerationsRef.current.size);
       upsertGenerationHistoryRecord(body.record);
+      void loadAccountStatus();
       setGenerationMessage(t("generationUnknownCancel"));
     } catch (error) {
       setGenerationError(error instanceof Error ? error.message : t("generationErrorDefault"));
@@ -6246,6 +6354,69 @@ export function App() {
               </div>
             </details>
           </div>
+
+          <section
+            className={`rounded-md border px-3 py-3 text-sm ${
+              creditValidationMessage
+                ? "border-amber-300 bg-amber-50 text-amber-950"
+                : "border-neutral-200 bg-neutral-50 text-neutral-700"
+            }`}
+            data-testid="credit-summary"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="inline-flex items-center gap-1.5 font-semibold text-neutral-950">
+                  <Coins className="size-4 text-amber-600" aria-hidden="true" />
+                  {t("creditsTitle")}
+                </p>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs leading-5">
+                  <div>
+                    <dt className="sr-only">{t("creditsTitle")}</dt>
+                    <dd className="font-semibold tabular-nums">
+                      {isAccountLoading ? t("commonNotSet") : t("creditsBalance", { credits: accountUser?.credits ?? 0 })}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="sr-only">{t("creditsEstimatedCost", { cost: estimatedCreditCost })}</dt>
+                    <dd className="tabular-nums">
+                      {estimatedCreditCost > 0 ? t("creditsEstimatedCost", { cost: estimatedCreditCost }) : t("creditsEstimatedFree")}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="sr-only">{t("creditsPerImage", { cost: generationCreditCost })}</dt>
+                    <dd className="text-neutral-500 tabular-nums">{t("creditsPerImage", { cost: generationCreditCost })}</dd>
+                  </div>
+                  <div>
+                    <dt className="sr-only">{t("creditsMaxImages", { max: maxImagesPerRequest })}</dt>
+                    <dd className="text-neutral-500 tabular-nums">{t("creditsMaxImages", { max: maxImagesPerRequest })}</dd>
+                  </div>
+                </dl>
+              </div>
+              <button
+                className="secondary-action h-9 shrink-0 px-2.5 text-xs"
+                data-testid="checkin-button"
+                disabled={isCheckingIn || accountStatus?.checkin?.checkedInToday === true}
+                type="button"
+                onClick={() => void submitCheckin()}
+              >
+                {isCheckingIn ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <CalendarCheck className="size-3.5" aria-hidden="true" />}
+                {isCheckingIn
+                  ? t("creditsCheckinLoading")
+                  : accountStatus?.checkin?.checkedInToday
+                    ? t("creditsCheckinDone")
+                    : t("creditsReward", { credits: accountStatus?.checkin?.creditAward ?? creditSettings?.checkinCredit ?? 0 })}
+              </button>
+            </div>
+            {accountError ? (
+              <p className="mt-2 text-xs leading-5 text-red-700" role="alert">
+                {accountError}
+              </p>
+            ) : creditValidationMessage ? (
+              <p className="mt-2 text-xs leading-5 text-amber-800" role="alert">
+                {creditValidationMessage}
+              </p>
+            ) : null}
+          </section>
 
           <label className="publish-toggle" data-enabled={publishGeneration}>
             <input

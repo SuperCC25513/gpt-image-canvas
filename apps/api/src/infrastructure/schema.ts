@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -28,9 +28,41 @@ export const appSettings = sqliteTable("app_settings", {
   allowRegistration: integer("allow_registration").notNull(),
   requireApproval: integer("require_approval").notNull(),
   defaultCredits: integer("default_credits").notNull(),
+  generationCreditCost: integer("generation_credit_cost").notNull(),
+  checkinCredit: integer("checkin_credit").notNull(),
+  maxImagesPerRequest: integer("max_images_per_request").notNull(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull()
 });
+
+export const creditTransactions = sqliteTable("credit_transactions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  delta: integer("delta").notNull(),
+  reason: text("reason").notNull(),
+  relatedGenerationId: text("related_generation_id"),
+  relatedOutputId: text("related_output_id"),
+  relatedCheckinDate: text("related_checkin_date"),
+  adminNote: text("admin_note"),
+  createdAt: text("created_at").notNull()
+});
+
+export const userCheckins = sqliteTable(
+  "user_checkins",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    checkinDate: text("checkin_date").notNull(),
+    creditsAwarded: integer("credits_awarded").notNull(),
+    createdAt: text("created_at").notNull()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.checkinDate] })
+  })
+);
 
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),

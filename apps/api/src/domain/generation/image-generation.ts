@@ -16,6 +16,7 @@ import type {
   ReferenceImageInput
 } from "../contracts.js";
 import type { CurrentUser } from "../contracts.js";
+import { refundGenerationCreditsForFailures, refundInterruptedGenerationCredits } from "../credits/credit-store.js";
 import {
   ProviderError,
   type EditImageProviderInput,
@@ -220,14 +221,23 @@ export async function getGenerationRecord(generationId: string, user?: CurrentUs
 }
 
 export async function cancelGenerationRecord(generationId: string): Promise<GenerationRecord | undefined> {
-  return updateGenerationRecordStatus(generationId, "cancelled", CANCELLED_GENERATION_ERROR);
+  const record = await updateGenerationRecordStatus(generationId, "cancelled", CANCELLED_GENERATION_ERROR);
+  if (record) {
+    await refundGenerationCreditsForFailures(generationId, record.count, record.count);
+  }
+  return record;
 }
 
 export async function failGenerationRecord(generationId: string, error: string): Promise<GenerationRecord | undefined> {
-  return updateGenerationRecordStatus(generationId, "failed", sanitizeGenerationErrorMessage(error));
+  const record = await updateGenerationRecordStatus(generationId, "failed", sanitizeGenerationErrorMessage(error));
+  if (record) {
+    await refundGenerationCreditsForFailures(generationId, record.count, record.count);
+  }
+  return record;
 }
 
 export async function markInterruptedGenerationRecordsFailed(): Promise<void> {
+  await refundInterruptedGenerationCredits();
   await markInterruptedGenerationRecordsFailedInStore(INTERRUPTED_GENERATION_ERROR);
 }
 
@@ -576,6 +586,7 @@ async function completeGenerationRecord(
 
   await updateGenerationRecordCompletion(generationId, status, error ?? null, primaryReferenceAssetId ?? null);
   await replaceGenerationOutputs(generationId, outputs.map((output) => generationOutputWithVisibility(output, input)));
+  await refundGenerationCreditsForFailures(generationId, failureCount, input.count);
 
   return (await readGenerationRecord(generationId, user)) ?? {
     id: generationId,

@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { GenerationRecord } from "../contracts.js";
 import type { CurrentUser } from "../contracts.js";
+import { refundGenerationCreditsForFailures, reserveGenerationCredits } from "../credits/credit-store.js";
 import { createConfiguredImageProvider } from "../providers/image-provider-selection.js";
 import type { EditImageProviderInput, ImageProviderInput } from "../../infrastructure/providers/image-provider.js";
 import {
@@ -25,21 +27,49 @@ export async function initializeGenerationTaskManager(): Promise<void> {
 }
 
 export async function startTextToImageGenerationTask(input: ImageProviderInput, user: CurrentUser): Promise<GenerationRecord> {
-  const record = await createRunningTextToImageGeneration(input, user);
+  const generationId = input.clientRequestId || randomUUID();
+  const inputWithRequestId = {
+    ...input,
+    clientRequestId: generationId
+  };
+
+  await reserveGenerationCredits(user, generationId, input.count);
+
+  let record: GenerationRecord;
+  try {
+    record = await createRunningTextToImageGeneration(inputWithRequestId, user);
+  } catch (error) {
+    await refundGenerationCreditsForFailures(generationId, input.count, input.count);
+    throw error;
+  }
   if (isTerminalGenerationStatus(record.status) || activeGenerationTasks.has(record.id)) {
     return record;
   }
 
   startBackgroundGenerationTask(record.id, async (signal) => {
     const provider = await createConfiguredImageProvider(signal);
-    await finishTextToImageGeneration(record.id, input, provider, signal, user);
+    await finishTextToImageGeneration(record.id, inputWithRequestId, provider, signal, user);
   });
 
   return record;
 }
 
 export async function startReferenceImageGenerationTask(input: EditImageProviderInput, user: CurrentUser): Promise<GenerationRecord> {
-  const running = await createRunningReferenceImageGeneration(input, user);
+  const generationId = input.clientRequestId || randomUUID();
+  const inputWithRequestId = {
+    ...input,
+    clientRequestId: generationId
+  };
+
+  await reserveGenerationCredits(user, generationId, input.count);
+
+  let running: Awaited<ReturnType<typeof createRunningReferenceImageGeneration>>;
+  try {
+    running = await createRunningReferenceImageGeneration(inputWithRequestId, user);
+  } catch (error) {
+    await refundGenerationCreditsForFailures(generationId, input.count, input.count);
+    throw error;
+  }
   if (isTerminalGenerationStatus(running.record.status) || activeGenerationTasks.has(running.record.id)) {
     return running.record;
   }

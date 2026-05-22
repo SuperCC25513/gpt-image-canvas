@@ -3,7 +3,7 @@
   "name": "credits-checkins",
   "title": "积分扣费与每日签到",
   "description": "新增积分余额、流水、生成预扣退款、注册赠送积分和每日签到奖励。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "api",

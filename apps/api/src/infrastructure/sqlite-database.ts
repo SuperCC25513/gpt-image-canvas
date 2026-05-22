@@ -3,6 +3,11 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { ensureRuntimeStorage, runtimePaths, sqliteConfig } from "./runtime.js";
 import * as schema from "./schema.js";
 
+const DEFAULT_REGISTRATION_CREDITS = 10;
+const DEFAULT_GENERATION_CREDIT_COST = 1;
+const DEFAULT_CHECKIN_CREDIT = 1;
+const DEFAULT_MAX_IMAGES_PER_REQUEST = 16;
+
 export type SqliteDatabase = ReturnType<typeof drizzle<typeof schema>>;
 
 export interface SqliteDatabaseContext {
@@ -114,9 +119,32 @@ CREATE TABLE IF NOT EXISTS app_settings (
   id TEXT PRIMARY KEY NOT NULL,
   allow_registration INTEGER NOT NULL DEFAULT 1,
   require_approval INTEGER NOT NULL DEFAULT 0,
-  default_credits INTEGER NOT NULL DEFAULT 0,
+  default_credits INTEGER NOT NULL DEFAULT 10,
+  generation_credit_cost INTEGER NOT NULL DEFAULT 1,
+  checkin_credit INTEGER NOT NULL DEFAULT 1,
+  max_images_per_request INTEGER NOT NULL DEFAULT 16,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS credit_transactions (
+  id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  delta INTEGER NOT NULL,
+  reason TEXT NOT NULL,
+  related_generation_id TEXT,
+  related_output_id TEXT,
+  related_checkin_date TEXT,
+  admin_note TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS user_checkins (
+  user_id TEXT NOT NULL REFERENCES users(id),
+  checkin_date TEXT NOT NULL,
+  credits_awarded INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, checkin_date)
 );
 
 CREATE TABLE IF NOT EXISTS agent_llm_configs (
@@ -253,6 +281,9 @@ CREATE INDEX IF NOT EXISTS assets_user_id_idx ON assets(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users(email);
 CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS credit_transactions_user_id_idx ON credit_transactions(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS credit_transactions_generation_reason_idx ON credit_transactions(related_generation_id, reason);
+CREATE INDEX IF NOT EXISTS user_checkins_user_id_idx ON user_checkins(user_id);
 CREATE INDEX IF NOT EXISTS agent_conversations_updated_at_idx ON agent_conversations(updated_at);
 CREATE INDEX IF NOT EXISTS agent_conversations_user_id_idx ON agent_conversations(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS agent_skills_slug_idx ON agent_skills(slug);
@@ -271,6 +302,12 @@ CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites
   ensureColumn(sqlite, "generation_outputs", "published_at", "published_at TEXT");
   ensureColumn(sqlite, "generation_outputs", "public_title", "public_title TEXT");
   sqlite.exec("CREATE INDEX IF NOT EXISTS generation_outputs_public_idx ON generation_outputs(is_public, published_at)");
+  ensureColumn(sqlite, "app_settings", "generation_credit_cost", `generation_credit_cost INTEGER NOT NULL DEFAULT ${DEFAULT_GENERATION_CREDIT_COST}`);
+  ensureColumn(sqlite, "app_settings", "checkin_credit", `checkin_credit INTEGER NOT NULL DEFAULT ${DEFAULT_CHECKIN_CREDIT}`);
+  ensureColumn(sqlite, "app_settings", "max_images_per_request", `max_images_per_request INTEGER NOT NULL DEFAULT ${DEFAULT_MAX_IMAGES_PER_REQUEST}`);
+  sqlite.exec("CREATE INDEX IF NOT EXISTS credit_transactions_user_id_idx ON credit_transactions(user_id)");
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS credit_transactions_generation_reason_idx ON credit_transactions(related_generation_id, reason)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS user_checkins_user_id_idx ON user_checkins(user_id)");
   ensureColumn(sqlite, "agent_conversations", "user_id", "user_id TEXT");
   ensureColumn(sqlite, "prompt_favorite_groups", "user_id", "user_id TEXT");
   ensureColumn(sqlite, "prompt_favorites", "user_id", "user_id TEXT");
@@ -373,10 +410,20 @@ function ensureAppSettingsRow(sqlite: Database.Database): void {
   sqlite
     .prepare(
       `INSERT OR IGNORE INTO app_settings
-        (id, allow_registration, require_approval, default_credits, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`
+        (id, allow_registration, require_approval, default_credits, generation_credit_cost, checkin_credit, max_images_per_request, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run("default", 1, 0, 0, now, now);
+    .run(
+      "default",
+      1,
+      0,
+      DEFAULT_REGISTRATION_CREDITS,
+      DEFAULT_GENERATION_CREDIT_COST,
+      DEFAULT_CHECKIN_CREDIT,
+      DEFAULT_MAX_IMAGES_PER_REQUEST,
+      now,
+      now
+    );
 }
 
 function ensurePromptFavoriteDefaultGroup(sqlite: Database.Database): void {

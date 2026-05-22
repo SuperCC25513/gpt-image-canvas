@@ -9,6 +9,10 @@ export interface MySqlDatabaseContext {
 }
 
 const tableOptions = "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+const DEFAULT_REGISTRATION_CREDITS = 10;
+const DEFAULT_GENERATION_CREDIT_COST = 1;
+const DEFAULT_CHECKIN_CREDIT = 1;
+const DEFAULT_MAX_IMAGES_PER_REQUEST = 16;
 
 export async function createMySqlDatabase(config: MySqlDatabaseConfig): Promise<MySqlDatabaseContext> {
   ensureRuntimeStorage();
@@ -105,9 +109,35 @@ function schemaStatements(): string[] {
       id VARCHAR(191) PRIMARY KEY NOT NULL,
       allow_registration TINYINT NOT NULL DEFAULT 1,
       require_approval TINYINT NOT NULL DEFAULT 0,
-      default_credits INT NOT NULL DEFAULT 0,
+      default_credits INT NOT NULL DEFAULT 10,
+      generation_credit_cost INT NOT NULL DEFAULT 1,
+      checkin_credit INT NOT NULL DEFAULT 1,
+      max_images_per_request INT NOT NULL DEFAULT 16,
       created_at VARCHAR(32) NOT NULL,
       updated_at VARCHAR(32) NOT NULL
+    ) ${tableOptions}`,
+    `CREATE TABLE IF NOT EXISTS credit_transactions (
+      id VARCHAR(191) PRIMARY KEY NOT NULL,
+      user_id VARCHAR(191) NOT NULL,
+      delta INT NOT NULL,
+      reason VARCHAR(64) NOT NULL,
+      related_generation_id VARCHAR(191),
+      related_output_id VARCHAR(191),
+      related_checkin_date VARCHAR(32),
+      admin_note TEXT,
+      created_at VARCHAR(32) NOT NULL,
+      KEY credit_transactions_user_id_idx (user_id),
+      UNIQUE KEY credit_transactions_generation_reason_idx (related_generation_id, reason),
+      CONSTRAINT credit_transactions_user_fk FOREIGN KEY (user_id) REFERENCES users(id)
+    ) ${tableOptions}`,
+    `CREATE TABLE IF NOT EXISTS user_checkins (
+      user_id VARCHAR(191) NOT NULL,
+      checkin_date VARCHAR(32) NOT NULL,
+      credits_awarded INT NOT NULL,
+      created_at VARCHAR(32) NOT NULL,
+      PRIMARY KEY (user_id, checkin_date),
+      KEY user_checkins_user_id_idx (user_id),
+      CONSTRAINT user_checkins_user_fk FOREIGN KEY (user_id) REFERENCES users(id)
     ) ${tableOptions}`,
     `CREATE TABLE IF NOT EXISTS projects (
       id VARCHAR(191) PRIMARY KEY NOT NULL,
@@ -285,6 +315,9 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlColumn(pool, "generation_outputs", "is_public", "TINYINT NOT NULL DEFAULT 0");
   await ensureMySqlColumn(pool, "generation_outputs", "published_at", "VARCHAR(32)");
   await ensureMySqlColumn(pool, "generation_outputs", "public_title", "TEXT");
+  await ensureMySqlColumn(pool, "app_settings", "generation_credit_cost", `INT NOT NULL DEFAULT ${DEFAULT_GENERATION_CREDIT_COST}`);
+  await ensureMySqlColumn(pool, "app_settings", "checkin_credit", `INT NOT NULL DEFAULT ${DEFAULT_CHECKIN_CREDIT}`);
+  await ensureMySqlColumn(pool, "app_settings", "max_images_per_request", `INT NOT NULL DEFAULT ${DEFAULT_MAX_IMAGES_PER_REQUEST}`);
   await ensureMySqlColumn(pool, "agent_conversations", "user_id", "VARCHAR(191)");
   await ensureMySqlColumn(pool, "prompt_favorite_groups", "user_id", "VARCHAR(191)");
   await ensureMySqlColumn(pool, "prompt_favorites", "user_id", "VARCHAR(191)");
@@ -293,6 +326,12 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlIndex(pool, "generation_records", "generation_records_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "generation_outputs", "generation_outputs_user_id_idx", "user_id");
   await ensureMySqlCompositeIndex(pool, "generation_outputs", "generation_outputs_public_idx", ["is_public", "published_at"]);
+  await ensureMySqlIndex(pool, "credit_transactions", "credit_transactions_user_id_idx", "user_id");
+  await ensureMySqlCompositeIndex(pool, "credit_transactions", "credit_transactions_generation_reason_idx", [
+    "related_generation_id",
+    "reason"
+  ]);
+  await ensureMySqlIndex(pool, "user_checkins", "user_checkins_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "agent_conversations", "agent_conversations_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "prompt_favorite_groups", "prompt_favorite_groups_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "prompt_favorites", "prompt_favorites_user_id_idx", "user_id");
@@ -421,9 +460,19 @@ async function ensureAppSettingsRow(pool: Pool): Promise<void> {
   const now = new Date().toISOString();
   await pool.execute(
     `INSERT IGNORE INTO app_settings
-      (id, allow_registration, require_approval, default_credits, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    ["default", 1, 0, 0, now, now]
+      (id, allow_registration, require_approval, default_credits, generation_credit_cost, checkin_credit, max_images_per_request, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      "default",
+      1,
+      0,
+      DEFAULT_REGISTRATION_CREDITS,
+      DEFAULT_GENERATION_CREDIT_COST,
+      DEFAULT_CHECKIN_CREDIT,
+      DEFAULT_MAX_IMAGES_PER_REQUEST,
+      now,
+      now
+    ]
   );
 }
 

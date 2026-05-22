@@ -1,8 +1,9 @@
 import type { Hono } from "hono";
 import { AuthDomainError, loginUser, logoutToken, registerUser } from "../../domain/auth/auth-store.js";
+import { checkInUser, CreditDomainError } from "../../domain/credits/credit-store.js";
 import { getAuthStatus, logoutCodex, pollCodexDeviceLogin, startCodexDeviceLogin } from "../../domain/providers/codex-auth.js";
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
-import { authMeResponse, clearSessionCookie, SESSION_COOKIE_NAME, setSessionCookie } from "../http/auth.js";
+import { authMeResponse, clearSessionCookie, requireAuth, SESSION_COOKIE_NAME, setSessionCookie } from "../http/auth.js";
 import { errorResponse, providerErrorJson } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 import { parseCodexPollPayload, parseLoginPayload, parseRegisterPayload } from "../http/validation.js";
@@ -56,6 +57,19 @@ export function registerAuthRoutes(app: Hono): void {
     return c.json({ ok: true });
   });
 
+  app.post("/api/checkin", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    try {
+      return c.json(await checkInUser(auth.user));
+    } catch (error) {
+      return authErrorJson(error);
+    }
+  });
+
   app.get("/api/auth/status", (c) => c.json(getAuthStatus()));
 
   app.post("/api/auth/codex/device/start", async (c) => {
@@ -97,6 +111,15 @@ export function registerAuthRoutes(app: Hono): void {
 
 function authErrorJson(error: unknown): Response {
   if (error instanceof AuthDomainError) {
+    return new Response(JSON.stringify(errorResponse(error.code, error.message)), {
+      status: error.status,
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+  }
+
+  if (error instanceof CreditDomainError) {
     return new Response(JSON.stringify(errorResponse(error.code, error.message)), {
       status: error.status,
       headers: {

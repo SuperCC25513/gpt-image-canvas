@@ -6,6 +6,7 @@ import {
   startReferenceImageGenerationTask,
   startTextToImageGenerationTask
 } from "../../domain/generation/generation-tasks.js";
+import { CreditDomainError } from "../../domain/credits/credit-store.js";
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
 import { requireAuth } from "../http/auth.js";
 import { errorResponse, providerErrorJson } from "../http/errors.js";
@@ -36,6 +37,10 @@ export function registerImageRoutes(app: Hono): void {
     try {
       return c.json({ record: await startTextToImageGenerationTask(parsed.value, auth.user) });
     } catch (error) {
+      if (error instanceof CreditDomainError) {
+        return creditErrorJson(error);
+      }
+
       if (error instanceof ProviderError) {
         return providerErrorJson(c, error);
       }
@@ -63,6 +68,10 @@ export function registerImageRoutes(app: Hono): void {
     try {
       return c.json({ record: await startReferenceImageGenerationTask(parsed.value, auth.user) });
     } catch (error) {
+      if (error instanceof CreditDomainError) {
+        return creditErrorJson(error);
+      }
+
       if (error instanceof ProviderError) {
         return providerErrorJson(c, error);
       }
@@ -99,5 +108,14 @@ export function registerImageRoutes(app: Hono): void {
     }
 
     return c.json({ record });
+  });
+}
+
+function creditErrorJson(error: CreditDomainError): Response {
+  return new Response(JSON.stringify(errorResponse(error.code, error.message)), {
+    status: error.status,
+    headers: {
+      "Content-Type": "application/json"
+    }
   });
 }
