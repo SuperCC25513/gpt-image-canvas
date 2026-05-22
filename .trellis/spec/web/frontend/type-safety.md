@@ -11,6 +11,7 @@
 API response 是 unknown-ish 外部输入，仍要做关键校验：
 
 - Gallery 检查 `Array.isArray(body.items)`。
+- 如果后续会直接渲染或操作深层字段，guard 需要覆盖这些字段的 shape，例如 Gallery item 的 `asset.id/url/width/height`、`size.width/height`、`quality`、`outputFormat`。
 - Agent/tldraw snapshot 用 `isRecord()`、枚举集合、shape type guard。
 - WebSocket event 用 `parseAgentServerEvent()` 解析失败后给用户错误。
 
