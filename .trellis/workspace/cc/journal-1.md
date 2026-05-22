@@ -283,3 +283,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 调整 MySQL 配置和注释迁移
+
+**Date**: 2026-05-22
+**Task**: 调整 MySQL 配置和注释迁移
+**Branch**: `main`
+
+### Summary
+
+将数据库驱动入口切到 USE_MYSQL 布尔开关，补齐 MySQL 表/字段注释初始化和迁移，并同步数据库规范与文档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1c2dbc7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

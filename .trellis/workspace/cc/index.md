@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
+- **Total Sessions**: 9
 - **Last Active**: 2026-05-22
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~285 | Active |
+| `journal-1.md` | ~318 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-05-22 | 调整 MySQL 配置和注释迁移 | `1c2dbc7` | `main` |
 | 8 | 2026-05-22 | 修复后端业务逻辑风险 | `dc646a0`, `9e62c71` | `main` |
 | 7 | 2026-05-22 | 完成 MySQL 用户体系父任务验收 | `8f48f83` | `main` |
 | 6 | 2026-05-22 | 完成后台管理与生成审计 | `65d27be`, `ed87390`, `455b054` | `main` |
