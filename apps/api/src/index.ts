@@ -28,8 +28,9 @@ if (isMainModule()) {
   const shutdown = (): void => {
     closeAllAgentSessions("server_shutdown");
     agentWebSocketServer.close();
-    closeDatabase();
-    server.close();
+    void closeDatabase().finally(() => {
+      server.close();
+    });
   };
 
   process.once("SIGINT", shutdown);
