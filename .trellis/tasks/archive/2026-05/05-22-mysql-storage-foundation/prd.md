@@ -33,15 +33,15 @@
 
 ## Acceptance Criteria
 
-- [ ] 不设置 `DATABASE_DRIVER` 时，SQLite 模式启动和现有 Gallery、生成历史、provider 配置仍可用。
-- [ ] 设置 `DATABASE_DRIVER=mysql` 后，API 连接本机 MySQL，并在允许时创建数据库和第一阶段表。
-- [ ] MySQL 模式下可以保存项目快照、保存生成记录、保存输出资产元数据、读取 Gallery。
-- [ ] MySQL 模式不会读取 SQLite 数据，也不会尝试做 SQLite 到 MySQL 的迁移。
-- [ ] MySQL schema 不包含已移除的云存储配置或云资产字段。
-- [ ] `.env.example` 或文档只包含安全占位值，不包含真实本机密码。
-- [ ] `docs/generated/db-schema.md` 或等价数据库文档说明 SQLite 与 MySQL schema。
-- [ ] 通过 `pnpm typecheck`。
-- [ ] 通过 `pnpm build`。
+- [x] 不设置 `DATABASE_DRIVER` 时，SQLite 模式启动和现有 Gallery、生成历史、provider 配置仍可用。
+- [x] 设置 `DATABASE_DRIVER=mysql` 后，API 连接本机 MySQL，并在允许时创建数据库和第一阶段表。
+- [x] MySQL 模式下可以保存项目快照、保存生成记录、保存输出资产元数据、读取 Gallery。
+- [x] MySQL 模式不会读取 SQLite 数据，也不会尝试做 SQLite 到 MySQL 的迁移。
+- [x] MySQL schema 不包含已移除的云存储配置或云资产字段。
+- [x] `.env.example` 或文档只包含安全占位值，不包含真实本机密码。
+- [x] `docs/generated/db-schema.md` 或等价数据库文档说明 SQLite 与 MySQL schema。
+- [x] 通过 `pnpm typecheck`。
+- [x] 通过 `pnpm build`。
 
 ## Out Of Scope
 

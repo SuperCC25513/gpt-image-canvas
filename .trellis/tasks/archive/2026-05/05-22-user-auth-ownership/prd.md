@@ -37,22 +37,22 @@
 
 ## Acceptance Criteria
 
-- [ ] 用户可注册、登录、退出，并通过 `/api/auth/me` 获取当前用户和积分摘要。
-- [ ] 默认开放注册，默认注册用户状态为 `active`。
-- [ ] 配置 `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME` 后，服务启动会创建 admin 用户。
-- [ ] 已存在同邮箱用户时，启动会确保其角色为 `admin`、状态为 `active`。
-- [ ] 已存在同邮箱管理员时，修改 `.env` 中的 `ADMIN_PASSWORD` 并重启不会改变其密码。
-- [ ] 未配置管理员环境变量时，服务仍能启动，但后台不可用并给出安全提示。
-- [ ] 禁用用户和待审核用户无法登录，也无法发起生成。
-- [ ] Cookie 中有会话 token，但数据库只保存 token hash。
-- [ ] 新生成的项目、资产、生成记录和输出都写入 owner。
-- [ ] 旧 SQLite 中缺失 owner 的项目、资产、生成记录和输出会补为管理员 owner。
-- [ ] 普通用户无法读取、删除、下载、导出或复用其他用户私密输出。
-- [ ] 管理员可通过后续后台接口识别为 admin；本任务至少提供 admin 鉴权基础。
-- [ ] SQLite 和 MySQL 模式都要求登录后才能访问创作、私有 Gallery、资产下载、生成和管理能力。
-- [ ] shared 类型覆盖 auth 请求、响应和错误码。
-- [ ] 通过 `pnpm typecheck`。
-- [ ] 通过 `pnpm build`。
+- [x] 用户可注册、登录、退出，并通过 `/api/auth/me` 获取当前用户和积分摘要。
+- [x] 默认开放注册，默认注册用户状态为 `active`。
+- [x] 配置 `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME` 后，服务启动会创建 admin 用户。
+- [x] 已存在同邮箱用户时，启动会确保其角色为 `admin`、状态为 `active`。
+- [x] 已存在同邮箱管理员时，修改 `.env` 中的 `ADMIN_PASSWORD` 并重启不会改变其密码。
+- [x] 未配置管理员环境变量时，服务仍能启动，但后台不可用并给出安全提示。
+- [x] 禁用用户和待审核用户无法登录，也无法发起生成。
+- [x] Cookie 中有会话 token，但数据库只保存 token hash。
+- [x] 新生成的项目、资产、生成记录和输出都写入 owner。
+- [x] 旧 SQLite 中缺失 owner 的项目、资产、生成记录和输出会补为管理员 owner。
+- [x] 普通用户无法读取、删除、下载、导出或复用其他用户私密输出。
+- [x] 管理员可通过后续后台接口识别为 admin；本任务至少提供 admin 鉴权基础。
+- [x] SQLite 和 MySQL 模式都要求登录后才能访问创作、私有 Gallery、资产下载、生成和管理能力。
+- [x] shared 类型覆盖 auth 请求、响应和错误码。
+- [x] 通过 `pnpm typecheck`。
+- [x] 通过 `pnpm build`。
 
 ## Out Of Scope
 
