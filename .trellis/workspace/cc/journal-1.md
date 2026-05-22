@@ -110,3 +110,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: 完成图片公开与图片广场
+
+**Date**: 2026-05-22
+**Task**: 完成图片公开与图片广场
+**Branch**: `main`
+
+### Summary
+
+实现输出级公开状态、公开图片广场、Gallery 可见性切换和公开资产匿名读取；完成 SQLite/MySQL 烟测、typecheck/build 与内置浏览器桌面/移动验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe97182` | (see git log) |
+| `233df04` | (see git log) |
+| `0687758` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
