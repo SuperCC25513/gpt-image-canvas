@@ -315,8 +315,22 @@ function preloadPromptPoolPage(): void {
   void loadPromptPoolPageModule();
 }
 
+type AdminPageModule = { default: typeof import("../admin/AdminPage").AdminPage };
+let adminPageModulePromise: Promise<AdminPageModule> | undefined;
+
+function loadAdminPageModule(): Promise<AdminPageModule> {
+  adminPageModulePromise ??= import("../admin/AdminPage").then((module) => ({ default: module.AdminPage }));
+  return adminPageModulePromise;
+}
+
+const LazyAdminPage = lazy(loadAdminPageModule);
+
+function preloadAdminPage(): void {
+  void loadAdminPageModule();
+}
+
 type PersistedSnapshot = TLEditorSnapshot | TLStoreSnapshot;
-type AppRoute = "home" | "canvas" | "pool" | "gallery" | "publicGallery";
+type AppRoute = "home" | "canvas" | "pool" | "gallery" | "publicGallery" | "admin";
 type SaveStatus = "loading" | "saved" | "pending" | "saving" | "error";
 type GenerationMode = "text" | "reference";
 type PanelTab = "manual" | "agent";
@@ -603,6 +617,10 @@ function routeFromLocation(): AppRoute {
     return "publicGallery";
   }
 
+  if (window.location.pathname === "/admin") {
+    return "admin";
+  }
+
   return window.location.pathname === "/gallery" ? "gallery" : "home";
 }
 
@@ -617,6 +635,10 @@ function pathForRoute(route: AppRoute): string {
 
   if (route === "publicGallery") {
     return "/public-gallery";
+  }
+
+  if (route === "admin") {
+    return "/admin";
   }
 
   return route === "gallery" ? "/gallery" : "/";
@@ -2552,13 +2574,17 @@ function TopNavigation({
   route,
   onNavigate,
   onPreloadGallery,
-  onPreloadPool
+  onPreloadPool,
+  onPreloadAdmin,
+  isAdmin
 }: {
   onOpenProviderConfig: () => void;
   route: AppRoute;
   onNavigate: (route: AppRoute) => void;
   onPreloadGallery: () => void;
   onPreloadPool: () => void;
+  onPreloadAdmin: () => void;
+  isAdmin: boolean;
 }) {
   const { t } = useI18n();
 
@@ -2650,6 +2676,24 @@ function TopNavigation({
               <ImageIcon className="size-4" aria-hidden="true" />
               {t("navGallery")}
             </a>
+            {isAdmin ? (
+              <a
+                aria-current={route === "admin" ? "page" : undefined}
+                className="top-navigation__link"
+                data-active={route === "admin"}
+                data-testid="nav-admin"
+                href="/admin"
+                onFocus={onPreloadAdmin}
+                onMouseEnter={onPreloadAdmin}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onNavigate("admin");
+                }}
+              >
+                <ShieldCheck className="size-4" aria-hidden="true" />
+                {t("navAdmin")}
+              </a>
+            ) : null}
           </nav>
           <LanguageSwitcher />
           <button
@@ -3599,7 +3643,7 @@ export function App() {
   }, [agentMessages, currentAgentConversationId]);
 
   useEffect(() => {
-    if (isAuthLoading || !authStatus || route === "gallery" || route === "pool" || route === "publicGallery") {
+    if (isAuthLoading || !authStatus || route === "gallery" || route === "pool" || route === "publicGallery" || route === "admin") {
       return;
     }
 
@@ -5931,11 +5975,13 @@ export function App() {
   }
 
   return (
-    <div className="app-root" data-canvas-theme={route !== "home" && route !== "pool" && isCanvasDarkMode ? "dark" : "light"}>
+    <div className="app-root" data-canvas-theme={route === "canvas" && isCanvasDarkMode ? "dark" : "light"}>
       <TopNavigation
+        isAdmin={accountUser?.role === "admin"}
         route={route}
         onNavigate={navigateToRoute}
         onOpenProviderConfig={() => setIsProviderConfigDialogOpen(true)}
+        onPreloadAdmin={preloadAdminPage}
         onPreloadGallery={preloadGalleryPage}
         onPreloadPool={preloadPromptPoolPage}
       />
@@ -5949,6 +5995,20 @@ export function App() {
           onOpenGallery={() => navigateToRoute("gallery")}
           onStartCodexLogin={startCodexLogin}
         />
+      ) : null}
+      {route === "admin" ? (
+        <Suspense
+          fallback={
+            <main className="admin-page app-view" data-testid="admin-loading-page">
+              <div className="admin-empty-state" role="status">
+                <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+                <p>{t("adminLoading")}</p>
+              </div>
+            </main>
+          }
+        >
+          <LazyAdminPage currentUser={accountUser} />
+        </Suspense>
       ) : null}
       <main className="app-shell app-view relative flex min-h-0 overflow-hidden bg-neutral-950 text-neutral-900" data-active-route={route} hidden={route !== "canvas"}>
       <section

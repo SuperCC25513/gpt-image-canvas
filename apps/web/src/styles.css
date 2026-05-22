@@ -8,6 +8,7 @@
 @import "./styles/layout-theme.css";
 @import "./styles/home.css";
 @import "./styles/auth.css";
+@import "./styles/admin.css";
 @import "./styles/provider-config.css";
 @import "./styles/canvas-theme.css";
 @import "./styles/agent-panel.css";
