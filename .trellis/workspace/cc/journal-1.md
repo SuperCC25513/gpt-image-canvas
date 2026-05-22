@@ -40,3 +40,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: 完成 MySQL 存储底座
+
+**Date**: 2026-05-22
+**Task**: 完成 MySQL 存储底座
+**Branch**: `main`
+
+### Summary
+
+新增 MySQL 驱动配置、连接池、建库建表和双驱动 store facade；验证 SQLite 默认路径、MySQL 临时库 smoke、typecheck/build 和空 SQLite schema 云字段检查。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c43bdbf` | (see git log) |
+| `b4b435d` | (see git log) |
+| `875d72f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

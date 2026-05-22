@@ -18,7 +18,13 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "05-22-mysql-storage-foundation",
+    "05-22-user-auth-ownership",
+    "05-22-public-gallery-visibility",
+    "05-22-credits-checkins",
+    "05-22-admin-audit"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "",

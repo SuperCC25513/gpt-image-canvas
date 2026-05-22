@@ -2,15 +2,15 @@
 
 ## Architecture
 
-本任务应拆为一个父级能力规划和多个可独立验证的实现阶段。原因：MySQL 存储底座会影响 API 持久化边界；用户体系会影响所有资产访问；公开广场、积分签到和后台管理又分别有独立验收面。
+本任务拆为一个父级能力规划和 5 个可独立验证的实现阶段。原因：MySQL 存储底座会影响 API 持久化边界；用户体系会影响所有资产访问；公开广场、积分签到和后台管理又分别有独立验收面。
 
 推荐顺序：
 
-1. MySQL 存储底座。
-2. 用户、会话和 owner 权限。
-3. 输出级公开状态和图片广场。
-4. 积分扣费和每日签到。
-5. 后台管理和生成审计。
+1. `.trellis/tasks/05-22-mysql-storage-foundation`：MySQL 存储底座。
+2. `.trellis/tasks/05-22-user-auth-ownership`：用户、会话和 owner 权限。
+3. `.trellis/tasks/05-22-public-gallery-visibility`：输出级公开状态和图片广场。
+4. `.trellis/tasks/05-22-credits-checkins`：积分扣费和每日签到。
+5. `.trellis/tasks/05-22-admin-audit`：后台管理和生成审计。
 
 当前代码大量直接导入 `db` 和 `schema`。MySQL 不能只替换 `better-sqlite3` 连接，因为当前 schema 使用 `sqlite-core`。需要在第一阶段建立清晰存储边界，再逐步迁移调用点。
 
@@ -26,11 +26,11 @@
 - `creditStore`：积分余额、流水、扣费、退款、签到。
 - `adminStore`：设置、用户管理、审计查询。
 
-第一阶段可以保留 SQLite 实现作为兼容层，同时新增 MySQL 实现。后续一旦 MySQL 模式稳定，再决定是否删除 SQLite。
+第一阶段保留 SQLite 实现作为默认兼容层，同时新增 MySQL 实现。SQLite 不删除；MySQL 是显式启用的部署目标。
 
 ## MySQL Schema Shape
 
-核心表：
+完整能力最终需要的核心表：
 
 - `users`：`id`、`name`、`email`、`password_salt`、`password_iterations`、`password_hash`、`role`、`status`、`credits`、时间戳。
 - `sessions`：`token_hash`、`user_id`、`expires_at`、`created_at`。
@@ -44,7 +44,9 @@
 - `user_checkins`：`user_id + checkin_date` 唯一，记录奖励积分。
 - `generation_requests`：审计请求，记录用户、prompt、IP、User-Agent、公开状态、状态、错误摘要、关联输出。
 
-Provider、Agent、提示词收藏等现有表也要迁移到 MySQL，并继续遵守密钥 mask 和不日志泄露规则。
+Provider、Agent、提示词收藏等现有表也要支持 MySQL，并继续遵守密钥 mask 和不日志泄露规则。
+
+实际落地按子任务分批建表：第一阶段先建当前已有业务表；用户、公开状态、积分、签到和审计表在对应子任务中追加，避免一次 schema 变更跨过太多业务边界。
 
 ## Runtime Config
 
@@ -59,15 +61,31 @@ MYSQL_PASSWORD=
 MYSQL_DATABASE=gpt_image_canvas
 MYSQL_CONNECTION_LIMIT=10
 MYSQL_CREATE_DATABASE=true
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
+ADMIN_NAME=Admin
 ```
 
 默认驱动为 SQLite。只有 `.env` 显式设置 `DATABASE_DRIVER=mysql` 时才连接 MySQL。本机验证可在未提交的 `.env` 中填入用户提供的本地账号密码。代码默认值不能包含真实密码。
+
+## Admin Bootstrap
+
+管理员初始化策略已拍板：服务启动时读取 `.env` 中的 `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME`。
+
+- 三项都配置时，启动流程创建或激活对应管理员账号。
+- 账号不存在时，使用 `ADMIN_PASSWORD` 创建密码 hash。
+- 账号已存在时，只确保角色为 `admin`、状态为 `active`，不自动重置密码。
+- 忘记管理员密码时，不能只改 `.env` 重启恢复；后续需要后台改密或专门重置命令。
+- 三项缺失时，不创建管理员，但启动日志只能提示缺少管理员初始化配置，不能输出密码或敏感环境值。
+- 首个注册用户不会自动成为管理员，避免公开部署时被抢占。
 
 ## Auth And Passwords
 
 密码使用 Node crypto 的强哈希策略，至少包含 salt、iterations、hash。会话 token 只把 hash 存数据库，HTTP cookie 使用 `HttpOnly`、`SameSite=Lax`；生产 HTTPS 时启用 `Secure`。
 
 注册逻辑读取 `app_settings.allow_registration` 和 `require_approval`。需要审核时，新用户状态为 `pending`，管理员启用后才可登录或生成。
+
+注册默认策略已拍板：`allow_registration=true`、`require_approval=false`。默认注册用户直接为 `active`，管理员后续可在后台关闭注册或开启审核。公网部署时需要在上线前检查这两个设置。
 
 ## Authorization
 
@@ -121,10 +139,10 @@ API 建议：
 - 不做 SQLite → MySQL 数据迁移。
 - SQLite 数据和 MySQL 数据互相独立；切换驱动后看到的是对应存储中的数据。
 
-这个决策保护当前 local-first 默认体验，也降低迁移风险。代价是实现期需要维护 SQLite 和 MySQL 两套持久化路径，或者先抽 store 边界再逐步补 MySQL 实现。
+登录策略已拍板：SQLite 和 MySQL 都走统一登录流程。这个决策让权限、Gallery、积分、后台和审计数据模型一致；代价是当前本地免登录体验需要升级为首次注册/登录或管理员初始化流程。
+
+旧 SQLite 数据归属策略已拍板：统一登录启用后，旧 SQLite 中没有 `user_id` 的项目、资产、生成记录和输出归属到 `.env` 初始化的管理员账号。该策略保护既有本机私有数据，避免被首个普通注册用户继承。代价是普通用户需要管理员后续转移或重新生成内容，首版不做批量转移工具。
 
 ## Dependency Notes
 
-`05-21-remove-cloud-storage` 如果先合入，本任务的 MySQL schema 不需要包含云存储字段和云配置表。若并行推进，MySQL 初始 schema 需要跟当前 main 对齐，随后再删除云字段，风险更高。
-
-推荐把移除云存储作为前置依赖。
+`05-21-remove-cloud-storage` 已完成并归档。本任务的 MySQL schema 不包含云存储字段和云配置表，也不恢复任何云存储 API 或 UI。
