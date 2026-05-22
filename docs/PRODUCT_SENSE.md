@@ -47,7 +47,7 @@ Important plan limits:
 
 ### Gallery And Assets
 
-Gallery 应让本地输出易于浏览、定位、下载、重跑和检查。本地资产文件是唯一可用性来源。
+Gallery 应让本地输出易于浏览、定位、下载、重跑和检查。本地资产文件是唯一可用性来源。用户主动公开的单张输出可以进入图片广场；未公开输出和其资产默认保持私密。
 
 ### Provider Configuration
 

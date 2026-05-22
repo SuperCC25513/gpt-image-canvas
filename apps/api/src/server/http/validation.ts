@@ -20,7 +20,8 @@ import {
   type SaveAgentLlmConfigRequest,
   type SaveLocalOpenAIProviderConfig,
   type SaveProviderConfigRequest,
-  type StylePresetId
+  type StylePresetId,
+  type UpdateGalleryVisibilityRequest
 } from "../../domain/contracts.js";
 import { getStoredAssetFile } from "../../domain/generation/image-generation.js";
 import { userCanReadAsset } from "../../domain/storage/store.js";
@@ -211,6 +212,30 @@ export async function parseEditPayload(input: unknown, user?: CurrentUser): Prom
       referenceImage: referenceImages.value[0],
       referenceAssetIds: referenceAssetIds.value.length > 0 ? referenceAssetIds.value : undefined,
       referenceAssetId: referenceAssetIds.value[0]
+    }
+  };
+}
+
+export function parseGalleryVisibilityPayload(input: unknown): ParseResult<UpdateGalleryVisibilityRequest> {
+  if (!isRecord(input) || typeof input.isPublic !== "boolean") {
+    return {
+      ok: false,
+      error: errorResponse("invalid_gallery_visibility_request", "公开状态请求必须包含 isPublic。")
+    };
+  }
+
+  if (input.publicTitle !== undefined && typeof input.publicTitle !== "string") {
+    return {
+      ok: false,
+      error: errorResponse("invalid_gallery_visibility_request", "公开标题必须是字符串。")
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      isPublic: input.isPublic,
+      publicTitle: typeof input.publicTitle === "string" ? input.publicTitle : undefined
     }
   };
 }
@@ -548,7 +573,8 @@ function parseBaseImagePayload(input: unknown): ParseResult<ImageProviderInput> 
       sizeApiValue: resolvedSize.apiValue,
       quality: quality.value,
       outputFormat: outputFormat.value,
-      count: count.value
+      count: count.value,
+      isPublic: input.isPublic === true
     }
   };
 }

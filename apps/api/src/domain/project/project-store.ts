@@ -3,8 +3,10 @@ export {
   ensureDefaultProject,
   getGalleryExportAssets,
   getGalleryImages,
+  getPublicGalleryImages,
   getProjectState,
-  saveProjectSnapshot
+  saveProjectSnapshot,
+  updateGalleryVisibility
 } from "../storage/store.js";
 
 export type { GalleryExportAsset, ProjectSnapshotInput } from "../storage/store.js";

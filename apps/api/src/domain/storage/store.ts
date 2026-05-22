@@ -5,17 +5,21 @@ import type {
   GeneratedAsset,
   GalleryImageItem,
   GalleryResponse,
+  GalleryVisibilityResponse,
   GenerationRecord as ApiGenerationRecord,
   GenerationStatus,
   ImageMode,
   ImageQuality,
   OutputFormat,
   OutputStatus,
+  PublicGalleryItem,
+  PublicGalleryResponse,
+  UpdateGalleryVisibilityRequest,
   ProjectState
 } from "../contracts.js";
 import type { CurrentUser } from "../contracts.js";
 import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
-import { assets, generationOutputs, generationRecords, generationReferenceAssets, projects } from "../../infrastructure/schema.js";
+import { assets, generationOutputs, generationRecords, generationReferenceAssets, projects, users } from "../../infrastructure/schema.js";
 
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "Default Project";
@@ -69,6 +73,9 @@ export interface GenerationOutputRow {
   status: string;
   assetId: string | null;
   error: string | null;
+  isPublic: number;
+  publishedAt: string | null;
+  publicTitle: string | null;
   createdAt: string;
 }
 
@@ -84,6 +91,8 @@ export interface StoredGenerationOutputInput {
   status: OutputStatus;
   asset?: GeneratedAsset;
   error?: string;
+  isPublic?: boolean;
+  publicTitle?: string;
 }
 
 function canAccessOwner(user: CurrentUser, ownerId: string | null | undefined): boolean {
@@ -115,6 +124,7 @@ interface GenerationReferenceAssetPacket extends RowDataPacket, GenerationRefere
 
 interface GalleryPacket extends RowDataPacket {
   outputId: string;
+  outputUserId: string | null;
   generationId: string;
   mode: string;
   prompt: string;
@@ -125,13 +135,18 @@ interface GalleryPacket extends RowDataPacket {
   quality: string;
   outputFormat: string;
   createdAt: string;
+  isPublic: number;
+  publishedAt: string | null;
+  publicTitle: string | null;
   assetId: string;
+  assetUserId: string | null;
   fileName: string;
   relativePath: string;
   mimeType: string;
   assetWidth: number;
   assetHeight: number;
   assetCreatedAt: string;
+  authorName?: string | null;
 }
 
 function nowIso(): string {
@@ -244,7 +259,7 @@ export async function getGalleryImages(user: CurrentUser): Promise<GalleryRespon
 
     return {
       items: rows
-        .map(({ output, generation, asset }) => galleryItemFromRows(output.id, output.createdAt, generation, asset))
+        .map(({ output, generation, asset }) => galleryItemFromRows(output, generation, asset))
         .filter((item): item is GalleryImageItem => Boolean(item))
     };
   }
@@ -252,6 +267,7 @@ export async function getGalleryImages(user: CurrentUser): Promise<GalleryRespon
   const [rows] = await getMySqlPool().execute<GalleryPacket[]>(
     `SELECT
        generation_outputs.id AS outputId,
+       generation_outputs.user_id AS outputUserId,
        generation_records.id AS generationId,
        generation_records.mode AS mode,
        generation_records.prompt AS prompt,
@@ -262,7 +278,11 @@ export async function getGalleryImages(user: CurrentUser): Promise<GalleryRespon
        generation_records.quality AS quality,
        generation_records.output_format AS outputFormat,
        generation_outputs.created_at AS createdAt,
+       generation_outputs.is_public AS isPublic,
+       generation_outputs.published_at AS publishedAt,
+       generation_outputs.public_title AS publicTitle,
        assets.id AS assetId,
+       assets.user_id AS assetUserId,
        assets.file_name AS fileName,
        assets.relative_path AS relativePath,
        assets.mime_type AS mimeType,
@@ -282,8 +302,18 @@ export async function getGalleryImages(user: CurrentUser): Promise<GalleryRespon
     items: rows
       .map((row) =>
         galleryItemFromRows(
-          row.outputId,
-          row.createdAt,
+          {
+            id: row.outputId,
+            userId: row.outputUserId,
+            generationId: row.generationId,
+            status: "succeeded",
+            assetId: row.assetId,
+            error: null,
+            isPublic: row.isPublic,
+            publishedAt: row.publishedAt,
+            publicTitle: row.publicTitle,
+            createdAt: row.createdAt
+          },
           {
             id: row.generationId,
             userId: null,
@@ -303,7 +333,7 @@ export async function getGalleryImages(user: CurrentUser): Promise<GalleryRespon
           },
           {
             id: row.assetId,
-            userId: null,
+            userId: row.assetUserId,
             fileName: row.fileName,
             relativePath: row.relativePath,
             mimeType: row.mimeType,
@@ -315,6 +345,174 @@ export async function getGalleryImages(user: CurrentUser): Promise<GalleryRespon
       )
       .filter((item): item is GalleryImageItem => Boolean(item))
   };
+}
+
+export async function getPublicGalleryImages(limit: number): Promise<PublicGalleryResponse> {
+  const safeLimit = Math.min(Math.max(Math.trunc(limit) || 60, 1), 60);
+
+  if (databaseDriver === "sqlite") {
+    const rows = db
+      .select({
+        output: generationOutputs,
+        generation: generationRecords,
+        asset: assets,
+        user: users
+      })
+      .from(generationOutputs)
+      .innerJoin(generationRecords, eq(generationOutputs.generationId, generationRecords.id))
+      .innerJoin(assets, eq(generationOutputs.assetId, assets.id))
+      .leftJoin(users, eq(generationOutputs.userId, users.id))
+      .where(and(eq(generationOutputs.status, "succeeded"), eq(generationOutputs.isPublic, 1)))
+      .orderBy(desc(generationOutputs.publishedAt))
+      .limit(safeLimit)
+      .all();
+
+    return {
+      items: rows
+        .map(({ output, generation, asset, user }) => publicGalleryItemFromRows(output, generation, asset, user?.name ?? null))
+        .filter((item): item is PublicGalleryItem => Boolean(item))
+    };
+  }
+
+  const [rows] = await getMySqlPool().execute<GalleryPacket[]>(
+    `SELECT
+       generation_outputs.id AS outputId,
+       generation_outputs.user_id AS outputUserId,
+       generation_records.id AS generationId,
+       generation_records.mode AS mode,
+       generation_records.prompt AS prompt,
+       generation_records.effective_prompt AS effectivePrompt,
+       generation_records.preset_id AS presetId,
+       generation_records.width AS width,
+       generation_records.height AS height,
+       generation_records.quality AS quality,
+       generation_records.output_format AS outputFormat,
+       generation_outputs.created_at AS createdAt,
+       generation_outputs.is_public AS isPublic,
+       generation_outputs.published_at AS publishedAt,
+       generation_outputs.public_title AS publicTitle,
+       assets.id AS assetId,
+       assets.user_id AS assetUserId,
+       assets.file_name AS fileName,
+       assets.relative_path AS relativePath,
+       assets.mime_type AS mimeType,
+       assets.width AS assetWidth,
+       assets.height AS assetHeight,
+       assets.created_at AS assetCreatedAt,
+       users.name AS authorName
+     FROM generation_outputs
+     INNER JOIN generation_records ON generation_outputs.generation_id = generation_records.id
+     INNER JOIN assets ON generation_outputs.asset_id = assets.id
+     LEFT JOIN users ON generation_outputs.user_id = users.id
+     WHERE generation_outputs.status = ?
+       AND generation_outputs.is_public = ?
+     ORDER BY generation_outputs.published_at DESC
+     LIMIT ${safeLimit}`,
+    ["succeeded", 1]
+  );
+
+  return {
+    items: rows
+      .map((row) =>
+        publicGalleryItemFromRows(
+          {
+            id: row.outputId,
+            userId: row.outputUserId,
+            generationId: row.generationId,
+            status: "succeeded",
+            assetId: row.assetId,
+            error: null,
+            isPublic: row.isPublic,
+            publishedAt: row.publishedAt,
+            publicTitle: row.publicTitle,
+            createdAt: row.createdAt
+          },
+          {
+            id: row.generationId,
+            userId: null,
+            mode: row.mode,
+            prompt: row.prompt,
+            effectivePrompt: row.effectivePrompt,
+            presetId: row.presetId,
+            width: row.width,
+            height: row.height,
+            quality: row.quality,
+            outputFormat: row.outputFormat,
+            count: 1,
+            status: "succeeded",
+            error: null,
+            referenceAssetId: null,
+            createdAt: row.createdAt
+          },
+          {
+            id: row.assetId,
+            userId: row.assetUserId,
+            fileName: row.fileName,
+            relativePath: row.relativePath,
+            mimeType: row.mimeType,
+            width: row.assetWidth,
+            height: row.assetHeight,
+            createdAt: row.assetCreatedAt
+          },
+          row.authorName ?? null
+        )
+      )
+      .filter((item): item is PublicGalleryItem => Boolean(item))
+  };
+}
+
+export async function updateGalleryVisibility(
+  outputId: string,
+  input: UpdateGalleryVisibilityRequest,
+  user: CurrentUser
+): Promise<GalleryVisibilityResponse | undefined> {
+  const publicTitle = normalizePublicTitle(input.publicTitle);
+
+  if (databaseDriver === "sqlite") {
+    const output = db
+      .select()
+      .from(generationOutputs)
+      .where(and(eq(generationOutputs.id, outputId), eq(generationOutputs.status, "succeeded"), sqliteOwnerWhere(generationOutputs.userId, user)))
+      .get();
+    if (!output) {
+      return undefined;
+    }
+
+    const publishedAt = input.isPublic ? output.publishedAt ?? nowIso() : null;
+    db.update(generationOutputs)
+      .set({
+        isPublic: input.isPublic ? 1 : 0,
+        publishedAt,
+        publicTitle: input.isPublic ? publicTitle : null
+      })
+      .where(eq(generationOutputs.id, outputId))
+      .run();
+
+    return galleryVisibilityResponse(outputId, input.isPublic, publishedAt, input.isPublic ? publicTitle : null);
+  }
+
+  const [rows] = await getMySqlPool().execute<GenerationOutputPacket[]>(
+    `${generationOutputSelectSql()}
+     WHERE id = ?
+       AND status = ?
+       ${user.role === "admin" ? "" : "AND user_id = ?"}
+     LIMIT 1`,
+    user.role === "admin" ? [outputId, "succeeded"] : [outputId, "succeeded", user.id]
+  );
+  const output = rows[0];
+  if (!output) {
+    return undefined;
+  }
+
+  const publishedAt = input.isPublic ? output.publishedAt ?? nowIso() : null;
+  await getMySqlPool().execute(
+    `UPDATE generation_outputs
+     SET is_public = ?, published_at = ?, public_title = ?
+     WHERE id = ?`,
+    [input.isPublic ? 1 : 0, publishedAt, input.isPublic ? publicTitle : null, outputId]
+  );
+
+  return galleryVisibilityResponse(outputId, input.isPublic, publishedAt, input.isPublic ? publicTitle : null);
 }
 
 export async function deleteGalleryOutput(outputId: string, user: CurrentUser): Promise<boolean> {
@@ -400,9 +598,17 @@ export async function findAssetById(assetId: string): Promise<AssetRow | undefin
   return rows[0];
 }
 
-export async function userCanReadAsset(assetId: string, user: CurrentUser): Promise<boolean> {
+export async function userCanReadAsset(assetId: string, user?: CurrentUser): Promise<boolean> {
   const asset = await findAssetById(assetId);
-  return Boolean(asset && canAccessOwner(user, asset.userId));
+  if (!asset) {
+    return false;
+  }
+
+  if (user && canAccessOwner(user, asset.userId)) {
+    return true;
+  }
+
+  return assetIsLinkedToPublicOutput(assetId);
 }
 
 export async function assetExists(assetId: string, user?: CurrentUser): Promise<boolean> {
@@ -417,6 +623,29 @@ export async function assetExists(assetId: string, user?: CurrentUser): Promise<
   const [rows] = await getMySqlPool().execute<Array<RowDataPacket & { id: string }>>(
     "SELECT id FROM assets WHERE id = ?",
     [assetId]
+  );
+  return Boolean(rows[0]?.id);
+}
+
+async function assetIsLinkedToPublicOutput(assetId: string): Promise<boolean> {
+  if (databaseDriver === "sqlite") {
+    return Boolean(
+      db
+        .select({ id: generationOutputs.id })
+        .from(generationOutputs)
+        .where(and(eq(generationOutputs.assetId, assetId), eq(generationOutputs.status, "succeeded"), eq(generationOutputs.isPublic, 1)))
+        .get()
+    );
+  }
+
+  const [rows] = await getMySqlPool().execute<Array<RowDataPacket & { id: string }>>(
+    `SELECT id
+     FROM generation_outputs
+     WHERE asset_id = ?
+       AND status = ?
+       AND is_public = ?
+     LIMIT 1`,
+    [assetId, "succeeded", 1]
   );
   return Boolean(rows[0]?.id);
 }
@@ -531,6 +760,10 @@ export async function insertGenerationOutputs(generationId: string, outputs: Sto
   const userId = generation?.userId ?? null;
 
   for (const output of outputs) {
+    const isPublic = output.isPublic === true;
+    const publishedAt = isPublic ? createdAt : null;
+    const publicTitle = isPublic ? normalizePublicTitle(output.publicTitle) : null;
+
     if (output.asset) {
       await insertAsset({
         id: output.asset.id,
@@ -553,14 +786,29 @@ export async function insertGenerationOutputs(generationId: string, outputs: Sto
           status: output.status,
           assetId: output.asset?.id ?? null,
           error: output.error ?? null,
+          isPublic: isPublic ? 1 : 0,
+          publishedAt,
+          publicTitle,
           createdAt
         })
         .run();
     } else {
       await getMySqlPool().execute(
-        `INSERT INTO generation_outputs (id, user_id, generation_id, status, asset_id, error, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [output.id, userId, generationId, output.status, output.asset?.id ?? null, output.error ?? null, createdAt]
+        `INSERT INTO generation_outputs
+          (id, user_id, generation_id, status, asset_id, error, is_public, published_at, public_title, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          output.id,
+          userId,
+          generationId,
+          output.status,
+          output.asset?.id ?? null,
+          output.error ?? null,
+          isPublic ? 1 : 0,
+          publishedAt,
+          publicTitle,
+          createdAt
+        ]
       );
     }
   }
@@ -885,6 +1133,9 @@ function generationOutputSelectSql(): string {
                  status,
                  asset_id AS assetId,
                  error,
+                 is_public AS isPublic,
+                 published_at AS publishedAt,
+                 public_title AS publicTitle,
                  created_at AS createdAt
           FROM generation_outputs`;
 }
@@ -937,14 +1188,16 @@ function generationRecordFromRows(
       id: output.id,
       status: output.status as OutputStatus,
       asset: output.assetId ? toGeneratedAsset(assetById.get(output.assetId)) : undefined,
-      error: output.error ?? undefined
+      error: output.error ?? undefined,
+      isPublic: output.isPublic === 1,
+      publishedAt: output.publishedAt ?? undefined,
+      publicTitle: output.publicTitle ?? undefined
     }))
   };
 }
 
 function galleryItemFromRows(
-  outputId: string,
-  createdAt: string,
+  output: GenerationOutputRow,
   generation: GenerationRecordRow,
   asset: AssetRow | undefined
 ): GalleryImageItem | undefined {
@@ -954,7 +1207,7 @@ function galleryItemFromRows(
   }
 
   return {
-    outputId,
+    outputId: output.id,
     generationId: generation.id,
     mode: generation.mode as ImageMode,
     prompt: generation.prompt,
@@ -966,8 +1219,51 @@ function galleryItemFromRows(
     },
     quality: generation.quality as ImageQuality,
     outputFormat: generation.outputFormat as OutputFormat,
-    createdAt,
-    asset: generatedAsset
+    createdAt: output.createdAt,
+    asset: generatedAsset,
+    isPublic: output.isPublic === 1,
+    publishedAt: output.publishedAt ?? undefined,
+    publicTitle: output.publicTitle ?? undefined
+  };
+}
+
+function publicGalleryItemFromRows(
+  output: GenerationOutputRow,
+  generation: GenerationRecordRow,
+  asset: AssetRow | undefined,
+  authorName: string | null
+): PublicGalleryItem | undefined {
+  const item = galleryItemFromRows(output, generation, asset);
+  if (!item || output.isPublic !== 1 || !output.publishedAt) {
+    return undefined;
+  }
+
+  return {
+    ...item,
+    isPublic: true,
+    publishedAt: output.publishedAt,
+    authorName: authorName?.trim() || "Local creator",
+    providerLabel: "gpt-image-canvas"
+  };
+}
+
+function normalizePublicTitle(value: string | undefined): string | null {
+  const title = value?.trim().replace(/\s+/gu, " ");
+  return title ? title.slice(0, 120) : null;
+}
+
+function galleryVisibilityResponse(
+  outputId: string,
+  isPublic: boolean,
+  publishedAt: string | null,
+  publicTitle: string | null
+): GalleryVisibilityResponse {
+  return {
+    outputId,
+    visibility: isPublic ? "public" : "private",
+    isPublic,
+    publishedAt: publishedAt ?? undefined,
+    publicTitle: publicTitle ?? undefined
   };
 }
 

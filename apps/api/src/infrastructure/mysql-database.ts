@@ -252,10 +252,14 @@ function schemaStatements(): string[] {
       status VARCHAR(32) NOT NULL,
       asset_id VARCHAR(191),
       error TEXT,
+      is_public TINYINT NOT NULL DEFAULT 0,
+      published_at VARCHAR(32),
+      public_title TEXT,
       created_at VARCHAR(32) NOT NULL,
       KEY generation_outputs_user_id_idx (user_id),
       KEY generation_outputs_generation_id_idx (generation_id),
       KEY generation_outputs_asset_id_idx (asset_id),
+      KEY generation_outputs_public_idx (is_public, published_at),
       CONSTRAINT generation_outputs_generation_fk FOREIGN KEY (generation_id) REFERENCES generation_records(id) ON DELETE CASCADE,
       CONSTRAINT generation_outputs_asset_fk FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE SET NULL
     ) ${tableOptions}`,
@@ -278,6 +282,9 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlColumn(pool, "assets", "user_id", "VARCHAR(191)");
   await ensureMySqlColumn(pool, "generation_records", "user_id", "VARCHAR(191)");
   await ensureMySqlColumn(pool, "generation_outputs", "user_id", "VARCHAR(191)");
+  await ensureMySqlColumn(pool, "generation_outputs", "is_public", "TINYINT NOT NULL DEFAULT 0");
+  await ensureMySqlColumn(pool, "generation_outputs", "published_at", "VARCHAR(32)");
+  await ensureMySqlColumn(pool, "generation_outputs", "public_title", "TEXT");
   await ensureMySqlColumn(pool, "agent_conversations", "user_id", "VARCHAR(191)");
   await ensureMySqlColumn(pool, "prompt_favorite_groups", "user_id", "VARCHAR(191)");
   await ensureMySqlColumn(pool, "prompt_favorites", "user_id", "VARCHAR(191)");
@@ -285,6 +292,7 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlIndex(pool, "assets", "assets_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "generation_records", "generation_records_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "generation_outputs", "generation_outputs_user_id_idx", "user_id");
+  await ensureMySqlCompositeIndex(pool, "generation_outputs", "generation_outputs_public_idx", ["is_public", "published_at"]);
   await ensureMySqlIndex(pool, "agent_conversations", "agent_conversations_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "prompt_favorite_groups", "prompt_favorite_groups_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "prompt_favorites", "prompt_favorites_user_id_idx", "user_id");
@@ -321,6 +329,22 @@ async function ensureMySqlIndex(pool: Pool, tableName: string, indexName: string
   }
 
   await pool.query(`CREATE INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)} (${quoteIdentifier(columnName)})`);
+}
+
+async function ensureMySqlCompositeIndex(
+  pool: Pool,
+  tableName: string,
+  indexName: string,
+  columnNames: string[]
+): Promise<void> {
+  if (await mySqlIndexExists(pool, tableName, indexName)) {
+    return;
+  }
+
+  await pool.query(
+    `CREATE INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)}
+       (${columnNames.map((columnName) => quoteIdentifier(columnName)).join(", ")})`
+  );
 }
 
 async function ensurePromptFavoritesUserSourceIndex(pool: Pool): Promise<void> {

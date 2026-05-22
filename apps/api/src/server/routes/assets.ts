@@ -2,23 +2,18 @@ import type { Hono } from "hono";
 import { parsePreviewWidth, readStoredAssetPreview } from "../../domain/assets/preview.js";
 import { readStoredAsset, readStoredAssetMetadata } from "../../domain/generation/image-generation.js";
 import { userCanReadAsset } from "../../domain/storage/store.js";
-import { requireAuth } from "../http/auth.js";
+import { currentUserFromRequest } from "../http/auth.js";
 import { downloadFileName, errorResponse } from "../http/errors.js";
 
 export function registerAssetRoutes(app: Hono): void {
   app.get("/api/assets/:id/preview", async (c) => {
-    const auth = await requireAuth(c);
-    if (!auth.ok) {
-      return auth.response;
-    }
-
     const parsedWidth = parsePreviewWidth(c.req.query("width"));
     if (!parsedWidth.ok) {
       return c.json(errorResponse(parsedWidth.code, parsedWidth.message), 400);
     }
 
     const assetId = c.req.param("id");
-    if (!(await userCanReadAsset(assetId, auth.user))) {
+    if (!(await userCanReadAsset(assetId, await currentUserFromRequest(c)))) {
       return c.json(errorResponse("not_found", "Asset not found."), 404);
     }
 
@@ -38,13 +33,8 @@ export function registerAssetRoutes(app: Hono): void {
   });
 
   app.get("/api/assets/:id/metadata", async (c) => {
-    const auth = await requireAuth(c);
-    if (!auth.ok) {
-      return auth.response;
-    }
-
     const assetId = c.req.param("id");
-    if (!(await userCanReadAsset(assetId, auth.user))) {
+    if (!(await userCanReadAsset(assetId, await currentUserFromRequest(c)))) {
       return c.json(errorResponse("not_found", "Asset not found."), 404);
     }
 
@@ -57,13 +47,8 @@ export function registerAssetRoutes(app: Hono): void {
   });
 
   app.get("/api/assets/:id/download", async (c) => {
-    const auth = await requireAuth(c);
-    if (!auth.ok) {
-      return auth.response;
-    }
-
     const assetId = c.req.param("id");
-    if (!(await userCanReadAsset(assetId, auth.user))) {
+    if (!(await userCanReadAsset(assetId, await currentUserFromRequest(c)))) {
       return c.json(errorResponse("not_found", "找不到请求的图像资源。"), 404);
     }
 
@@ -83,13 +68,8 @@ export function registerAssetRoutes(app: Hono): void {
   });
 
   app.get("/api/assets/:id", async (c) => {
-    const auth = await requireAuth(c);
-    if (!auth.ok) {
-      return auth.response;
-    }
-
     const assetId = c.req.param("id");
-    if (!(await userCanReadAsset(assetId, auth.user))) {
+    if (!(await userCanReadAsset(assetId, await currentUserFromRequest(c)))) {
       return c.json(errorResponse("not_found", "找不到请求的图像资源。"), 404);
     }
 

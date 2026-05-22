@@ -2,9 +2,17 @@ import type { Hono } from "hono";
 import type { GalleryExportRequest } from "../../domain/contracts.js";
 import { createZipStream, prepareZipFiles, type ZipFileInput } from "../../domain/assets/zip.js";
 import { getStoredAssetFile } from "../../domain/generation/image-generation.js";
-import { deleteGalleryOutput, getGalleryExportAssets, getGalleryImages } from "../../domain/project/project-store.js";
+import {
+  deleteGalleryOutput,
+  getGalleryExportAssets,
+  getGalleryImages,
+  getPublicGalleryImages,
+  updateGalleryVisibility
+} from "../../domain/project/project-store.js";
 import { requireAuth } from "../http/auth.js";
 import { downloadFileName, errorResponse } from "../http/errors.js";
+import { readJson } from "../http/json.js";
+import { parseGalleryVisibilityPayload } from "../http/validation.js";
 
 export function registerGalleryRoutes(app: Hono): void {
   app.get("/api/gallery", async (c) => {
@@ -14,6 +22,10 @@ export function registerGalleryRoutes(app: Hono): void {
     }
 
     return c.json(await getGalleryImages(auth.user));
+  });
+
+  app.get("/api/gallery/public", async (c) => {
+    return c.json(await getPublicGalleryImages(parsePublicGalleryLimit(c.req.query("limit"))));
   });
 
   app.post("/api/gallery/export", async (c) => {
@@ -75,6 +87,36 @@ export function registerGalleryRoutes(app: Hono): void {
       ok: true
     });
   });
+
+  app.patch("/api/gallery/:outputId/visibility", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const payload = await readJson(c.req.raw);
+    if (!payload.ok) {
+      return c.json(payload.error, 400);
+    }
+
+    const parsed = parseGalleryVisibilityPayload(payload.value);
+    if (!parsed.ok) {
+      return c.json(parsed.error, 400);
+    }
+
+    const outputId = c.req.param("outputId").trim();
+    const visibility = outputId ? await updateGalleryVisibility(outputId, parsed.value, auth.user) : undefined;
+    if (!visibility) {
+      return c.json(errorResponse("not_found", "Gallery image record not found."), 404);
+    }
+
+    return c.json(visibility);
+  });
+}
+
+function parsePublicGalleryLimit(value: string | undefined): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, 60) : 60;
 }
 
 type GalleryExportParseResult =

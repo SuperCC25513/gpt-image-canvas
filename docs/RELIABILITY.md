@@ -59,6 +59,8 @@ Agent plans are dependency-aware DAGs. Reliability-sensitive rules:
 
 图片资产只写入 `DATA_DIR/assets`，读取、预览和下载都以本地文件为唯一来源。旧 SQLite 中残留的已废弃远端备份字段或配置表只作为历史数据存在，新代码不应读取、写入或回退到远端对象。
 
+`generation_outputs.is_public` 是唯一的公开读取开关。匿名资产读取只能在资产关联到成功且公开的输出时放行；输出删除或改回私密后，公开广场和匿名资产读取必须同步失效。
+
 ## Docker And Build Checks
 
 For normal stories, run:

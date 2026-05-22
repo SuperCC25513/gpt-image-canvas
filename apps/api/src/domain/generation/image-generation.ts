@@ -57,6 +57,8 @@ interface BatchOutputResult {
   status: "succeeded" | "failed";
   asset?: GeneratedAsset;
   error?: string;
+  isPublic?: boolean;
+  publicTitle?: string;
 }
 
 interface SavedProviderImage {
@@ -573,7 +575,7 @@ async function completeGenerationRecord(
   const primaryReferenceAssetId = referenceAssetIds[0] ?? input.referenceAssetId;
 
   await updateGenerationRecordCompletion(generationId, status, error ?? null, primaryReferenceAssetId ?? null);
-  await replaceGenerationOutputs(generationId, outputs);
+  await replaceGenerationOutputs(generationId, outputs.map((output) => generationOutputWithVisibility(output, input)));
 
   return (await readGenerationRecord(generationId, user)) ?? {
     id: generationId,
@@ -590,7 +592,7 @@ async function completeGenerationRecord(
     referenceAssetIds: referenceAssetIds.length > 0 ? referenceAssetIds : undefined,
     referenceAssetId: primaryReferenceAssetId,
     createdAt: existing?.createdAt ?? new Date().toISOString(),
-    outputs: outputs.map(toGenerationOutput)
+    outputs: outputs.map((output) => toGenerationOutput(generationOutputWithVisibility(output, input)))
   };
 }
 
@@ -629,7 +631,7 @@ async function saveCompletedGenerationRecord(
     },
     referenceAssetIds
   );
-  await insertGenerationOutputs(generationId, outputs);
+  await insertGenerationOutputs(generationId, outputs.map((output) => generationOutputWithVisibility(output, input)));
 
   return {
     id: generationId,
@@ -646,7 +648,7 @@ async function saveCompletedGenerationRecord(
     referenceAssetIds: referenceAssetIds.length > 0 ? referenceAssetIds : undefined,
     referenceAssetId: primaryReferenceAssetId,
     createdAt,
-    outputs: outputs.map(toGenerationOutput)
+    outputs: outputs.map((output) => toGenerationOutput(generationOutputWithVisibility(output, input)))
   };
 }
 
@@ -688,7 +690,17 @@ function toGenerationOutput(output: BatchOutputResult): GenerationOutput {
     id: output.id,
     status: output.status,
     asset: output.asset,
-    error: output.error
+    error: output.error,
+    isPublic: output.isPublic,
+    publicTitle: output.publicTitle
+  };
+}
+
+function generationOutputWithVisibility(output: BatchOutputResult, input: PersistedGenerationInput): BatchOutputResult {
+  return {
+    ...output,
+    isPublic: output.status === "succeeded" && input.isPublic === true,
+    publicTitle: undefined
   };
 }
 

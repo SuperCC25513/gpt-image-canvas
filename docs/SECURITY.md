@@ -36,6 +36,8 @@ Generated images can contain private user content. Treat local assets and previe
 
 Owner fields on projects, assets, generation records/outputs, Agent conversations, and prompt favorites are part of the privacy boundary. Asset routes must authorize the owner or an admin before resolving and reading files from `DATA_DIR/assets`.
 
+公开 Gallery 输出是唯一允许匿名读取资产的例外。公开判定必须来自 `generation_outputs` 上成功输出的 `is_public` 状态，不得只凭 asset ID、文件存在或公开广场列表缓存放行；改回私密或删除输出后匿名读取应返回 404。
+
 When adding browser tests that save fake credentials, clear or restore local test configuration before finishing. Do not leave real-looking secrets in `data/`.
 
 ## API And Error Handling

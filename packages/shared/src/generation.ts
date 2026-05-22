@@ -149,6 +149,7 @@ export interface GenerateImageRequest {
   outputFormat: OutputFormat;
   outputCompression?: number;
   count: GenerationCount;
+  isPublic?: boolean;
 }
 
 export interface EditImageRequest extends GenerateImageRequest {
@@ -172,6 +173,9 @@ export interface GenerationOutput {
   status: OutputStatus;
   asset?: GeneratedAsset;
   error?: string;
+  isPublic?: boolean;
+  publishedAt?: string;
+  publicTitle?: string;
 }
 
 export interface GenerationRecord {
@@ -208,6 +212,9 @@ export interface GalleryImageItem {
   outputFormat: OutputFormat;
   createdAt: string;
   asset: GeneratedAsset;
+  isPublic: boolean;
+  publishedAt?: string;
+  publicTitle?: string;
 }
 
 export interface GalleryResponse {
@@ -216,4 +223,30 @@ export interface GalleryResponse {
 
 export interface GalleryExportRequest {
   outputIds: string[];
+}
+
+export type GalleryVisibility = "private" | "public";
+
+export interface UpdateGalleryVisibilityRequest {
+  isPublic: boolean;
+  publicTitle?: string;
+}
+
+export interface GalleryVisibilityResponse {
+  outputId: string;
+  visibility: GalleryVisibility;
+  isPublic: boolean;
+  publishedAt?: string;
+  publicTitle?: string;
+}
+
+export interface PublicGalleryItem extends GalleryImageItem {
+  isPublic: true;
+  publishedAt: string;
+  authorName: string;
+  providerLabel?: string;
+}
+
+export interface PublicGalleryResponse {
+  items: PublicGalleryItem[];
 }

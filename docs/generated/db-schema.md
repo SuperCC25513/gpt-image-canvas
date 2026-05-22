@@ -247,6 +247,9 @@ Stores individual output status and asset linkage for a generation.
 | `status` | text | Required output status. |
 | `asset_id` | text | Optional reference to `assets.id`. |
 | `error` | text | Optional output error. |
+| `is_public` | integer / tinyint | Required output-level public flag; defaults to private. |
+| `published_at` | text / varchar | Optional ISO timestamp set when an output is public. |
+| `public_title` | text | Optional public display title for the output. |
 | `created_at` | text | Required ISO timestamp. |
 
 ## `generation_reference_assets`

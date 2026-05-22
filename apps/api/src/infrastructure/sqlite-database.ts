@@ -226,6 +226,9 @@ CREATE TABLE IF NOT EXISTS generation_outputs (
   status TEXT NOT NULL,
   asset_id TEXT REFERENCES assets(id),
   error TEXT,
+  is_public INTEGER NOT NULL DEFAULT 0,
+  published_at TEXT,
+  public_title TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -242,6 +245,7 @@ CREATE INDEX IF NOT EXISTS generation_records_user_id_idx ON generation_records(
 CREATE INDEX IF NOT EXISTS generation_outputs_generation_id_idx ON generation_outputs(generation_id);
 CREATE INDEX IF NOT EXISTS generation_outputs_user_id_idx ON generation_outputs(user_id);
 CREATE INDEX IF NOT EXISTS generation_outputs_asset_id_idx ON generation_outputs(asset_id);
+CREATE INDEX IF NOT EXISTS generation_outputs_public_idx ON generation_outputs(is_public, published_at);
 CREATE INDEX IF NOT EXISTS generation_reference_assets_generation_id_idx ON generation_reference_assets(generation_id);
 CREATE INDEX IF NOT EXISTS generation_reference_assets_asset_id_idx ON generation_reference_assets(asset_id);
 CREATE INDEX IF NOT EXISTS projects_user_id_idx ON projects(user_id);
@@ -263,6 +267,10 @@ CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites
   ensureColumn(sqlite, "assets", "user_id", "user_id TEXT");
   ensureColumn(sqlite, "generation_records", "user_id", "user_id TEXT");
   ensureColumn(sqlite, "generation_outputs", "user_id", "user_id TEXT");
+  ensureColumn(sqlite, "generation_outputs", "is_public", "is_public INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(sqlite, "generation_outputs", "published_at", "published_at TEXT");
+  ensureColumn(sqlite, "generation_outputs", "public_title", "public_title TEXT");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS generation_outputs_public_idx ON generation_outputs(is_public, published_at)");
   ensureColumn(sqlite, "agent_conversations", "user_id", "user_id TEXT");
   ensureColumn(sqlite, "prompt_favorite_groups", "user_id", "user_id TEXT");
   ensureColumn(sqlite, "prompt_favorites", "user_id", "user_id TEXT");

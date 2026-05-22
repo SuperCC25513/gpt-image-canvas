@@ -18,6 +18,7 @@ export interface ImageProviderInput {
   quality: ImageQuality;
   outputFormat: OutputFormat;
   count: number;
+  isPublic?: boolean;
 }
 
 export interface EditImageProviderInput extends ImageProviderInput {

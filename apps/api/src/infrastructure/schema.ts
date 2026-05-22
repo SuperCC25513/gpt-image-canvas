@@ -174,6 +174,9 @@ export const generationOutputs = sqliteTable("generation_outputs", {
   status: text("status").notNull(),
   assetId: text("asset_id").references(() => assets.id),
   error: text("error"),
+  isPublic: integer("is_public").notNull(),
+  publishedAt: text("published_at"),
+  publicTitle: text("public_title"),
   createdAt: text("created_at").notNull()
 });
 
