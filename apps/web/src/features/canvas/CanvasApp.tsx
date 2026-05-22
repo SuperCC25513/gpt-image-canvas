@@ -12,9 +12,11 @@ import {
   Copy,
   Download,
   ExternalLink,
+  Globe2,
   History,
   ImageIcon,
   KeyRound,
+  LockKeyhole,
   Loader2,
   LogOut,
   MapPin,
@@ -308,7 +310,7 @@ function preloadPromptPoolPage(): void {
 }
 
 type PersistedSnapshot = TLEditorSnapshot | TLStoreSnapshot;
-type AppRoute = "home" | "canvas" | "pool" | "gallery";
+type AppRoute = "home" | "canvas" | "pool" | "gallery" | "publicGallery";
 type SaveStatus = "loading" | "saved" | "pending" | "saving" | "error";
 type GenerationMode = "text" | "reference";
 type PanelTab = "manual" | "agent";
@@ -434,6 +436,7 @@ interface GenerationSubmitInput {
   quality: ImageQuality;
   outputFormat: OutputFormat;
   count: GenerationCount;
+  isPublic: boolean;
 }
 
 interface GenerationReferenceInput {
@@ -590,6 +593,10 @@ function routeFromLocation(): AppRoute {
     return "pool";
   }
 
+  if (window.location.pathname === "/public-gallery") {
+    return "publicGallery";
+  }
+
   return window.location.pathname === "/gallery" ? "gallery" : "home";
 }
 
@@ -600,6 +607,10 @@ function pathForRoute(route: AppRoute): string {
 
   if (route === "pool") {
     return "/pool";
+  }
+
+  if (route === "publicGallery") {
+    return "/public-gallery";
   }
 
   return route === "gallery" ? "/gallery" : "/";
@@ -2602,6 +2613,22 @@ function TopNavigation({
               {t("navPool")}
             </a>
             <a
+              aria-current={route === "publicGallery" ? "page" : undefined}
+              className="top-navigation__link"
+              data-active={route === "publicGallery"}
+              data-testid="nav-public-gallery"
+              href="/public-gallery"
+              onFocus={onPreloadGallery}
+              onMouseEnter={onPreloadGallery}
+              onClick={(event) => {
+                event.preventDefault();
+                onNavigate("publicGallery");
+              }}
+            >
+              <Globe2 className="size-4" aria-hidden="true" />
+              {t("navPublicGallery")}
+            </a>
+            <a
               aria-current={route === "gallery" ? "page" : undefined}
               className="top-navigation__link"
               data-active={route === "gallery"}
@@ -3020,6 +3047,7 @@ export function App() {
   const [count, setCount] = useState<GenerationCount>(1);
   const [quality, setQuality] = useState<ImageQuality>(DEFAULT_IMAGE_QUALITY);
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("png");
+  const [publishGeneration, setPublishGeneration] = useState(false);
   const [activeGenerationCount, setActiveGenerationCount] = useState(0);
   const [isProjectLoaded, setIsProjectLoaded] = useState(false);
   const [projectSnapshot, setProjectSnapshot] = useState<PersistedSnapshot | undefined>();
@@ -3507,7 +3535,7 @@ export function App() {
   }, [agentMessages, currentAgentConversationId]);
 
   useEffect(() => {
-    if (isAuthLoading || !authStatus || route === "gallery" || route === "pool") {
+    if (isAuthLoading || !authStatus || route === "gallery" || route === "pool" || route === "publicGallery") {
       return;
     }
 
@@ -4029,7 +4057,8 @@ export function App() {
         size: input.size,
         quality: input.quality,
         outputFormat: input.outputFormat,
-        count: input.count
+        count: input.count,
+        isPublic: input.isPublic
       };
 
       if (requestMode === "reference" && referenceForRequest) {
@@ -4122,7 +4151,8 @@ export function App() {
       },
       quality,
       outputFormat,
-      count
+      count,
+      isPublic: publishGeneration
     };
 
     if (generationMode === "reference") {
@@ -4232,7 +4262,8 @@ export function App() {
         size: record.size,
         quality: record.quality,
         outputFormat: record.outputFormat,
-        count: nextCount
+        count: nextCount,
+        isPublic: publishGeneration
       },
       nextGenerationMode,
       referenceAssetIds.length > 0
@@ -6216,6 +6247,23 @@ export function App() {
             </details>
           </div>
 
+          <label className="publish-toggle" data-enabled={publishGeneration}>
+            <input
+              checked={publishGeneration}
+              className="publish-toggle__input"
+              data-testid="generation-public-toggle"
+              type="checkbox"
+              onChange={(event) => setPublishGeneration(event.target.checked)}
+            />
+            <span className="publish-toggle__icon" aria-hidden="true">
+              {publishGeneration ? <Globe2 className="size-4" /> : <LockKeyhole className="size-4" />}
+            </span>
+            <span className="publish-toggle__copy">
+              <span>{t("generationPublishLabel")}</span>
+              <small>{t("generationPublishHint")}</small>
+            </span>
+          </label>
+
           <details className="rounded-md border border-neutral-200 bg-neutral-50">
             <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-3 text-sm font-medium text-neutral-800">
               {t("generationAdvanced")}
@@ -7080,6 +7128,20 @@ export function App() {
           }
         >
           <LazyGalleryPage onDeleted={removeGalleryOutputFromHistory} onReuse={reuseGalleryImage} />
+        </Suspense>
+      ) : null}
+      {route === "publicGallery" ? (
+        <Suspense
+          fallback={
+            <main className="gallery-page app-view" data-testid="public-gallery-loading-page">
+              <div className="gallery-empty-state gallery-empty-state--boot" role="status">
+                <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+                <p>{t("galleryLoading")}</p>
+              </div>
+            </main>
+          }
+        >
+          <LazyGalleryPage variant="public" onReuse={reuseGalleryImage} />
         </Suspense>
       ) : null}
     </div>

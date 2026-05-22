@@ -7,8 +7,10 @@ import {
   Copy,
   Download,
   Check,
+  Globe2,
   ImageIcon,
   Loader2,
+  LockKeyhole,
   Maximize2,
   Palette,
   RotateCcw,
@@ -23,16 +25,21 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SIZE_PRESETS,
   STYLE_PRESETS,
+  type GalleryVisibilityResponse,
   type GalleryExportRequest,
   type GalleryImageItem,
-  type GalleryResponse
+  type GalleryResponse,
+  type PublicGalleryItem,
+  type PublicGalleryResponse,
+  type UpdateGalleryVisibilityRequest
 } from "@gpt-image-canvas/shared";
 import { localizedApiErrorMessage, useI18n, type Locale, type Translate } from "../../shared/i18n";
 import { assetDownloadUrl, assetPreviewUrl } from "../../shared/api/assets";
 
 interface GalleryPageProps {
-  onDeleted: (outputId: string) => void;
-  onReuse: (item: GalleryImageItem) => void;
+  variant?: "private" | "public";
+  onDeleted?: (outputId: string) => void;
+  onReuse?: (item: GalleryImageItem) => void;
 }
 
 interface GalleryActionHandlers {
@@ -40,6 +47,11 @@ interface GalleryActionHandlers {
   onDelete: (item: GalleryImageItem) => void;
   onDownload: (item: GalleryImageItem) => void;
   onReuse: (item: GalleryImageItem) => void;
+  onToggleVisibility: (item: GalleryImageItem) => void;
+  allowDelete: boolean;
+  allowReuse: boolean;
+  allowVisibilityToggle: boolean;
+  visibilityUpdatingOutputId: string | null;
 }
 
 interface GallerySelectionHandlers {
@@ -48,7 +60,7 @@ interface GallerySelectionHandlers {
   selectedOutputIds: Set<string>;
 }
 
-export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
+export function GalleryPage({ variant = "private", onDeleted, onReuse }: GalleryPageProps) {
   const { locale, t } = useI18n();
   const [items, setItems] = useState<GalleryImageItem[]>([]);
   const [query, setQuery] = useState("");
@@ -59,6 +71,7 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
   const [selectedItem, setSelectedItem] = useState<GalleryImageItem | null>(null);
   const [pendingDeleteItem, setPendingDeleteItem] = useState<GalleryImageItem | null>(null);
   const [deletingOutputId, setDeletingOutputId] = useState<string | null>(null);
+  const [visibilityUpdatingOutputId, setVisibilityUpdatingOutputId] = useState<string | null>(null);
   const [copiedOutputId, setCopiedOutputId] = useState<string | null>(null);
   const [exportMode, setExportMode] = useState(false);
   const [selectedExportOutputIds, setSelectedExportOutputIds] = useState<string[]>([]);
@@ -74,14 +87,14 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
       setError("");
 
       try {
-        const response = await fetch("/api/gallery", {
+        const response = await fetch(variant === "public" ? "/api/gallery/public?limit=60" : "/api/gallery", {
           signal: controller.signal
         });
         if (!response.ok) {
           throw new Error(await readGalleryError(response, locale, t));
         }
 
-        const body = (await response.json()) as GalleryResponse;
+        const body = (await response.json()) as GalleryResponse | PublicGalleryResponse;
         if (!Array.isArray(body.items)) {
           throw new Error(t("galleryServiceInvalidData"));
         }
@@ -105,7 +118,7 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
     return () => {
       controller.abort();
     };
-  }, [locale, t]);
+  }, [locale, t, variant]);
 
   useEffect(() => {
     if (!selectedItem && !pendingDeleteItem) {
@@ -156,14 +169,20 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
   );
   const featuredItem = filteredItems[0] ?? null;
   const gridItems = featuredItem ? filteredItems.slice(1) : filteredItems;
+  const allowPrivateActions = variant === "private";
   const actionHandlers: GalleryActionHandlers = {
+    allowDelete: allowPrivateActions,
+    allowReuse: Boolean(onReuse),
+    allowVisibilityToggle: allowPrivateActions,
     onCopy: (item) => void copyPrompt(item),
     onDelete: requestDelete,
     onDownload: downloadItem,
-    onReuse
+    onReuse: (item) => onReuse?.(item),
+    onToggleVisibility: (item) => void toggleVisibility(item),
+    visibilityUpdatingOutputId
   };
   const selectionHandlers: GallerySelectionHandlers = {
-    exportMode,
+    exportMode: allowPrivateActions && exportMode,
     onToggleSelected: toggleExportSelection,
     selectedOutputIds: selectedExportOutputIdSet
   };
@@ -192,6 +211,9 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
   }
 
   function openExportMode(): void {
+    if (!allowPrivateActions) {
+      return;
+    }
     setError("");
     setExportMode(true);
   }
@@ -203,6 +225,9 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
   }
 
   function toggleExportSelection(item: GalleryImageItem): void {
+    if (!allowPrivateActions) {
+      return;
+    }
     setError("");
     setExportMode(true);
     setSelectedExportOutputIds((current) => {
@@ -232,6 +257,9 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
   }
 
   async function exportSelectedItems(): Promise<void> {
+    if (!allowPrivateActions) {
+      return;
+    }
     if (selectedExportOutputIds.length === 0) {
       setError(t("galleryExportSelectAtLeastOne"));
       return;
@@ -299,8 +327,46 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
   }
 
   function requestDelete(item: GalleryImageItem): void {
+    if (!allowPrivateActions) {
+      return;
+    }
     setError("");
     setPendingDeleteItem(item);
+  }
+
+  async function toggleVisibility(item: GalleryImageItem): Promise<void> {
+    if (!allowPrivateActions) {
+      return;
+    }
+
+    const request: UpdateGalleryVisibilityRequest = {
+      isPublic: !item.isPublic,
+      publicTitle: item.publicTitle
+    };
+    setVisibilityUpdatingOutputId(item.outputId);
+    setError("");
+
+    try {
+      const response = await fetch(`/api/gallery/${encodeURIComponent(item.outputId)}/visibility`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(request)
+      });
+      if (!response.ok) {
+        throw new Error(await readGalleryError(response, locale, t));
+      }
+
+      const body = (await response.json()) as GalleryVisibilityResponse;
+      setItems((current) => current.map((galleryItem) => applyVisibility(galleryItem, body)));
+      setSelectedItem((current) => (current?.outputId === body.outputId ? applyVisibility(current, body) : current));
+      showStatus(body.isPublic ? t("galleryVisibilityPublished") : t("galleryVisibilityPrivateSaved"));
+    } catch (visibilityError) {
+      setError(visibilityError instanceof Error ? visibilityError.message : t("galleryVisibilityFailed"));
+    } finally {
+      setVisibilityUpdatingOutputId(null);
+    }
   }
 
   async function deleteItem(item: GalleryImageItem): Promise<void> {
@@ -319,7 +385,7 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
       setSelectedItem((current) => (current?.outputId === item.outputId ? null : current));
       setCopiedOutputId((current) => (current === item.outputId ? null : current));
       setPendingDeleteItem(null);
-      onDeleted(item.outputId);
+      onDeleted?.(item.outputId);
       showStatus(t("galleryDeleted"));
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : t("galleryDeleteFailed"));
@@ -331,29 +397,31 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
   return (
     <main className="gallery-page app-view" data-testid="gallery-page">
       <div className="gallery-page__inner">
-        <header className="gallery-header">
+        <header className="gallery-header" data-variant={variant}>
           <div className="gallery-header__copy">
             <p className="gallery-kicker">
               <Sparkles className="size-3.5" aria-hidden="true" />
               {t("galleryKicker")}
             </p>
-            <h1>{t("galleryTitle")}</h1>
+            <h1>{variant === "public" ? t("publicGalleryTitle") : t("galleryTitle")}</h1>
           </div>
-          <div className="gallery-header__meta" aria-label={t("galleryHeaderMeta", { count: items.length })}>
+          <div className="gallery-header__meta" aria-label={t(variant === "public" ? "publicGalleryHeaderMeta" : "galleryHeaderMeta", { count: items.length })}>
             <strong>{items.length}</strong>
-            <span>{t("galleryWorkCount")}</span>
-            <span>{t("galleryWorkSort")}</span>
+            <span>{variant === "public" ? t("publicGalleryWorkCount") : t("galleryWorkCount")}</span>
+            <span>{variant === "public" ? t("publicGalleryWorkSort") : t("galleryWorkSort")}</span>
           </div>
-          <button
-            aria-pressed={exportMode}
-            className="gallery-export-entry"
-            data-active={exportMode}
-            type="button"
-            onClick={exportMode ? closeExportMode : openExportMode}
-          >
-            <Archive className="size-4" aria-hidden="true" />
-            {exportMode ? t("galleryExportExit") : t("galleryExportMode")}
-          </button>
+          {allowPrivateActions ? (
+            <button
+              aria-pressed={exportMode}
+              className="gallery-export-entry"
+              data-active={exportMode}
+              type="button"
+              onClick={exportMode ? closeExportMode : openExportMode}
+            >
+              <Archive className="size-4" aria-hidden="true" />
+              {exportMode ? t("galleryExportExit") : t("galleryExportMode")}
+            </button>
+          ) : null}
           <div className="gallery-search" role="search">
             <Search className="size-4" aria-hidden="true" />
             <input
@@ -403,8 +471,8 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
           <div className="gallery-empty-state" data-testid="gallery-empty">
             <ImageIcon className="size-7" aria-hidden="true" />
             <div>
-              <p>{items.length === 0 ? t("galleryEmpty") : t("galleryNoMatches")}</p>
-              <span>{items.length === 0 ? t("galleryEmptyHint") : t("galleryNoMatchesHint")}</span>
+              <p>{items.length === 0 ? (variant === "public" ? t("publicGalleryEmpty") : t("galleryEmpty")) : t("galleryNoMatches")}</p>
+              <span>{items.length === 0 ? (variant === "public" ? t("publicGalleryEmptyHint") : t("galleryEmptyHint")) : t("galleryNoMatchesHint")}</span>
             </div>
           </div>
         ) : (
@@ -445,14 +513,19 @@ export function GalleryPage({ onDeleted, onReuse }: GalleryPageProps) {
 
       {selectedItem ? (
         <GalleryDetailDialog
+          allowDelete={allowPrivateActions}
+          allowReuse={Boolean(onReuse)}
+          allowVisibilityToggle={allowPrivateActions}
           copied={copiedOutputId === selectedItem.outputId}
           deleting={deletingOutputId === selectedItem.outputId}
           item={selectedItem}
+          visibilityUpdating={visibilityUpdatingOutputId === selectedItem.outputId}
           onClose={() => setSelectedItem(null)}
           onCopy={() => void copyPrompt(selectedItem)}
           onDelete={() => requestDelete(selectedItem)}
           onDownload={() => downloadItem(selectedItem)}
-          onReuse={() => onReuse(selectedItem)}
+          onReuse={() => onReuse?.(selectedItem)}
+          onToggleVisibility={() => void toggleVisibility(selectedItem)}
         />
       ) : null}
 
@@ -529,6 +602,9 @@ function GalleryExportBar({
 }
 
 function FeaturedGalleryItem({
+  allowDelete,
+  allowReuse,
+  allowVisibilityToggle,
   copied,
   deleting,
   expanded,
@@ -538,8 +614,10 @@ function FeaturedGalleryItem({
   onDownload,
   onOpen,
   onReuse,
+  onToggleVisibility,
   onTogglePrompt,
-  selection
+  selection,
+  visibilityUpdatingOutputId
 }: {
   copied: boolean;
   deleting: boolean;
@@ -591,8 +669,9 @@ function FeaturedGalleryItem({
           <div className="gallery-feature__meta">
             <span>
               <Clock3 className="size-3.5" aria-hidden="true" />
-              {formatCreatedTime(item.createdAt, formatDateTime)}
+              {formatCreatedTime(displayTimeValue(item), formatDateTime)}
             </span>
+            {publicAuthorName(item) ? <span>{publicAuthorName(item)}</span> : null}
             <span>{item.outputFormat.toUpperCase()}</span>
             <span>{t("qualityLabel", { quality: item.quality })}</span>
           </div>
@@ -604,6 +683,11 @@ function FeaturedGalleryItem({
             onDelete={onDelete}
             onDownload={onDownload}
             onReuse={onReuse}
+            onToggleVisibility={onToggleVisibility}
+            allowDelete={allowDelete}
+            allowReuse={allowReuse}
+            allowVisibilityToggle={allowVisibilityToggle}
+            visibilityUpdatingOutputId={visibilityUpdatingOutputId}
           />
         </div>
       </div>
@@ -612,6 +696,9 @@ function FeaturedGalleryItem({
 }
 
 function GalleryCard({
+  allowDelete,
+  allowReuse,
+  allowVisibilityToggle,
   copied,
   deleting,
   expanded,
@@ -621,8 +708,10 @@ function GalleryCard({
   onDownload,
   onOpen,
   onReuse,
+  onToggleVisibility,
   onTogglePrompt,
-  selection
+  selection,
+  visibilityUpdatingOutputId
 }: {
   copied: boolean;
   deleting: boolean;
@@ -671,7 +760,7 @@ function GalleryCard({
         <div className="gallery-card__footer">
           <span className="gallery-time-tag">
             <Clock3 className="size-3.5" aria-hidden="true" />
-            {formatCreatedTime(item.createdAt, formatDateTime)}
+            {formatCreatedTime(displayTimeValue(item), formatDateTime)}
           </span>
           <GalleryIconActions
             copied={copied}
@@ -681,6 +770,11 @@ function GalleryCard({
             onDelete={onDelete}
             onDownload={onDownload}
             onReuse={onReuse}
+            onToggleVisibility={onToggleVisibility}
+            allowDelete={allowDelete}
+            allowReuse={allowReuse}
+            allowVisibilityToggle={allowVisibilityToggle}
+            visibilityUpdatingOutputId={visibilityUpdatingOutputId}
           />
         </div>
       </div>
@@ -719,23 +813,39 @@ function GallerySelectToggle({
 }
 
 function GalleryIconActions({
+  allowDelete,
+  allowReuse,
+  allowVisibilityToggle,
   copied,
   deleting,
   item,
   onCopy,
   onDelete,
   onDownload,
-  onReuse
+  onReuse,
+  onToggleVisibility,
+  visibilityUpdatingOutputId
 }: {
+  allowDelete: boolean;
+  allowReuse: boolean;
+  allowVisibilityToggle: boolean;
   copied: boolean;
   deleting: boolean;
   item: GalleryImageItem;
 } & GalleryActionHandlers) {
   const { t } = useI18n();
   const excerpt = promptExcerpt(item.prompt);
+  const visibilityUpdating = visibilityUpdatingOutputId === item.outputId;
+  const actionCount = 2 + (allowReuse ? 1 : 0) + (allowVisibilityToggle ? 1 : 0) + (allowDelete ? 1 : 0);
 
   return (
-    <div className="gallery-card__actions">
+    <div
+      className="gallery-card__actions"
+      style={{
+        gridTemplateColumns: `repeat(${actionCount}, minmax(0, 1fr))`,
+        width: `calc(${actionCount} * 2.2rem + ${Math.max(0, actionCount - 1)} * 0.35rem)`
+      }}
+    >
       <button
         aria-label={copied ? t("galleryCopiedPrompt") : t("galleryActionCopyPrompt", { excerpt })}
         className="gallery-icon-action"
@@ -758,25 +868,49 @@ function GalleryIconActions({
       >
         <Download className="size-4" aria-hidden="true" />
       </button>
-      <button
-        aria-label={t("galleryActionReusePrompt", { excerpt })}
-        className="gallery-icon-action"
-        title={t("galleryReuseToCanvas")}
-        type="button"
-        onClick={() => onReuse(item)}
-      >
-        <RotateCcw className="size-4" aria-hidden="true" />
-      </button>
-      <button
-        aria-label={t("galleryActionDeleteImage", { excerpt })}
-        className="gallery-icon-action gallery-icon-action--danger"
-        disabled={deleting}
-        title={t("galleryRemovedTitle")}
-        type="button"
-        onClick={() => onDelete(item)}
-      >
-        {deleting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
-      </button>
+      {allowReuse ? (
+        <button
+          aria-label={t("galleryActionReusePrompt", { excerpt })}
+          className="gallery-icon-action"
+          title={t("galleryReuseToCanvas")}
+          type="button"
+          onClick={() => onReuse(item)}
+        >
+          <RotateCcw className="size-4" aria-hidden="true" />
+        </button>
+      ) : null}
+      {allowVisibilityToggle ? (
+        <button
+          aria-label={t(item.isPublic ? "galleryActionMakePrivate" : "galleryActionMakePublic", { excerpt })}
+          aria-pressed={item.isPublic}
+          className="gallery-icon-action gallery-icon-action--visibility"
+          data-public={item.isPublic}
+          disabled={visibilityUpdating}
+          title={item.isPublic ? t("galleryMakePrivate") : t("galleryMakePublic")}
+          type="button"
+          onClick={() => onToggleVisibility(item)}
+        >
+          {visibilityUpdating ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : item.isPublic ? (
+            <Globe2 className="size-4" aria-hidden="true" />
+          ) : (
+            <LockKeyhole className="size-4" aria-hidden="true" />
+          )}
+        </button>
+      ) : null}
+      {allowDelete ? (
+        <button
+          aria-label={t("galleryActionDeleteImage", { excerpt })}
+          className="gallery-icon-action gallery-icon-action--danger"
+          disabled={deleting}
+          title={t("galleryRemovedTitle")}
+          type="button"
+          onClick={() => onDelete(item)}
+        >
+          {deleting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -789,6 +923,10 @@ function GalleryTags({ item, compact = false }: { item: GalleryImageItem; compac
   return (
     <div className="gallery-tags" data-compact={compact}>
       <span className="gallery-tag gallery-tag--mode">{t("galleryModeLabel", { mode: item.mode })}</span>
+      <span className="gallery-tag gallery-tag--visibility" data-public={item.isPublic}>
+        {item.isPublic ? <Globe2 className="size-3.5" aria-hidden="true" /> : <LockKeyhole className="size-3.5" aria-hidden="true" />}
+        {item.isPublic ? t("galleryVisibilityPublic") : t("galleryVisibilityPrivate")}
+      </span>
       {styleLabel ? (
         <span className="gallery-tag gallery-tag--style">
           <Palette className="size-3.5" aria-hidden="true" />
@@ -841,23 +979,33 @@ function CollapsiblePrompt({
 }
 
 function GalleryDetailDialog({
+  allowDelete,
+  allowReuse,
+  allowVisibilityToggle,
   copied,
   deleting,
   item,
+  visibilityUpdating,
   onClose,
   onCopy,
   onDelete,
   onDownload,
-  onReuse
+  onReuse,
+  onToggleVisibility
 }: {
+  allowDelete: boolean;
+  allowReuse: boolean;
+  allowVisibilityToggle: boolean;
   copied: boolean;
   deleting: boolean;
   item: GalleryImageItem;
+  visibilityUpdating: boolean;
   onClose: () => void;
   onCopy: () => void;
   onDelete: () => void;
   onDownload: () => void;
   onReuse: () => void;
+  onToggleVisibility: () => void;
 }) {
   const [promptExpanded, setPromptExpanded] = useState(false);
   const { formatDateTime, t } = useI18n();
@@ -891,8 +1039,9 @@ function GalleryDetailDialog({
             <div className="gallery-modal__meta">
               <span>
               <Clock3 className="size-3.5" aria-hidden="true" />
-                {formatCreatedTime(item.createdAt, formatDateTime)}
+                {formatCreatedTime(displayTimeValue(item), formatDateTime)}
               </span>
+              {publicAuthorName(item) ? <span>{publicAuthorName(item)}</span> : null}
               <span>{item.outputFormat.toUpperCase()}</span>
               <span>{t("qualityLabel", { quality: item.quality })}</span>
             </div>
@@ -925,14 +1074,30 @@ function GalleryDetailDialog({
             <Download className="size-4" aria-hidden="true" />
             {t("commonDownload")}
           </button>
-          <button className="secondary-action h-10" type="button" onClick={onReuse}>
-            <RotateCcw className="size-4" aria-hidden="true" />
-            {t("commonReuse")}
-          </button>
-          <button className="secondary-action h-10 text-red-700 hover:text-red-800" disabled={deleting} type="button" onClick={onDelete}>
-            {deleting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
-            {t("commonRemove")}
-          </button>
+          {allowReuse ? (
+            <button className="secondary-action h-10" type="button" onClick={onReuse}>
+              <RotateCcw className="size-4" aria-hidden="true" />
+              {t("commonReuse")}
+            </button>
+          ) : null}
+          {allowVisibilityToggle ? (
+            <button className="secondary-action h-10" disabled={visibilityUpdating} type="button" onClick={onToggleVisibility}>
+              {visibilityUpdating ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : item.isPublic ? (
+                <LockKeyhole className="size-4" aria-hidden="true" />
+              ) : (
+                <Globe2 className="size-4" aria-hidden="true" />
+              )}
+              {item.isPublic ? t("galleryMakePrivate") : t("galleryMakePublic")}
+            </button>
+          ) : null}
+          {allowDelete ? (
+            <button className="secondary-action h-10 text-red-700 hover:text-red-800" disabled={deleting} type="button" onClick={onDelete}>
+              {deleting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
+              {t("commonRemove")}
+            </button>
+          ) : null}
         </footer>
       </div>
     </div>
@@ -1004,8 +1169,29 @@ function promptExcerpt(promptValue: string): string {
   return compact.length > 48 ? `${compact.slice(0, 48)}...` : compact;
 }
 
+function applyVisibility(item: GalleryImageItem, visibility: GalleryVisibilityResponse): GalleryImageItem {
+  if (item.outputId !== visibility.outputId) {
+    return item;
+  }
+
+  return {
+    ...item,
+    isPublic: visibility.isPublic,
+    publishedAt: visibility.publishedAt,
+    publicTitle: visibility.publicTitle
+  };
+}
+
 function formatCreatedTime(value: string, formatDateTime: (value: string) => string): string {
   return formatDateTime(value);
+}
+
+function displayTimeValue(item: GalleryImageItem): string {
+  return item.isPublic && item.publishedAt ? item.publishedAt : item.createdAt;
+}
+
+function publicAuthorName(item: GalleryImageItem): string | undefined {
+  return "authorName" in item ? (item as PublicGalleryItem).authorName : undefined;
 }
 
 function normalizeSearchText(value: string): string {

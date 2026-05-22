@@ -1,5 +1,5 @@
 import { LogIn, LogOut, Loader2, UserPlus } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { AuthMeResponse, AuthSessionResponse, CurrentUser } from "@gpt-image-canvas/shared";
 import { App as CanvasApp } from "./features/canvas/CanvasApp";
 import { localizedApiErrorMessage, useI18n } from "./shared/i18n";
@@ -17,6 +17,12 @@ const initialFormState: AuthFormState = {
   email: "",
   password: ""
 };
+
+const PublicGalleryPage = lazy(() =>
+  import("./features/gallery/GalleryPage").then((module) => ({
+    default: module.GalleryPage
+  }))
+);
 
 export function App() {
   const { locale, t } = useI18n();
@@ -137,6 +143,23 @@ export function App() {
           </button>
         </div>
       </>
+    );
+  }
+
+  if (window.location.pathname === "/public-gallery") {
+    return (
+      <Suspense
+        fallback={
+          <main className="gallery-page app-view" data-testid="public-gallery-loading-page">
+            <div className="gallery-empty-state gallery-empty-state--boot" role="status">
+              <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+              <p>{t("galleryLoading")}</p>
+            </div>
+          </main>
+        }
+      >
+        <PublicGalleryPage variant="public" />
+      </Suspense>
     );
   }
 

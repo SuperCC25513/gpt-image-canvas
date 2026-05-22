@@ -968,6 +968,13 @@
   color: #d8c7b6;
 }
 
+.app-root[data-canvas-theme="dark"] .gallery-tag--visibility[data-public="true"],
+.app-root[data-canvas-theme="dark"] .gallery-icon-action--visibility[data-public="true"] {
+  border-color: rgb(45 212 191 / 0.26);
+  background: rgb(20 184 166 / 0.12);
+  color: #99f6e4;
+}
+
 .app-root[data-canvas-theme="dark"] .gallery-prompt-label {
   color: #9f9183;
 }
