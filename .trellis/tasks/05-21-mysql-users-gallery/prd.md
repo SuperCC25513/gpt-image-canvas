@@ -71,25 +71,25 @@
 
 ## Acceptance Criteria
 
-- [ ] MySQL 模式下服务能连接本机 MySQL，并创建/迁移所需表。
-- [ ] 默认不配置 `DATABASE_DRIVER` 时继续使用 SQLite。
-- [ ] 设置 `DATABASE_DRIVER=mysql` 后使用 MySQL，且不尝试迁移 SQLite 数据。
-- [ ] SQLite 和 MySQL 模式下，新用户都可注册、登录、退出；未登录用户不能进入创作和私有资源；禁用用户无法登录和生成。
-- [ ] 默认设置允许用户注册，且注册后直接为 active，无需管理员审核。
-- [ ] 配置 `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME` 后，服务启动会创建或激活管理员账号，且不会打印密码。
-- [ ] SQLite 旧项目、资产、生成记录和输出在补 owner 后归属管理员账号。
-- [ ] 管理员可登录后台并管理用户角色、状态、积分和系统积分规则。
-- [ ] 生成图片时按配置积分扣费；积分不足返回稳定错误；生成失败会退款。
-- [ ] 用户可每日签到一次，并看到积分余额更新。
-- [ ] 生成时可选择是否公开；Gallery 内可切换单张输出公开状态。
-- [ ] 图片广场只展示公开输出；匿名或未登录用户不能访问私密图片。
-- [ ] 普通用户不能删除、导出、下载或复用其他用户的私密输出。
-- [ ] 管理员审计页可查看生成请求、用户、IP/User-Agent、状态、错误摘要和关联输出。
-- [ ] `packages/shared` 暴露的 API 契约覆盖 auth、admin、credits、checkin、public gallery 和 visibility 状态。
-- [ ] `docs/generated/db-schema.md`、`docs/PRODUCT_SENSE.md`、`docs/RELIABILITY.md`、`docs/SECURITY.md` 和必要产品规格更新。
-- [ ] 通过 `pnpm typecheck`。
-- [ ] 通过 `pnpm build`。
-- [ ] UI 验证：运行 `pnpm dev`，打开 `http://localhost:5173`，检查注册/登录、生成、Gallery 公开开关、图片广场、积分签到、后台管理。
+- [x] MySQL 模式下服务能连接本机 MySQL，并创建/迁移所需表。
+- [x] 默认不配置 `DATABASE_DRIVER` 时继续使用 SQLite。
+- [x] 设置 `DATABASE_DRIVER=mysql` 后使用 MySQL，且不尝试迁移 SQLite 数据。
+- [x] SQLite 和 MySQL 模式下，新用户都可注册、登录、退出；未登录用户不能进入创作和私有资源；禁用用户无法登录和生成。
+- [x] 默认设置允许用户注册，且注册后直接为 active，无需管理员审核。
+- [x] 配置 `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME` 后，服务启动会创建或激活管理员账号，且不会打印密码。
+- [x] SQLite 旧项目、资产、生成记录和输出在补 owner 后归属管理员账号。
+- [x] 管理员可登录后台并管理用户角色、状态、积分和系统积分规则。
+- [x] 生成图片时按配置积分扣费；积分不足返回稳定错误；生成失败会退款。
+- [x] 用户可每日签到一次，并看到积分余额更新。
+- [x] 生成时可选择是否公开；Gallery 内可切换单张输出公开状态。
+- [x] 图片广场只展示公开输出；匿名或未登录用户不能访问私密图片。
+- [x] 普通用户不能删除、导出、下载或复用其他用户的私密输出。
+- [x] 管理员审计页可查看生成请求、用户、IP/User-Agent、状态、错误摘要和关联输出。
+- [x] `packages/shared` 暴露的 API 契约覆盖 auth、admin、credits、checkin、public gallery 和 visibility 状态。
+- [x] `docs/generated/db-schema.md`、`docs/PRODUCT_SENSE.md`、`docs/RELIABILITY.md`、`docs/SECURITY.md` 和必要产品规格更新。
+- [x] 通过 `pnpm typecheck`。
+- [x] 通过 `pnpm build`。
+- [x] UI 验证：运行 `pnpm dev`，打开 `http://localhost:5173`，检查注册/登录、生成、Gallery 公开开关、图片广场、积分签到、后台管理。
 
 ## Notes
 
