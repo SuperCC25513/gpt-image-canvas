@@ -3,7 +3,7 @@ import { AuthDomainError, loginUser, logoutToken, registerUser } from "../../dom
 import { checkInUser, CreditDomainError } from "../../domain/credits/credit-store.js";
 import { getAuthStatus, logoutCodex, pollCodexDeviceLogin, startCodexDeviceLogin } from "../../domain/providers/codex-auth.js";
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
-import { authMeResponse, clearSessionCookie, requireAuth, SESSION_COOKIE_NAME, setSessionCookie } from "../http/auth.js";
+import { authMeResponse, clearSessionCookie, requireAdmin, requireAuth, SESSION_COOKIE_NAME, setSessionCookie } from "../http/auth.js";
 import { errorResponse, providerErrorJson } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 import { parseCodexPollPayload, parseLoginPayload, parseRegisterPayload } from "../http/validation.js";
@@ -23,9 +23,13 @@ export function registerAuthRoutes(app: Hono): void {
     }
 
     try {
-      const session = await registerUser(parsed.value);
-      setSessionCookie(c, session.token, session.expiresAt);
-      return c.json({ user: session.user }, 201);
+      const result = await registerUser(parsed.value);
+      if ("token" in result) {
+        setSessionCookie(c, result.token, result.expiresAt);
+        return c.json({ user: result.user }, 201);
+      }
+
+      return c.json(result, 202);
     } catch (error) {
       return authErrorJson(error);
     }
@@ -70,9 +74,21 @@ export function registerAuthRoutes(app: Hono): void {
     }
   });
 
-  app.get("/api/auth/status", (c) => c.json(getAuthStatus()));
+  app.get("/api/auth/status", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    return c.json(getAuthStatus());
+  });
 
   app.post("/api/auth/codex/device/start", async (c) => {
+    const auth = await requireAdmin(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     try {
       return c.json(await startCodexDeviceLogin(c.req.raw.signal));
     } catch (error) {
@@ -85,6 +101,11 @@ export function registerAuthRoutes(app: Hono): void {
   });
 
   app.post("/api/auth/codex/device/poll", async (c) => {
+    const auth = await requireAdmin(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
       return c.json(payload.error, 400);
@@ -106,7 +127,14 @@ export function registerAuthRoutes(app: Hono): void {
     }
   });
 
-  app.post("/api/auth/codex/logout", (c) => c.json(logoutCodex()));
+  app.post("/api/auth/codex/logout", async (c) => {
+    const auth = await requireAdmin(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    return c.json(logoutCodex());
+  });
 }
 
 function authErrorJson(error: unknown): Response {

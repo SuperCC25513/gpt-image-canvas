@@ -145,6 +145,10 @@
   line-height: 1.45;
 }
 
+.auth-message[data-tone="success"] {
+  color: var(--success);
+}
+
 .auth-submit {
   min-height: 44px;
   gap: 8px;

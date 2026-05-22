@@ -62,6 +62,8 @@ export type {
   GalleryVisibility,
   GalleryVisibilityResponse,
   AuthMeResponse,
+  AuthPendingRegistrationResponse,
+  AuthRegisterResponse,
   AuthSettings,
   AuthSessionResponse,
   CreatePromptFavoriteGroupRequest,

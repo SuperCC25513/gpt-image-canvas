@@ -1,6 +1,6 @@
 import { LogIn, LogOut, Loader2, UserPlus } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import type { AuthMeResponse, AuthSessionResponse, CurrentUser } from "@gpt-image-canvas/shared";
+import type { AuthMeResponse, AuthRegisterResponse, AuthSessionResponse, CurrentUser } from "@gpt-image-canvas/shared";
 import { App as CanvasApp } from "./features/canvas/CanvasApp";
 import { localizedApiErrorMessage, useI18n } from "./shared/i18n";
 
@@ -33,6 +33,7 @@ export function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const loadMe = useCallback(async (signal?: AbortSignal) => {
     setIsLoading(true);
@@ -84,6 +85,7 @@ export function App() {
   async function submitAuth(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     setError("");
+    setNotice("");
     setIsSubmitting(true);
 
     try {
@@ -99,7 +101,19 @@ export function App() {
         throw new Error(await readAuthError(response, locale, mode === "login" ? t("authLoginFailed") : t("authRegisterFailed")));
       }
 
-      const body = (await response.json()) as AuthSessionResponse;
+      const body = (await response.json()) as AuthSessionResponse | AuthRegisterResponse;
+      if (mode === "register" && "status" in body && body.status === "pending") {
+        setNotice(t("authRegistrationPending"));
+        setMode("login");
+        setForm(initialFormState);
+        await loadMe();
+        return;
+      }
+
+      if (!("user" in body)) {
+        throw new Error(mode === "login" ? t("authLoginFailed") : t("authRegisterFailed"));
+      }
+
       setCurrentUser(body.user);
       await loadMe();
       setForm(initialFormState);
@@ -232,6 +246,7 @@ export function App() {
           </label>
 
           {error ? <p className="auth-message" role="alert">{error}</p> : null}
+          {notice ? <p className="auth-message" data-tone="success" role="status">{notice}</p> : null}
 
           <button className="primary-action auth-submit" disabled={isSubmitting || (mode === "register" && !canRegister)} type="submit">
             {isSubmitting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : mode === "login" ? <LogIn className="size-4" aria-hidden="true" /> : <UserPlus className="size-4" aria-hidden="true" />}

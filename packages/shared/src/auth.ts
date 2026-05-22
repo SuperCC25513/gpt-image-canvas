@@ -38,6 +38,13 @@ export interface AuthSessionResponse {
   user: CurrentUser;
 }
 
+export interface AuthPendingRegistrationResponse {
+  status: "pending";
+  message: string;
+}
+
+export type AuthRegisterResponse = AuthSessionResponse | AuthPendingRegistrationResponse;
+
 export interface RegisterRequest {
   name: string;
   email: string;

@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentSelectedCanvasReference, AgentServerEvent, GenerationPlan } from "../domain/contracts.js";
+import type { AgentSelectedCanvasReference, AgentServerEvent, CurrentUser, GenerationPlan } from "../domain/contracts.js";
 import type { EditImageProviderInput, ImageProvider, ImageProviderInput, ProviderResult } from "../infrastructure/providers/image-provider.js";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -14,6 +14,16 @@ mkdirSync(dataDir, { recursive: true });
 
 const tinyPngBase64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+const smokeUser: CurrentUser = {
+  id: "user-agent-executor-smoke",
+  name: "Agent Executor Smoke",
+  email: "agent-executor-smoke@example.local",
+  role: "user",
+  status: "active",
+  credits: 0,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z"
+};
 
 async function main(): Promise<void> {
   try {
@@ -30,6 +40,7 @@ async function main(): Promise<void> {
         plan: planFixture(),
         selectedReferences: [],
         mode: "execute",
+        user: smokeUser,
         provider: successProvider,
         requestId: "smoke-execute",
         runId: "run-smoke",
@@ -57,6 +68,7 @@ async function main(): Promise<void> {
         plan: selectedReferencePlan,
         selectedReferences: [selectedReference],
         mode: "execute",
+        user: smokeUser,
         provider: selectedProvider,
         requestId: "smoke-selected-reference",
         runId: "run-selected-reference",
@@ -79,6 +91,7 @@ async function main(): Promise<void> {
         plan: selectedReferencePlanFixture("local-only-reference"),
         selectedReferences: [localSelectedReference],
         mode: "execute",
+        user: smokeUser,
         provider: localSelectedProvider,
         requestId: "smoke-local-selected-reference",
         runId: "run-local-selected-reference",
@@ -103,6 +116,7 @@ async function main(): Promise<void> {
           }
         ],
         mode: "execute",
+        user: smokeUser,
         provider: multiSelectedProvider,
         requestId: "smoke-multi-selected-reference",
         runId: "run-multi-selected-reference",
@@ -121,6 +135,7 @@ async function main(): Promise<void> {
         plan: arbitraryCountPlan,
         selectedReferences: [],
         mode: "execute",
+        user: smokeUser,
         provider: arbitraryCountProvider,
         requestId: "smoke-arbitrary-count",
         runId: "run-arbitrary-count",
@@ -145,6 +160,7 @@ async function main(): Promise<void> {
         plan: retryPlan,
         selectedReferences: [],
         mode: "retry_failed",
+        user: smokeUser,
         provider: retryProvider,
         requestId: "smoke-retry",
         runId: "run-retry",
@@ -163,6 +179,7 @@ async function main(): Promise<void> {
         plan: planFixture("plan-blocked"),
         selectedReferences: [],
         mode: "execute",
+        user: smokeUser,
         provider: failedProvider,
         requestId: "smoke-blocked",
         runId: "run-blocked",

@@ -5,6 +5,7 @@ import type {
   AuthSettings,
   CurrentUser,
   LoginRequest,
+  AuthPendingRegistrationResponse,
   RegisterRequest,
   UserRole,
   UserStatus
@@ -88,6 +89,8 @@ export interface CreatedSession {
   expiresAt: string;
 }
 
+export type RegisterUserResult = CreatedSession | AuthPendingRegistrationResponse;
+
 export async function initializeAuthFoundation(): Promise<void> {
   await ensureAppSettings();
   const adminConfig = readAdminBootstrapConfig();
@@ -113,7 +116,7 @@ export async function getAuthSettings(): Promise<AuthSettings> {
   };
 }
 
-export async function registerUser(input: RegisterRequest): Promise<CreatedSession> {
+export async function registerUser(input: RegisterRequest): Promise<RegisterUserResult> {
   const settings = await getAuthSettings();
   if (!settings.allowRegistration) {
     throw new AuthDomainError("registration_disabled", "当前未开放注册。", 403);
@@ -142,7 +145,10 @@ export async function registerUser(input: RegisterRequest): Promise<CreatedSessi
 
   await insertUser(row);
   if (row.status !== "active") {
-    throw new AuthDomainError("account_inactive", "账号尚未激活，请等待管理员审核。", 403);
+    return {
+      status: "pending",
+      message: "账号已提交审核，请等待管理员审核。"
+    };
   }
 
   return createSessionForUser(row);

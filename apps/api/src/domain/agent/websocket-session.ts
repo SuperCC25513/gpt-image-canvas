@@ -16,11 +16,7 @@ import {
 } from "../contracts.js";
 import { getAgentConversationContext, saveAgentConversationContext } from "./conversation-store.js";
 import { getUsableAgentLlmConfig } from "./config.js";
-import {
-  executeGenerationPlan,
-  isExecutableGenerationPlan,
-  type StoredAgentGenerationPlan
-} from "./executor.js";
+import { executeGenerationPlan, type StoredAgentGenerationPlan } from "./executor.js";
 import { createGenerationPlan, type AgentPlannerConversationContext } from "./planner.js";
 import { resolvePlanningSkillLoadoutForRequest } from "./skill-store.js";
 import { getStoredAssetFile, saveReferenceImageInput } from "../generation/image-generation.js";
@@ -1173,42 +1169,13 @@ function resolveStoredPlanForExecution(
   session: AgentSocketSession,
   message: Extract<AgentClientMessage, { type: "execute_plan" | "retry_failed" }>
 ): StoredAgentGenerationPlan | undefined {
-  const messagePlan = isExecutableGenerationPlan(message.plan) && message.plan.id === message.planId ? message.plan : undefined;
   const storedPlan = session.plans.get(message.planId);
-  const selectedReferences =
-    message.selectedReferences ?? storedPlan?.selectedReferences ?? (messagePlan ? selectedReferencesFromPlan(messagePlan) : undefined);
-
-  if (!messagePlan) {
-    return storedPlan
-      ? {
-          ...storedPlan,
-          selectedReferences: selectedReferences ?? storedPlan.selectedReferences
-        }
-      : undefined;
-  }
-
-  return {
-    plan: messagePlan,
-    selectedReferences: selectedReferences ?? selectedReferencesFromPlan(messagePlan)
-  };
-}
-
-function selectedReferencesFromPlan(plan: GenerationPlan): StoredAgentGenerationPlan["selectedReferences"] {
-  const selectedReferences = new Map<string, StoredAgentGenerationPlan["selectedReferences"][number]>();
-  for (const job of plan.jobs) {
-    for (const reference of job.references) {
-      if (reference.kind !== "selected_canvas_image" || !reference.assetId) {
-        continue;
+  return storedPlan
+    ? {
+        ...storedPlan,
+        selectedReferences: storedPlan.selectedReferences
       }
-      selectedReferences.set(reference.assetId, {
-        id: reference.assetId,
-        assetId: reference.assetId,
-        label: reference.label
-      });
-    }
-  }
-
-  return [...selectedReferences.values()];
+    : undefined;
 }
 
 function cancelActiveRun(
