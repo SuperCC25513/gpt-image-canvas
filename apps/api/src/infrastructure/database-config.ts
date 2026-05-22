@@ -1,3 +1,5 @@
+import "./runtime.js";
+
 export type DatabaseDriver = "sqlite" | "mysql";
 
 export interface MySqlDatabaseConfig {
@@ -15,19 +17,14 @@ export interface DatabaseConfig {
   mysql?: MySqlDatabaseConfig;
 }
 
-function parseDatabaseDriver(value: string | undefined): DatabaseDriver {
-  const normalized = (value ?? "sqlite").trim().toLowerCase();
-  if (normalized === "sqlite" || normalized === "mysql") {
-    return normalized;
-  }
-
-  throw new Error('DATABASE_DRIVER must be either "sqlite" or "mysql".');
+function parseDatabaseDriverFromUseMySql(value: string | undefined): DatabaseDriver {
+  return parseBoolean(value) ? "mysql" : "sqlite";
 }
 
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) {
-    throw new Error(`${name} is required when DATABASE_DRIVER=mysql.`);
+    throw new Error(`${name} is required when USE_MYSQL=true.`);
   }
 
   return value;
@@ -68,7 +65,7 @@ function parseMySqlConfig(): MySqlDatabaseConfig {
   };
 }
 
-const driver = parseDatabaseDriver(process.env.DATABASE_DRIVER);
+const driver = parseDatabaseDriverFromUseMySql(process.env.USE_MYSQL);
 
 export const databaseConfig: DatabaseConfig = {
   driver,

@@ -121,32 +121,33 @@ await db.insert(assets).values({ id, fileName, relativePath, mimeType, width, he
 
 ### 2. 签名
 
-- 环境：`DATABASE_DRIVER=sqlite|mysql`，空值等同 `sqlite`。
+- 环境：`USE_MYSQL=true` 启用 MySQL；空值、缺失或非 true 值使用 SQLite。
 - MySQL 环境：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE`、`MYSQL_CONNECTION_LIMIT`、`MYSQL_CREATE_DATABASE`。
-- SQLite 入口：`db` 只在 `DATABASE_DRIVER=sqlite` 时可用。
-- MySQL 入口：`getMySqlPool()` 只在 `DATABASE_DRIVER=mysql` 时可用。
+- SQLite 入口：`db` 只在 `USE_MYSQL` 未启用时可用。
+- MySQL 入口：`getMySqlPool()` 只在 `USE_MYSQL=true` 时可用。
 - 业务入口：项目、资产、生成记录和 Gallery 通过 `domain/storage/store.ts` 的异步函数访问。
 
 ### 3. 契约
 
-- 默认不设置 `DATABASE_DRIVER` 时必须保持 SQLite 行为和现有数据路径不变。
-- 设置 `DATABASE_DRIVER=mysql` 时不得打开或读取 SQLite 数据库；未迁到 MySQL 的旧 Drizzle store 必须返回显式不支持或空状态，不能偷偷 fallback 到 SQLite。
+- 默认不设置 `USE_MYSQL` 时必须保持 SQLite 行为和现有数据路径不变。
+- 设置 `USE_MYSQL=true` 时不得打开或读取 SQLite 数据库；未迁到 MySQL 的旧 Drizzle store 必须返回显式不支持或空状态，不能偷偷 fallback 到 SQLite。
 - MySQL 建库只在 `MYSQL_CREATE_DATABASE=true` 时执行，库名必须通过内部白名单校验后再拼接为 identifier。
+- `MYSQL_CREATE_DATABASE=false` 时不自动创建数据库本身，但目标数据库已存在时必须自动创建缺失表。
+- MySQL 初始化 SQL 必须维护数据库层表注释和字段注释；已有表和字段也要通过启动兼容迁移补齐注释。
 - MySQL 只存元数据和 `assets/<file>` 相对路径，图片二进制仍在 `DATA_DIR/assets`。
 - 两种驱动都不创建云存储表、云资产字段或远端 fallback 字段。
 
 ### 4. 验证与错误矩阵
 
-- `DATABASE_DRIVER` 非 `sqlite/mysql` -> 启动失败，提示合法值。
-- `DATABASE_DRIVER=mysql` 且缺少 `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_DATABASE` -> 启动失败，指出缺失变量。
+- `USE_MYSQL=true` 且缺少 `MYSQL_HOST` / `MYSQL_USER` / `MYSQL_DATABASE` -> 启动失败，指出缺失变量。
 - `MYSQL_DATABASE` 包含非白名单字符 -> 启动失败，禁止拼接不可信 identifier。
 - MySQL 连接失败 -> 启动失败，不降级读取 SQLite。
 - 未迁移的 SQLite-only 写路径在 MySQL 模式被调用 -> 返回稳定错误，不访问 SQLite。
 
 ### 5. 良好 / 基线 / 错误
 
-- 良好：`DATABASE_DRIVER=mysql` 下 `smoke:executor` 能创建表、写资产元数据、写 generation records/outputs/reference assets，并读取 Gallery/history。
-- 基线：空 `DATABASE_DRIVER` 下 `pnpm typecheck`、`pnpm build` 和 SQLite smoke 行为不变。
+- 良好：`USE_MYSQL=true` 下 `smoke:executor` 能创建表、写资产元数据、写 generation records/outputs/reference assets，并读取 Gallery/history。
+- 基线：空 `USE_MYSQL` 下 `pnpm typecheck`、`pnpm build` 和 SQLite smoke 行为不变。
 - 错误：在 MySQL store 中直接拼用户输入 SQL、把真实 MySQL 密码写入 `.env.example`、或让 MySQL 模式打开旧 SQLite 读配置。
 
 ### 6. 必跑测试

@@ -15,7 +15,7 @@ Secrets may come from:
 - `.env` or runtime environment variables.
 - Initial administrator bootstrap values from `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME`.
 - Local provider config stored in SQLite.
-- `DATABASE_DRIVER=mysql` 时使用的 MySQL 连接凭据。
+- `USE_MYSQL=true` 时使用的 MySQL 连接凭据。
 - Agent LLM config stored in SQLite.
 - Codex OAuth tokens stored in SQLite.
 

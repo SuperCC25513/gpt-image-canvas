@@ -6,9 +6,10 @@
 
 ## 驱动行为
 
-- 默认不设置 `DATABASE_DRIVER` 时使用 SQLite，数据文件为 `DATA_DIR/gpt-image-canvas.sqlite`。
-- 设置 `DATABASE_DRIVER=mysql` 时只连接 MySQL，不读取 SQLite 数据，也不执行 SQLite 到 MySQL 的迁移。
+- 默认不设置 `USE_MYSQL` 或设置为非 true 值时使用 SQLite，数据文件为 `DATA_DIR/gpt-image-canvas.sqlite`。
+- 设置 `USE_MYSQL=true` 时只连接 MySQL，不读取 SQLite 数据，也不执行 SQLite 到 MySQL 的迁移。
 - MySQL 配置来自环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE`、`MYSQL_CONNECTION_LIMIT`、`MYSQL_CREATE_DATABASE`。
+- `MYSQL_CREATE_DATABASE=false` 时不会自动创建数据库本身；目标数据库已存在时，启动会自动创建缺失表并补齐表注释和字段注释。
 - 生成图片文件仍只写入 `DATA_DIR/assets`。数据库中的 `assets.relative_path` 只保存相对路径。
 - 新库不创建云存储配置表，也不创建云资产备份字段。
 

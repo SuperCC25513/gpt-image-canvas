@@ -17,7 +17,7 @@ export const db: SqliteDatabase =
 
 export function getMySqlPool(): Pool {
   if (databaseContext.driver !== "mysql") {
-    throw new Error("MySQL pool is only available when DATABASE_DRIVER=mysql.");
+    throw new Error("MySQL pool is only available when USE_MYSQL=true.");
   }
 
   return databaseContext.pool;
@@ -32,7 +32,7 @@ function createUnavailableSqliteDatabase(): SqliteDatabase {
     {},
     {
       get() {
-        throw new Error("SQLite database access is unavailable when DATABASE_DRIVER=mysql.");
+        throw new Error("SQLite database access is unavailable when USE_MYSQL=true.");
       }
     }
   ) as SqliteDatabase;
