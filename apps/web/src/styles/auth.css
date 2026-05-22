@@ -193,8 +193,9 @@
 
   .auth-user-bar {
     left: 12px;
-    right: 12px;
+    right: auto;
     bottom: 12px;
+    max-width: min(15rem, calc(100vw - 10.5rem));
     justify-content: space-between;
   }
 }
