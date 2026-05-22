@@ -219,12 +219,12 @@ The default `NODE_IMAGE` is `node:24.15.0-bookworm-slim`.
 
 `DATA_DIR` defaults to `./data` locally and `/app/data` in Docker. It contains:
 
-- `gpt-image-canvas.sqlite`: project state, generation history, asset metadata, provider config, Agent LLM config, optional cloud storage config, and Codex OAuth token records.
+- `gpt-image-canvas.sqlite`: users, sessions, project state, generation history, asset metadata, provider config, Agent LLM config, optional cloud storage config, and Codex OAuth token records.
 - `assets/`: generated image files.
 
 Do not commit `.env`, `.ralph/`, `.codex-temp/`, `data/`, generated images, SQLite databases, or build output.
 
-Treat `data/gpt-image-canvas.sqlite` as sensitive after saving local provider keys, Agent LLM keys, cloud storage secrets, or Codex tokens. The app is designed for local workstation use; do not expose it publicly without adding your own authentication and network controls.
+Treat `data/gpt-image-canvas.sqlite` as sensitive after saving user accounts, local provider keys, Agent LLM keys, cloud storage secrets, or Codex tokens. The app requires local sign-in, but it is still designed for local workstation use; do not expose it publicly without additional network controls and deployment review.
 
 If a real API key was ever committed, rotate the key. Git ignore rules prevent future leaks, but they do not remove secrets from existing Git history.
 

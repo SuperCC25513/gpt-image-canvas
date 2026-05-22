@@ -14,7 +14,7 @@ Use this before changing API routes, provider selection, Agent execution, asset 
 
 SQLite tables are defined in `apps/api/src/infrastructure/schema.ts`; keep `docs/generated/db-schema.md` updated when the schema changes.
 
-MySQL 通过 `DATABASE_DRIVER=mysql` 显式启用。该模式下 API 只用 MySQL 保存项目、资产、生成记录和 Gallery 元数据，不读取 SQLite 数据，也不做 SQLite 到 MySQL 的迁移。生成图片文件仍保存在 `DATA_DIR/assets`，MySQL 只保存元数据和相对路径。`.env` 凭据必须保留在本机，`MYSQL_CREATE_DATABASE=true` 只用于本地初始化或受控部署。
+MySQL 通过 `DATABASE_DRIVER=mysql` 显式启用。该模式下 API 只用 MySQL 保存用户、会话、项目、资产、生成记录和 Gallery 元数据，不读取 SQLite 数据，也不做 SQLite 到 MySQL 的迁移。生成图片文件仍保存在 `DATA_DIR/assets`，MySQL 只保存元数据和相对路径。`.env` 凭据必须保留在本机，`MYSQL_CREATE_DATABASE=true` 只用于本地初始化或受控部署。
 
 Important persistence rules:
 
@@ -22,6 +22,7 @@ Important persistence rules:
 - Validate asset paths before reading from disk.
 - Keep generation records, outputs, reference assets, and asset rows consistent.
 - If changing snapshot format, preserve old project restore behavior or document migration behavior.
+- SQLite 旧单用户数据只有在 `.env` 完整设置 `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME` 后才会回填给管理员；缺少管理员配置时，owner 为空的数据不能被普通注册用户继承。
 - Do not run local `pnpm dev` and Docker against the same `data/` directory at the same time.
 
 ## Provider Reliability

@@ -171,3 +171,67 @@ const row = db.select().from(generationRecords).where(eq(generationRecords.id, i
 // 业务层走异步 store facade，由 facade 按当前 driver 分发。
 const record = await readGenerationRecord(id);
 ```
+
+## 场景：用户会话与私有 owner 归属
+
+### 1. 范围 / 触发
+
+- 触发：修改注册登录、会话、管理员初始化、私有数据表、资产读取、生成、Gallery、Agent 会话或提示词收藏。
+- 范围：`users`、`sessions`、`app_settings`，以及带 `user_id` 的项目、资产、生成记录、生成输出、Agent 会话、提示词收藏表。
+
+### 2. 签名
+
+- 环境：`ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME` 必须三项同时设置或同时留空。
+- Cookie：`gic_session`，`HttpOnly`、`SameSite=Lax`、`Path=/`，生产或 `COOKIE_SECURE=true` 时加 `Secure`。
+- API：`POST /api/auth/register`、`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`。
+- DB：`sessions.token_hash` 只保存 SHA-256 hex；私有表用 `user_id` 表示 owner。
+
+### 3. 契约
+
+- 注册默认读取 `app_settings.allow_registration`、`require_approval`、`default_credits`。
+- 已存在管理员邮箱时，启动只确保 `role=admin`、`status=active`，不得用 `.env` 重置密码。
+- 普通用户只能读取自己的 `user_id` 数据；管理员可读取运营所需私有数据。
+- 资产路由必须先判定 owner/admin，再解析和读取本地文件。
+- SQLite 旧 owner 为空的数据只在管理员初始化成功后回填给管理员。
+- 提示词收藏按用户去重，唯一索引必须覆盖 `user_id, source_type, source_id`。
+
+### 4. 验证与错误矩阵
+
+- 缺少 session 或 token 无效 -> `401 unauthorized`。
+- 用户 `status=pending|disabled` -> 登录返回 `403 account_inactive`，旧 session 访问私有 API 返回 `401`。
+- 管理员环境变量部分存在 -> 启动失败。
+- 普通用户读取他人资产、Gallery 输出或生成记录 -> `404 not_found`。
+- 不同用户收藏同一提示词池项目 -> 应各自成功，不发生唯一索引冲突。
+
+### 5. 良好 / 基线 / 错误
+
+- 良好：SQLite 和 MySQL 都要求登录；注册后项目、资产、生成记录和输出写入当前用户 owner。
+- 基线：旧 SQLite 单用户数据在管理员存在时回填给管理员，普通新用户不可继承旧数据。
+- 错误：在 MySQL 查询中遗漏 `user_id AS userId`，导致 owner 判权拿不到真实 owner；或让提示词收藏继续使用全局 `(source_type, source_id)` 唯一索引。
+
+### 6. 必跑测试
+
+- `pnpm typecheck`
+- `pnpm build`
+- SQLite smoke：未登录私有 API 为 401；注册/登录/me/退出；禁用用户旧 session 被拒绝；普通用户不可读管理员资产。
+- MySQL smoke：注册/登录/me/退出；`sessions.token_hash` 为 64 位 hash；提示词收藏唯一索引为 `user_id, source_type, source_id`。
+- UI smoke：`pnpm dev` 后浏览器验证未登录认证页、注册进入工作台、退出回认证页、移动视口无横向溢出。
+
+### 7. 错误写法 vs 正确写法
+
+错误：
+
+```ts
+const asset = await findAssetById(assetId);
+const file = await getStoredAssetFile(assetId);
+return new Response(file.bytes);
+```
+
+正确：
+
+```ts
+if (!(await userCanReadAsset(assetId, user))) {
+  return c.json(errorResponse("not_found", "Asset not found."), 404);
+}
+const file = await getStoredAssetFile(assetId);
+```

@@ -6,13 +6,14 @@
 
 `gpt-image-canvas` 面向本地工作站使用。项目状态、生成资产、生成历史、提供方设置、Agent LLM 设置和 Codex OAuth token 记录都保存在本地运行时数据中。
 
-Do not treat the app as safe for public internet exposure without adding explicit authentication and network controls.
+The app now requires local account sign-in before creative, Gallery, asset, provider, Agent, and prompt-favorite APIs can be used. This is a local-workstation auth boundary, not a complete public-internet hardening layer; do not expose the app publicly without additional network controls, TLS, operational monitoring, and a reviewed deployment model.
 
 ## Secrets
 
 Secrets may come from:
 
 - `.env` or runtime environment variables.
+- Initial administrator bootstrap values from `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME`.
 - Local provider config stored in SQLite.
 - `DATABASE_DRIVER=mysql` 时使用的 MySQL 连接凭据。
 - Agent LLM config stored in SQLite.
@@ -24,12 +25,16 @@ Rules:
 - 不要把本机 MySQL 密码写入 `.env.example`、文档示例、日志或提交信息。
 - 不要记录原始 API key、OAuth token 或已保存的提供方配置值。
 - Read APIs should return masked secrets only.
+- `ADMIN_PASSWORD` is only used when creating the admin user for the first time. If the email already exists, startup only ensures `role=admin` and `status=active`; it must not reset the stored password.
+- Session cookies must be `HttpOnly`、`SameSite=Lax`、`Path=/`; the database stores only a SHA-256 hash of the session token.
 - Preserve existing secret values only when the request explicitly uses a preserve flag or leaves a masked value unchanged.
 - If a real key was committed, rotate it. `.gitignore` does not remove secrets from Git history.
 
 ## Local Data
 
 Generated images can contain private user content. Treat local assets and previews as sensitive by default.
+
+Owner fields on projects, assets, generation records/outputs, Agent conversations, and prompt favorites are part of the privacy boundary. Asset routes must authorize the owner or an admin before resolving and reading files from `DATA_DIR/assets`.
 
 When adding browser tests that save fake credentials, clear or restore local test configuration before finishing. Do not leave real-looking secrets in `data/`.
 

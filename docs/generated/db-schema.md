@@ -17,7 +17,50 @@
 - SQLite 文本列使用 `text`，MySQL 对主键和索引字段使用 `VARCHAR`，对快照、prompt、JSON 内容使用 `TEXT`/`LONGTEXT`。
 - SQLite 布尔值使用 `integer` 的 `0/1`，MySQL 使用 `TINYINT` 的 `0/1`。
 - 两种驱动都用 ISO 字符串保存时间，排序依赖 ISO 字符串的字典序。
-- MySQL 第一阶段覆盖当前已有表；用户、owner、公开状态、积分、签到和审计表由后续任务追加。
+- 两种驱动都包含用户、会话、最小系统设置和私有数据 `user_id` 归属字段。公开状态、积分签到和审计表由后续任务追加。
+
+## `users`
+
+Stores local account identities and password hashes.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | text | Primary key. |
+| `name` | text | Required display name. |
+| `email` | text | Required normalized email; unique index. |
+| `password_salt` | text | Required password salt. |
+| `password_iterations` | integer | Required PBKDF2 iteration count. |
+| `password_hash` | text | Required password hash. |
+| `role` | text | Required user role (`user` or `admin`). |
+| `status` | text | Required user status (`active`, `pending`, or `disabled`). |
+| `credits` | integer | Required credit balance seed for later tasks. |
+| `created_at` | text | Required ISO timestamp. |
+| `updated_at` | text | Required ISO timestamp. |
+
+## `sessions`
+
+Stores browser session token hashes.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `token_hash` | text | Primary key; SHA-256 of the cookie token. |
+| `user_id` | text | Required owner user ID. |
+| `expires_at` | text | Required ISO expiry timestamp. |
+| `created_at` | text | Required ISO timestamp. |
+| `last_seen_at` | text | Optional ISO timestamp updated during use. |
+
+## `app_settings`
+
+Stores minimal registration settings.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | text | Primary key; current row is `default`. |
+| `allow_registration` | integer | Required boolean flag stored as integer; defaults to `1`. |
+| `require_approval` | integer | Required boolean flag stored as integer; defaults to `0`. |
+| `default_credits` | integer | Required default credits for registered users. |
+| `created_at` | text | Required ISO timestamp. |
+| `updated_at` | text | Required ISO timestamp. |
 
 ## `projects`
 
@@ -26,6 +69,7 @@ Stores the saved tldraw project snapshot.
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | text | Primary key. |
+| `user_id` | text | Optional owner user ID. |
 | `name` | text | Required project name. |
 | `snapshot_json` | text | Required serialized project snapshot. |
 | `created_at` | text | Required ISO timestamp. |
@@ -38,6 +82,7 @@ Stores generated and reference asset metadata.
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | text | Primary key. |
+| `user_id` | text | Optional owner user ID. |
 | `file_name` | text | Required stored filename. |
 | `relative_path` | text | Required path relative to `DATA_DIR`. |
 | `mime_type` | text | Required asset MIME type. |
@@ -103,11 +148,51 @@ Stores local Agent conversation history and resumable context snapshots.
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | text | Primary key. |
+| `user_id` | text | Optional owner user ID. |
 | `title` | text | Required conversation title shown in history. |
 | `messages_json` | text | Required serialized Agent transcript. |
 | `context_json` | text | Required serialized resumable Agent context. |
 | `created_at` | text | Required ISO timestamp. |
 | `updated_at` | text | Required ISO timestamp; indexed for latest-first history. |
+
+## `prompt_favorite_groups`
+
+Stores per-user prompt favorite folders.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | text | Primary key. |
+| `user_id` | text | Optional owner user ID. |
+| `name` | text | Required group name. |
+| `sort_order` | integer | Required ordering value. |
+| `created_at` | text | Required ISO timestamp. |
+| `updated_at` | text | Required ISO timestamp. |
+
+## `prompt_favorites`
+
+Stores per-user favorite prompt references.
+
+唯一索引：`prompt_favorites_user_source_idx` 覆盖 `user_id`、`source_type` 和 `source_id`，允许不同用户独立收藏同一条提示词池项目。
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | text | Primary key. |
+| `user_id` | text | Optional owner user ID. |
+| `source_type` | text | Required source type. |
+| `source_id` | text | Required source ID. |
+| `group_id` | text | Required reference to `prompt_favorite_groups.id`. |
+| `title` | text | Required title. |
+| `prompt` | text | Required prompt text. |
+| `model` | text | Required model label. |
+| `media_type` | text | Required media type. |
+| `asset_url` | text | Required source asset URL. |
+| `image_width` | integer | Optional image width. |
+| `image_height` | integer | Optional image height. |
+| `source_url` | text | Optional source URL. |
+| `use_count` | integer | Required use count. |
+| `last_used_at` | text | Optional ISO timestamp. |
+| `created_at` | text | Required ISO timestamp. |
+| `updated_at` | text | Required ISO timestamp. |
 
 ## `codex_oauth_tokens`
 
@@ -135,6 +220,7 @@ Stores one generation request and its overall status.
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | text | Primary key. |
+| `user_id` | text | Optional owner user ID. |
 | `mode` | text | Required generation mode. |
 | `prompt` | text | Required user prompt. |
 | `effective_prompt` | text | Required prompt after preset composition. |
@@ -156,6 +242,7 @@ Stores individual output status and asset linkage for a generation.
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | text | Primary key. |
+| `user_id` | text | Optional owner user ID. |
 | `generation_id` | text | Required reference to `generation_records.id`; cascades on delete. |
 | `status` | text | Required output status. |
 | `asset_id` | text | Optional reference to `assets.id`. |
@@ -175,6 +262,7 @@ Stores multiple reference assets used by one generation.
 
 ## Relations
 
+- `projects.user_id`、`assets.user_id`、`generation_records.user_id`、`generation_outputs.user_id`、`agent_conversations.user_id`、`prompt_favorite_groups.user_id`、`prompt_favorites.user_id` store the owner ID used by API authorization.
 - `generation_records` has many `generation_outputs`.
 - `generation_records` has many `generation_reference_assets`.
 - `generation_records.reference_asset_id` optionally references `assets.id`.
