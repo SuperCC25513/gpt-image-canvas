@@ -299,7 +299,7 @@ export function AdminPage({ currentUser }: { currentUser?: CurrentUser }) {
                           </td>
                           <td>
                             <select
-                              disabled={isUserBusy}
+                              disabled={isUserBusy || isSelf}
                               value={user.role}
                               onChange={(event) => void updateUser(user, { role: event.target.value as UserRole })}
                             >
@@ -312,7 +312,7 @@ export function AdminPage({ currentUser }: { currentUser?: CurrentUser }) {
                           </td>
                           <td>
                             <select
-                              disabled={isUserBusy}
+                              disabled={isUserBusy || isSelf}
                               value={user.status}
                               onChange={(event) => void updateUser(user, { status: event.target.value as UserStatus })}
                             >
@@ -483,19 +483,25 @@ export function AdminPage({ currentUser }: { currentUser?: CurrentUser }) {
                       <span title={audit.userAgent}>{t("adminAuditUserAgent", { userAgent: audit.userAgent || "-" })}</span>
                       <div className="admin-audit-outputs">
                         {audit.outputs.length > 0 ? (
-                          audit.outputs.map((output) => (
-                            <a
-                              className="admin-audit-output"
-                              href={output.asset?.url ?? "#"}
-                              key={output.outputId}
-                              rel="noreferrer"
-                              target={output.asset ? "_blank" : undefined}
-                              aria-disabled={!output.asset}
-                            >
-                              {output.asset ? output.asset.fileName : output.outputId}
-                              <span>{t("statusLabel", { status: output.status })}</span>
-                            </a>
-                          ))
+                          audit.outputs.map((output) =>
+                            output.asset ? (
+                              <a
+                                className="admin-audit-output"
+                                href={output.asset.url}
+                                key={output.outputId}
+                                rel="noreferrer"
+                                target="_blank"
+                              >
+                                {output.asset.fileName}
+                                <span>{t("statusLabel", { status: output.status })}</span>
+                              </a>
+                            ) : (
+                              <span className="admin-audit-output" key={output.outputId}>
+                                {output.outputId}
+                                <span>{t("statusLabel", { status: output.status })}</span>
+                              </span>
+                            )
+                          )
                         ) : (
                           <span>{t("adminAuditNoOutputs")}</span>
                         )}

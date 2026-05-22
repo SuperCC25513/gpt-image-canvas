@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  IMAGE_QUALITIES,
+  OUTPUT_FORMATS,
   SIZE_PRESETS,
   STYLE_PRESETS,
   type GalleryVisibilityResponse,
@@ -94,8 +96,8 @@ export function GalleryPage({ variant = "private", onDeleted, onReuse }: Gallery
           throw new Error(await readGalleryError(response, locale, t));
         }
 
-        const body = (await response.json()) as GalleryResponse | PublicGalleryResponse;
-        if (!Array.isArray(body.items)) {
+        const body = (await response.json()) as unknown;
+        if (!isGalleryResponse(body)) {
           throw new Error(t("galleryServiceInvalidData"));
         }
 
@@ -1192,6 +1194,69 @@ function displayTimeValue(item: GalleryImageItem): string {
 
 function publicAuthorName(item: GalleryImageItem): string | undefined {
   return "authorName" in item ? (item as PublicGalleryItem).authorName : undefined;
+}
+
+function isGalleryResponse(value: unknown): value is GalleryResponse | PublicGalleryResponse {
+  if (!isRecord(value) || !Array.isArray(value.items)) {
+    return false;
+  }
+
+  return value.items.every(isGalleryImageItem);
+}
+
+function isGalleryImageItem(value: unknown): value is GalleryImageItem {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.outputId === "string" &&
+    typeof value.generationId === "string" &&
+    isImageMode(value.mode) &&
+    typeof value.prompt === "string" &&
+    typeof value.effectivePrompt === "string" &&
+    typeof value.presetId === "string" &&
+    isImageSize(value.size) &&
+    typeof value.quality === "string" &&
+    (IMAGE_QUALITIES as readonly string[]).includes(value.quality) &&
+    typeof value.outputFormat === "string" &&
+    (OUTPUT_FORMATS as readonly string[]).includes(value.outputFormat) &&
+    typeof value.createdAt === "string" &&
+    isGeneratedAsset(value.asset) &&
+    typeof value.isPublic === "boolean" &&
+    (value.publishedAt === undefined || typeof value.publishedAt === "string") &&
+    (value.publicTitle === undefined || typeof value.publicTitle === "string") &&
+    (value.authorName === undefined || typeof value.authorName === "string") &&
+    (value.providerLabel === undefined || typeof value.providerLabel === "string")
+  );
+}
+
+function isGeneratedAsset(value: unknown): value is GalleryImageItem["asset"] {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.url === "string" &&
+    typeof value.fileName === "string" &&
+    typeof value.mimeType === "string" &&
+    isFiniteNumber(value.width) &&
+    isFiniteNumber(value.height)
+  );
+}
+
+function isImageSize(value: unknown): value is GalleryImageItem["size"] {
+  return isRecord(value) && isFiniteNumber(value.width) && isFiniteNumber(value.height);
+}
+
+function isImageMode(value: unknown): value is GalleryImageItem["mode"] {
+  return value === "generate" || value === "edit";
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function normalizeSearchText(value: string): string {

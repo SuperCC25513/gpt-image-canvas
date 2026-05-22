@@ -178,6 +178,10 @@
   white-space: nowrap;
 }
 
+.auth-user-bar__message[data-tone="warning"] {
+  color: var(--danger);
+}
+
 .auth-user-bar button {
   min-height: 34px;
   padding: 0 10px;

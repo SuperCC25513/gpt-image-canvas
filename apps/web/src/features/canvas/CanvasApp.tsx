@@ -3252,13 +3252,17 @@ export function App() {
   const generationCreditCost = creditSettings?.generationCreditCost ?? DEFAULT_GENERATION_CREDIT_COST;
   const maxImagesPerRequest = creditSettings?.maxImagesPerRequest ?? DEFAULT_MAX_IMAGES_PER_REQUEST;
   const estimatedCreditCost = Math.max(0, count * generationCreditCost);
-  const creditValidationMessage =
-    count > maxImagesPerRequest
+  const accountValidationMessage = isAccountLoading ? t("authChecking") : accountError || (!accountUser ? t("creditsAccountUnavailable") : "");
+  const creditValidationMessageForCount = (requestedCount: number): string => {
+    const requestedCreditCost = Math.max(0, requestedCount * generationCreditCost);
+    return requestedCount > maxImagesPerRequest
       ? t("creditsMaxImages", { max: maxImagesPerRequest })
-      : accountUser && estimatedCreditCost > accountUser.credits
-        ? t("creditsInsufficient", { balance: accountUser.credits, cost: estimatedCreditCost })
+      : accountUser && requestedCreditCost > accountUser.credits
+        ? t("creditsInsufficient", { balance: accountUser.credits, cost: requestedCreditCost })
         : "";
-  const validationMessage = promptValidationMessage || dimensionValidationMessage || referenceValidationMessage || creditValidationMessage;
+  };
+  const creditValidationMessage = creditValidationMessageForCount(count);
+  const validationMessage = promptValidationMessage || dimensionValidationMessage || referenceValidationMessage || accountValidationMessage || creditValidationMessage;
   const shouldShowValidation = Boolean(validationMessage);
   const canGenerate = !validationMessage;
   const tldrawComponents = useMemo(
@@ -4120,6 +4124,12 @@ export function App() {
     const inputValidationMessage = generationValidationMessage(input.prompt, input.size.width, input.size.height, t, locale);
     if (inputValidationMessage) {
       setGenerationWarning(inputValidationMessage);
+      return;
+    }
+
+    const accountBlockMessage = accountValidationMessage || creditValidationMessageForCount(input.count);
+    if (accountBlockMessage) {
+      setGenerationWarning(accountBlockMessage);
       return;
     }
 
@@ -6455,7 +6465,7 @@ export function App() {
               <button
                 className="secondary-action h-9 shrink-0 px-2.5 text-xs"
                 data-testid="checkin-button"
-                disabled={isCheckingIn || accountStatus?.checkin?.checkedInToday === true}
+                disabled={isCheckingIn || isAccountLoading || Boolean(accountError) || !accountUser || accountStatus?.checkin?.checkedInToday === true}
                 type="button"
                 onClick={() => void submitCheckin()}
               >
@@ -6470,6 +6480,10 @@ export function App() {
             {accountError ? (
               <p className="mt-2 text-xs leading-5 text-red-700" role="alert">
                 {accountError}
+              </p>
+            ) : accountValidationMessage ? (
+              <p className="mt-2 text-xs leading-5 text-amber-800" role="alert">
+                {accountValidationMessage}
               </p>
             ) : creditValidationMessage ? (
               <p className="mt-2 text-xs leading-5 text-amber-800" role="alert">

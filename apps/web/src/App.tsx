@@ -12,6 +12,10 @@ interface AuthFormState {
   password: string;
 }
 
+interface LoadMeOptions {
+  preserveCurrentUserOnError?: boolean;
+}
+
 const initialFormState: AuthFormState = {
   name: "",
   email: "",
@@ -35,7 +39,7 @@ export function App() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const loadMe = useCallback(async (signal?: AbortSignal) => {
+  const loadMe = useCallback(async (signal?: AbortSignal, options: LoadMeOptions = {}) => {
     setIsLoading(true);
     setError("");
     try {
@@ -55,8 +59,10 @@ export function App() {
         return;
       }
       setError(requestError instanceof Error ? requestError.message : t("authLoadFailed"));
-      setAuthStatus(null);
-      setCurrentUser(null);
+      setAuthStatus((current) => (options.preserveCurrentUserOnError ? current : null));
+      if (!options.preserveCurrentUserOnError) {
+        setCurrentUser(null);
+      }
     } finally {
       if (!signal?.aborted) {
         setIsLoading(false);
@@ -115,7 +121,7 @@ export function App() {
       }
 
       setCurrentUser(body.user);
-      await loadMe();
+      await loadMe(undefined, { preserveCurrentUserOnError: true });
       setForm(initialFormState);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : mode === "login" ? t("authLoginFailed") : t("authRegisterFailed"));
@@ -150,7 +156,9 @@ export function App() {
       <>
         <CanvasApp />
         <div className="auth-user-bar" data-testid="auth-user-bar">
-          <span>{t("authSignedInAs", { name: currentUser.name })}</span>
+          <span className="auth-user-bar__message" data-tone={error ? "warning" : "neutral"} role={error ? "status" : undefined}>
+            {error || t("authSignedInAs", { name: currentUser.name })}
+          </span>
           <button type="button" onClick={() => void logout()}>
             <LogOut className="size-4" aria-hidden="true" />
             {t("authLogout")}
