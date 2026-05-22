@@ -17,7 +17,7 @@
 - SQLite 文本列使用 `text`，MySQL 对主键和索引字段使用 `VARCHAR`，对快照、prompt、JSON 内容使用 `TEXT`/`LONGTEXT`。
 - SQLite 布尔值使用 `integer` 的 `0/1`，MySQL 使用 `TINYINT` 的 `0/1`。
 - 两种驱动都用 ISO 字符串保存时间，排序依赖 ISO 字符串的字典序。
-- 两种驱动都包含用户、会话、系统设置、积分流水、每日签到和私有数据 `user_id` 归属字段。审计表由后续任务追加。
+- 两种驱动都包含用户、会话、系统设置、积分流水、每日签到、生成审计和私有数据 `user_id` 归属字段。
 
 ## `users`
 
@@ -286,6 +286,30 @@ Stores individual output status and asset linkage for a generation.
 | `public_title` | text | Optional public display title for the output. |
 | `created_at` | text | Required ISO timestamp. |
 
+## `generation_audits`
+
+Stores request-level admin audit metadata for generation requests.
+
+唯一索引：`generation_audits_generation_id_idx` 覆盖 `generation_id`，保证同一生成请求只有一条审计记录。
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | text / varchar | Primary key. |
+| `generation_id` | text / varchar | Required generation record ID. |
+| `user_id` | text / varchar | Optional requesting user ID snapshot. |
+| `user_name` | text | Optional requesting user display-name snapshot. |
+| `user_email` | text / varchar | Optional requesting user email snapshot. |
+| `mode` | text / varchar | Required generation mode. |
+| `prompt` | text / longtext | Required original user prompt. |
+| `is_public` | integer / tinyint | Required request/output public flag. |
+| `status` | text / varchar | Required generation status snapshot. |
+| `error_summary` | text | Optional sanitized error summary. |
+| `ip_address` | text / varchar | Optional request IP summary from forwarded headers. |
+| `user_agent` | text | Optional sanitized User-Agent summary. |
+| `outputs_json` | text / longtext | Required serialized output references used as fallback audit linkage. |
+| `created_at` | text / varchar | Required ISO timestamp. |
+| `updated_at` | text / varchar | Required ISO timestamp. |
+
 ## `generation_reference_assets`
 
 Stores multiple reference assets used by one generation.
@@ -302,6 +326,7 @@ Stores multiple reference assets used by one generation.
 - `projects.user_id`、`assets.user_id`、`generation_records.user_id`、`generation_outputs.user_id`、`agent_conversations.user_id`、`prompt_favorite_groups.user_id`、`prompt_favorites.user_id` store the owner ID used by API authorization.
 - `generation_records` has many `generation_outputs`.
 - `generation_records` has many `generation_reference_assets`.
+- `generation_audits.generation_id` records the generation request id and is joined with `generation_outputs` by admin audit queries.
 - `generation_records.reference_asset_id` optionally references `assets.id`.
 - `generation_outputs.generation_id` references `generation_records.id` with cascade delete.
 - `generation_outputs.asset_id` optionally references `assets.id`.

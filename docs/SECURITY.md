@@ -46,6 +46,8 @@ When adding browser tests that save fake credentials, clear or restore local tes
 - Prefer stable error codes from shared contracts or API helpers.
 - Do not pass raw upstream provider errors directly to clients if they may contain credentials or request internals.
 - Do not expose filesystem paths, shell details, environment contents, or database internals through API responses.
+- `/api/admin/*` must require an active admin session. Admin responses may include users, settings, credit adjustments, and generation audit summaries, but must not include raw provider API keys, Agent API keys, OAuth tokens, cookies, database passwords, or unredacted upstream error payloads.
+- Generation audit records store prompt, status, IP/User-Agent summaries, and output linkage for local administration. Treat the audit table as private runtime data alongside generated assets.
 
 ## Docker
 

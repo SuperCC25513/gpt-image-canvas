@@ -22,6 +22,7 @@ Important persistence rules:
 - Validate asset paths before reading from disk.
 - Keep generation records, outputs, reference assets, and asset rows consistent.
 - 积分余额变更必须在数据库事务内同时写入 `credit_transactions`。生成预扣、失败退款、注册赠送和每日签到都不能只改 `users.credits`。
+- 生成请求会写入 `generation_audits`，记录请求用户、prompt、公开状态、状态、错误摘要、IP/User-Agent 摘要和输出关联。审计写入失败不应阻断 provider 调用，但成功、失败、取消和重启中断路径应尽力更新审计状态。
 - If changing snapshot format, preserve old project restore behavior or document migration behavior.
 - SQLite 旧单用户数据只有在 `.env` 完整设置 `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME` 后才会回填给管理员；缺少管理员配置时，owner 为空的数据不能被普通注册用户继承。
 - Do not run local `pnpm dev` and Docker against the same `data/` directory at the same time.
