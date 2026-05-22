@@ -18,13 +18,13 @@ interface ActiveGenerationTask {
 
 const activeGenerationTasks = new Map<string, ActiveGenerationTask>();
 
-export function initializeGenerationTaskManager(): void {
+export async function initializeGenerationTaskManager(): Promise<void> {
   activeGenerationTasks.clear();
-  markInterruptedGenerationRecordsFailed();
+  await markInterruptedGenerationRecordsFailed();
 }
 
-export function startTextToImageGenerationTask(input: ImageProviderInput): GenerationRecord {
-  const record = createRunningTextToImageGeneration(input);
+export async function startTextToImageGenerationTask(input: ImageProviderInput): Promise<GenerationRecord> {
+  const record = await createRunningTextToImageGeneration(input);
   if (isTerminalGenerationStatus(record.status) || activeGenerationTasks.has(record.id)) {
     return record;
   }
@@ -51,11 +51,11 @@ export async function startReferenceImageGenerationTask(input: EditImageProvider
   return running.record;
 }
 
-export function readGenerationTaskRecord(generationId: string): GenerationRecord | undefined {
+export async function readGenerationTaskRecord(generationId: string): Promise<GenerationRecord | undefined> {
   return getGenerationRecord(generationId);
 }
 
-export function cancelGenerationTask(generationId: string): GenerationRecord | undefined {
+export async function cancelGenerationTask(generationId: string): Promise<GenerationRecord | undefined> {
   activeGenerationTasks.get(generationId)?.controller.abort();
   return cancelGenerationRecord(generationId);
 }
@@ -69,9 +69,9 @@ function startBackgroundGenerationTask(generationId: string, run: (signal: Abort
       await run(controller.signal);
     } catch (error) {
       if (controller.signal.aborted) {
-        cancelGenerationRecord(generationId);
+        await cancelGenerationRecord(generationId);
       } else {
-        failGenerationRecord(generationId, errorToMessage(error));
+        await failGenerationRecord(generationId, errorToMessage(error));
       }
     } finally {
       const activeTask = activeGenerationTasks.get(generationId);

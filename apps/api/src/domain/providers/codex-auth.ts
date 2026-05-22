@@ -12,7 +12,7 @@ import {
   parseCodexDeviceStartPayload,
   parseCodexTokenPayload
 } from "./codex-auth-utils.js";
-import { db } from "../../infrastructure/database.js";
+import { databaseDriver, db } from "../../infrastructure/database.js";
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
 import { getProviderConfig } from "./provider-config.js";
 import { codexOAuthTokens } from "../../infrastructure/schema.js";
@@ -138,6 +138,13 @@ export async function pollCodexDeviceLogin(
 }
 
 export function logoutCodex(): CodexLogoutResponse {
+  if (databaseDriver !== "sqlite") {
+    return {
+      ok: true,
+      auth: getAuthStatus()
+    };
+  }
+
   db.delete(codexOAuthTokens).where(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)).run();
 
   return {
@@ -165,10 +172,18 @@ export async function getValidCodexSession(signal?: AbortSignal): Promise<CodexA
 }
 
 function getCodexTokenRow(): CodexTokenRow | undefined {
+  if (databaseDriver !== "sqlite") {
+    return undefined;
+  }
+
   return db.select().from(codexOAuthTokens).where(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)).get();
 }
 
 function storeCodexTokens(payload: unknown, fallback?: CodexTokenRow): CodexTokenRow {
+  if (databaseDriver !== "sqlite") {
+    throw new ProviderError("unsupported_provider_behavior", "MySQL 模式当前不支持保存 Codex 登录。", 400);
+  }
+
   const now = new Date();
   const parsed = parseCodexTokenPayload(payload, {
     now,
@@ -333,6 +348,10 @@ async function readResponseBody(response: Response): Promise<unknown> {
 }
 
 function markCodexSessionUnavailable(reason: string): void {
+  if (databaseDriver !== "sqlite") {
+    return;
+  }
+
   const now = new Date().toISOString();
   db.update(codexOAuthTokens)
     .set({

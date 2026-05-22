@@ -684,7 +684,7 @@ async function persistAgentSelectedReferences(
 ): Promise<AgentSelectedCanvasReference[]> {
   return Promise.all(
     references.slice(0, MAX_AGENT_SELECTED_REFERENCES).map(async (reference) => {
-      const storedAssetId = storedAssetIdForAgentReference(reference.assetId);
+      const storedAssetId = await storedAssetIdForAgentReference(reference.assetId);
       if (storedAssetId) {
         return {
           ...reference,
@@ -713,9 +713,9 @@ async function persistAgentSelectedReferences(
   );
 }
 
-function storedAssetIdForAgentReference(assetId: string): string | undefined {
+async function storedAssetIdForAgentReference(assetId: string): Promise<string | undefined> {
   for (const candidate of storedAssetIdCandidates(assetId)) {
-    const stored = getStoredAssetFile(candidate);
+    const stored = await getStoredAssetFile(candidate);
     if (stored) {
       return stored.id;
     }

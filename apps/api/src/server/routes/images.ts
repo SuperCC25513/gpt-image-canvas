@@ -12,7 +12,9 @@ import { readJson } from "../http/json.js";
 import { parseEditPayload, parseGeneratePayload } from "../http/validation.js";
 
 export function registerImageRoutes(app: Hono): void {
-  initializeGenerationTaskManager();
+  void initializeGenerationTaskManager().catch((error: unknown) => {
+    console.error("Generation task manager initialization failed.", error);
+  });
 
   app.post("/api/images/generate", async (c) => {
     const payload = await readJson(c.req.raw);
@@ -26,7 +28,7 @@ export function registerImageRoutes(app: Hono): void {
     }
 
     try {
-      return c.json({ record: startTextToImageGenerationTask(parsed.value) });
+      return c.json({ record: await startTextToImageGenerationTask(parsed.value) });
     } catch (error) {
       if (error instanceof ProviderError) {
         return providerErrorJson(c, error);
@@ -42,7 +44,7 @@ export function registerImageRoutes(app: Hono): void {
       return c.json(payload.error, 400);
     }
 
-    const parsed = parseEditPayload(payload.value);
+    const parsed = await parseEditPayload(payload.value);
     if (!parsed.ok) {
       return c.json(parsed.error, 400);
     }
@@ -58,9 +60,9 @@ export function registerImageRoutes(app: Hono): void {
     }
   });
 
-  app.get("/api/generations/:id", (c) => {
+  app.get("/api/generations/:id", async (c) => {
     const generationId = c.req.param("id").trim();
-    const record = generationId ? readGenerationTaskRecord(generationId) : undefined;
+    const record = generationId ? await readGenerationTaskRecord(generationId) : undefined;
     if (!record) {
       return c.json(errorResponse("not_found", "Generation record not found."), 404);
     }
@@ -68,9 +70,9 @@ export function registerImageRoutes(app: Hono): void {
     return c.json({ record });
   });
 
-  app.post("/api/generations/:id/cancel", (c) => {
+  app.post("/api/generations/:id/cancel", async (c) => {
     const generationId = c.req.param("id").trim();
-    const record = generationId ? cancelGenerationTask(generationId) : undefined;
+    const record = generationId ? await cancelGenerationTask(generationId) : undefined;
     if (!record) {
       return c.json(errorResponse("not_found", "Generation record not found."), 404);
     }

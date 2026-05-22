@@ -13,7 +13,7 @@ import {
   type SaveLocalOpenAIProviderConfig,
   type SaveProviderConfigRequest
 } from "../contracts.js";
-import { db } from "../../infrastructure/database.js";
+import { databaseDriver, db } from "../../infrastructure/database.js";
 import {
   DEFAULT_OPENAI_IMAGE_TIMEOUT_MS,
   getConfiguredImageModel,
@@ -53,6 +53,10 @@ export function getProviderConfig(): ProviderConfigResponse {
 }
 
 export function saveProviderConfig(input: SaveProviderConfigRequest): ProviderConfigResponse {
+  if (databaseDriver !== "sqlite") {
+    throw new Error("MySQL 模式当前只支持环境变量 provider 配置。");
+  }
+
   if (!isProviderSourceOrder(input.sourceOrder)) {
     throw new Error("Provider source order is invalid.");
   }
@@ -132,6 +136,10 @@ export function isProviderSourceId(value: unknown): value is ProviderSourceId {
 }
 
 function getProviderConfigRow(): ProviderConfigRow | undefined {
+  if (databaseDriver !== "sqlite") {
+    return undefined;
+  }
+
   return db.select().from(providerConfigs).where(eq(providerConfigs.id, ACTIVE_PROVIDER_CONFIG_ID)).get();
 }
 
@@ -289,6 +297,10 @@ function parseProviderSourceOrder(value: unknown): ProviderSourceId[] | undefine
 }
 
 function getCodexTokenRow(): CodexTokenRow | undefined {
+  if (databaseDriver !== "sqlite") {
+    return undefined;
+  }
+
   return db.select().from(codexOAuthTokens).where(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)).get();
 }
 

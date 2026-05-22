@@ -206,11 +206,11 @@ class FakeImageProvider implements ImageProvider {
 
 async function smokeManualGenerationRecords(imageGeneration: typeof import("../domain/generation/image-generation.js")): Promise<void> {
   const input = imageProviderInputFixture({ clientRequestId: "manual-smoke-running" });
-  const running = imageGeneration.createRunningTextToImageGeneration(input);
+  const running = await imageGeneration.createRunningTextToImageGeneration(input);
   expect(running.id === "manual-smoke-running", "manual running generation preserves clientRequestId");
   expect(running.status === "running", "manual generation starts as running");
   expect(running.outputs.length === 0, "manual running generation has no outputs yet");
-  expect(imageGeneration.getGenerationRecord(running.id)?.status === "running", "manual running generation is persisted");
+  expect((await imageGeneration.getGenerationRecord(running.id))?.status === "running", "manual running generation is persisted");
 
   const completed = await imageGeneration.finishTextToImageGeneration(
     running.id,
@@ -241,15 +241,15 @@ async function smokeManualGenerationRecords(imageGeneration: typeof import("../d
   expect(referenceCompleted.outputs.length === 1 && referenceCompleted.outputs[0]?.asset, "manual reference generation stores output asset");
   expect(referenceProvider.editCalls === 1, "manual reference generation calls edit provider once");
 
-  const cancellable = imageGeneration.createRunningTextToImageGeneration(
+  const cancellable = await imageGeneration.createRunningTextToImageGeneration(
     imageProviderInputFixture({ clientRequestId: "manual-smoke-cancel" })
   );
-  const cancelled = imageGeneration.cancelGenerationRecord(cancellable.id);
+  const cancelled = await imageGeneration.cancelGenerationRecord(cancellable.id);
   expect(cancelled?.status === "cancelled", "manual generation cancellation is persisted");
 
-  const stale = imageGeneration.createRunningTextToImageGeneration(imageProviderInputFixture({ clientRequestId: "manual-smoke-stale" }));
-  imageGeneration.markInterruptedGenerationRecordsFailed();
-  const interrupted = imageGeneration.getGenerationRecord(stale.id);
+  const stale = await imageGeneration.createRunningTextToImageGeneration(imageProviderInputFixture({ clientRequestId: "manual-smoke-stale" }));
+  await imageGeneration.markInterruptedGenerationRecordsFailed();
+  const interrupted = await imageGeneration.getGenerationRecord(stale.id);
   expect(interrupted?.status === "failed", "stale running generation is marked failed on API startup");
 }
 

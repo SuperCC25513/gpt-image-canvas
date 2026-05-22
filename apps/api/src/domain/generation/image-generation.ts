@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { isAbsolute, relative, resolve } from "node:path";
-import { eq, inArray } from "drizzle-orm";
 import sharp from "sharp";
 import type {
   AssetMetadataResponse,
@@ -16,7 +15,6 @@ import type {
   OutputFormat,
   ReferenceImageInput
 } from "../contracts.js";
-import { db } from "../../infrastructure/database.js";
 import {
   ProviderError,
   type EditImageProviderInput,
@@ -26,7 +24,18 @@ import {
 } from "../../infrastructure/providers/image-provider.js";
 import { LocalAssetStorageAdapter } from "../../infrastructure/storage/asset-storage.js";
 import { runtimePaths } from "../../infrastructure/runtime.js";
-import { assets, generationOutputs, generationRecords, generationReferenceAssets } from "../../infrastructure/schema.js";
+import {
+  assetExists,
+  findAssetById,
+  insertAsset,
+  insertGenerationOutputs,
+  insertGenerationRecord,
+  markInterruptedGenerationRecordsFailed as markInterruptedGenerationRecordsFailedInStore,
+  readGenerationRecord,
+  replaceGenerationOutputs,
+  updateGenerationRecordCompletion,
+  updateGenerationRecordStatus as updateGenerationRecordStatusInStore
+} from "../storage/store.js";
 
 const BATCH_CONCURRENCY = 2;
 const MAX_REFERENCE_IMAGE_BYTES = 50 * 1024 * 1024;
@@ -72,7 +81,7 @@ export async function runTextToImageGeneration(input: ImageProviderInput, provid
     async () => generateSingleOutput(input, provider, signal)
   );
 
-  const record = saveCompletedGenerationRecord(
+  const record = await saveCompletedGenerationRecord(
     randomUUID(),
     {
       ...input,
@@ -104,7 +113,7 @@ export async function runReferenceImageGeneration(
     async () => editSingleOutput(inputWithReferenceAssets, provider, signal)
   );
 
-  const record = saveCompletedGenerationRecord(
+  const record = await saveCompletedGenerationRecord(
     randomUUID(),
     {
       ...inputWithReferenceAssets,
@@ -118,7 +127,7 @@ export async function runReferenceImageGeneration(
   };
 }
 
-export function createRunningTextToImageGeneration(input: ImageProviderInput): GenerationRecord {
+export async function createRunningTextToImageGeneration(input: ImageProviderInput): Promise<GenerationRecord> {
   return createRunningGenerationRecord({
     ...input,
     mode: "generate"
@@ -136,7 +145,7 @@ export async function createRunningReferenceImageGeneration(
   };
 
   return {
-    record: createRunningGenerationRecord({
+    record: await createRunningGenerationRecord({
       ...inputWithReferenceAssets,
       mode: "edit"
     }),
@@ -190,32 +199,26 @@ export async function finishReferenceImageGeneration(
   );
 }
 
-export function getGenerationRecord(generationId: string): GenerationRecord | undefined {
+export async function getGenerationRecord(generationId: string): Promise<GenerationRecord | undefined> {
   return readGenerationRecord(generationId);
 }
 
-export function cancelGenerationRecord(generationId: string): GenerationRecord | undefined {
+export async function cancelGenerationRecord(generationId: string): Promise<GenerationRecord | undefined> {
   return updateGenerationRecordStatus(generationId, "cancelled", CANCELLED_GENERATION_ERROR);
 }
 
-export function failGenerationRecord(generationId: string, error: string): GenerationRecord | undefined {
+export async function failGenerationRecord(generationId: string, error: string): Promise<GenerationRecord | undefined> {
   return updateGenerationRecordStatus(generationId, "failed", sanitizeGenerationErrorMessage(error));
 }
 
-export function markInterruptedGenerationRecordsFailed(): void {
-  db.update(generationRecords)
-    .set({
-      status: "failed",
-      error: INTERRUPTED_GENERATION_ERROR
-    })
-    .where(inArray(generationRecords.status, ["pending", "running"]))
-    .run();
+export async function markInterruptedGenerationRecordsFailed(): Promise<void> {
+  await markInterruptedGenerationRecordsFailedInStore(INTERRUPTED_GENERATION_ERROR);
 }
 
 async function ensureReferenceAssetIds(input: EditImageProviderInput): Promise<string[]> {
   return Promise.all(
     input.referenceImages.map(async (referenceImage, index) => {
-      const existingAssetId = persistedReferenceAssetId(input.referenceAssetIds?.[index]);
+      const existingAssetId = await persistedReferenceAssetId(input.referenceAssetIds?.[index]);
       if (existingAssetId) {
         return existingAssetId;
       }
@@ -226,15 +229,14 @@ async function ensureReferenceAssetIds(input: EditImageProviderInput): Promise<s
   );
 }
 
-function persistedReferenceAssetId(assetId: string | undefined): string | undefined {
+async function persistedReferenceAssetId(assetId: string | undefined): Promise<string | undefined> {
   if (!assetId) {
     return undefined;
   }
 
   for (const candidateAssetId of persistedReferenceAssetIdCandidates(assetId)) {
-    const asset = db.select({ id: assets.id }).from(assets).where(eq(assets.id, candidateAssetId)).get();
-    if (asset?.id) {
-      return asset.id;
+    if (await assetExists(candidateAssetId)) {
+      return candidateAssetId;
     }
   }
 
@@ -267,8 +269,7 @@ export async function saveReferenceImageInput(input: ReferenceImageInput): Promi
   const createdAt = new Date().toISOString();
 
   await localAssetStorage.putObject({ filePath, bytes: parsed.bytes });
-  db.insert(assets)
-    .values({
+  await insertAsset({
       id: assetId,
       fileName,
       relativePath,
@@ -276,8 +277,7 @@ export async function saveReferenceImageInput(input: ReferenceImageInput): Promi
       width: imageSize.width,
       height: imageSize.height,
       createdAt
-    })
-    .run();
+    });
 
   return {
     id: assetId,
@@ -315,8 +315,8 @@ function extensionForMimeType(mimeType: string): string {
   return mimeType === "image/jpeg" ? "jpg" : mimeType.split("/")[1] || "png";
 }
 
-export function getStoredAssetFile(assetId: string): StoredAssetFile | undefined {
-  const asset = db.select().from(assets).where(eq(assets.id, assetId)).get();
+export async function getStoredAssetFile(assetId: string): Promise<StoredAssetFile | undefined> {
+  const asset = await findAssetById(assetId);
   if (!asset) {
     return undefined;
   }
@@ -335,7 +335,7 @@ export function getStoredAssetFile(assetId: string): StoredAssetFile | undefined
 }
 
 export async function readStoredAsset(assetId: string): Promise<{ file: StoredAssetFile; bytes: Buffer } | undefined> {
-  const file = getStoredAssetFile(assetId);
+  const file = await getStoredAssetFile(assetId);
   if (!file) {
     return undefined;
   }
@@ -489,10 +489,10 @@ async function readImageSize(bytes: Buffer): Promise<ImageSize | undefined> {
   }
 }
 
-function createRunningGenerationRecord(input: PersistedGenerationInput): GenerationRecord {
+async function createRunningGenerationRecord(input: PersistedGenerationInput): Promise<GenerationRecord> {
   const createdAt = new Date().toISOString();
   const generationId = input.clientRequestId || randomUUID();
-  const existing = readGenerationRecord(generationId);
+  const existing = await readGenerationRecord(generationId);
   if (existing) {
     return existing;
   }
@@ -500,8 +500,8 @@ function createRunningGenerationRecord(input: PersistedGenerationInput): Generat
   const referenceAssetIds = input.referenceAssetIds ?? (input.referenceAssetId ? [input.referenceAssetId] : []);
   const primaryReferenceAssetId = referenceAssetIds[0] ?? input.referenceAssetId;
 
-  db.insert(generationRecords)
-    .values({
+  await insertGenerationRecord(
+    {
       id: generationId,
       mode: input.mode,
       prompt: input.originalPrompt,
@@ -516,19 +516,9 @@ function createRunningGenerationRecord(input: PersistedGenerationInput): Generat
       error: null,
       referenceAssetId: primaryReferenceAssetId ?? null,
       createdAt
-    })
-    .run();
-
-  referenceAssetIds.forEach((assetId, position) => {
-    db.insert(generationReferenceAssets)
-      .values({
-        generationId,
-        assetId,
-        position,
-        createdAt
-      })
-      .run();
-  });
+    },
+    referenceAssetIds
+  );
 
   return {
     id: generationId,
@@ -548,8 +538,12 @@ function createRunningGenerationRecord(input: PersistedGenerationInput): Generat
   };
 }
 
-function completeGenerationRecord(generationId: string, input: PersistedGenerationInput, outputs: BatchOutputResult[]): GenerationRecord {
-  const existing = readGenerationRecord(generationId);
+async function completeGenerationRecord(
+  generationId: string,
+  input: PersistedGenerationInput,
+  outputs: BatchOutputResult[]
+): Promise<GenerationRecord> {
+  const existing = await readGenerationRecord(generationId);
   if (existing && isTerminalGenerationStatus(existing.status)) {
     return existing;
   }
@@ -561,20 +555,10 @@ function completeGenerationRecord(generationId: string, input: PersistedGenerati
   const referenceAssetIds = input.referenceAssetIds ?? (input.referenceAssetId ? [input.referenceAssetId] : []);
   const primaryReferenceAssetId = referenceAssetIds[0] ?? input.referenceAssetId;
 
-  db.update(generationRecords)
-    .set({
-      status,
-      error: error ?? null,
-      referenceAssetId: primaryReferenceAssetId ?? null
-    })
-    .where(eq(generationRecords.id, generationId))
-    .run();
+  await updateGenerationRecordCompletion(generationId, status, error ?? null, primaryReferenceAssetId ?? null);
+  await replaceGenerationOutputs(generationId, outputs);
 
-  db.delete(generationOutputs).where(eq(generationOutputs.generationId, generationId)).run();
-
-  insertGenerationOutputs(generationId, outputs);
-
-  return readGenerationRecord(generationId) ?? {
+  return (await readGenerationRecord(generationId)) ?? {
     id: generationId,
     mode: input.mode,
     prompt: input.originalPrompt,
@@ -593,7 +577,11 @@ function completeGenerationRecord(generationId: string, input: PersistedGenerati
   };
 }
 
-function saveCompletedGenerationRecord(generationId: string, input: PersistedGenerationInput, outputs: BatchOutputResult[]): GenerationRecord {
+async function saveCompletedGenerationRecord(
+  generationId: string,
+  input: PersistedGenerationInput,
+  outputs: BatchOutputResult[]
+): Promise<GenerationRecord> {
   const createdAt = new Date().toISOString();
   const successCount = outputs.filter((output) => output.status === "succeeded").length;
   const failureCount = outputs.length - successCount;
@@ -603,8 +591,8 @@ function saveCompletedGenerationRecord(generationId: string, input: PersistedGen
   const referenceAssetIds = input.referenceAssetIds ?? (input.referenceAssetId ? [input.referenceAssetId] : []);
   const primaryReferenceAssetId = referenceAssetIds[0] ?? input.referenceAssetId;
 
-  db.insert(generationRecords)
-    .values({
+  await insertGenerationRecord(
+    {
       id: generationId,
       mode: input.mode,
       prompt: input.originalPrompt,
@@ -616,49 +604,13 @@ function saveCompletedGenerationRecord(generationId: string, input: PersistedGen
       outputFormat: input.outputFormat,
       count: input.count,
       status,
-      error,
+      error: error ?? null,
       referenceAssetId: primaryReferenceAssetId ?? null,
       createdAt
-    })
-    .run();
-
-  referenceAssetIds.forEach((assetId, position) => {
-    db.insert(generationReferenceAssets)
-      .values({
-        generationId,
-        assetId,
-        position,
-        createdAt
-      })
-      .run();
-  });
-
-  for (const output of outputs) {
-    if (output.asset) {
-      db.insert(assets)
-        .values({
-          id: output.asset.id,
-          fileName: output.asset.fileName,
-          relativePath: `assets/${output.asset.fileName}`,
-          mimeType: output.asset.mimeType,
-          width: output.asset.width,
-          height: output.asset.height,
-          createdAt
-        })
-        .run();
-    }
-
-    db.insert(generationOutputs)
-      .values({
-        id: output.id,
-        generationId,
-        status: output.status,
-        assetId: output.asset?.id ?? null,
-        error: output.error ?? null,
-        createdAt
-      })
-      .run();
-  }
+    },
+    referenceAssetIds
+  );
+  await insertGenerationOutputs(generationId, outputs);
 
   return {
     id: generationId,
@@ -679,43 +631,12 @@ function saveCompletedGenerationRecord(generationId: string, input: PersistedGen
   };
 }
 
-function insertGenerationOutputs(generationId: string, outputs: BatchOutputResult[]): void {
-  const createdAt = new Date().toISOString();
-
-  for (const output of outputs) {
-    if (output.asset) {
-      db.insert(assets)
-        .values({
-          id: output.asset.id,
-          fileName: output.asset.fileName,
-          relativePath: `assets/${output.asset.fileName}`,
-          mimeType: output.asset.mimeType,
-          width: output.asset.width,
-          height: output.asset.height,
-          createdAt
-        })
-        .run();
-    }
-
-    db.insert(generationOutputs)
-      .values({
-        id: output.id,
-        generationId,
-        status: output.status,
-        assetId: output.asset?.id ?? null,
-        error: output.error ?? null,
-        createdAt
-      })
-      .run();
-  }
-}
-
-function updateGenerationRecordStatus(
+async function updateGenerationRecordStatus(
   generationId: string,
   status: Extract<GenerationStatus, "cancelled" | "failed">,
   error: string
-): GenerationRecord | undefined {
-  const existing = readGenerationRecord(generationId);
+): Promise<GenerationRecord | undefined> {
+  const existing = await readGenerationRecord(generationId);
   if (!existing) {
     return undefined;
   }
@@ -724,84 +645,13 @@ function updateGenerationRecordStatus(
     return existing;
   }
 
-  db.update(generationRecords)
-    .set({
-      status,
-      error
-    })
-    .where(eq(generationRecords.id, generationId))
-    .run();
+  await updateGenerationRecordStatusInStore(generationId, status, error);
 
   return readGenerationRecord(generationId);
 }
 
 function isTerminalGenerationStatus(status: GenerationStatus): boolean {
   return status === "succeeded" || status === "partial" || status === "failed" || status === "cancelled";
-}
-
-function readGenerationRecord(generationId: string): GenerationRecord | undefined {
-  const record = db.select().from(generationRecords).where(eq(generationRecords.id, generationId)).get();
-  if (!record) {
-    return undefined;
-  }
-
-  const outputRows = db
-    .select()
-    .from(generationOutputs)
-    .where(eq(generationOutputs.generationId, generationId))
-    .orderBy(generationOutputs.createdAt)
-    .all();
-  const referenceRows = db
-    .select()
-    .from(generationReferenceAssets)
-    .where(eq(generationReferenceAssets.generationId, generationId))
-    .all()
-    .sort((left, right) => left.position - right.position);
-  const assetIds = outputRows.flatMap((output) => (output.assetId ? [output.assetId] : []));
-  const assetRows = assetIds.length > 0 ? db.select().from(assets).where(inArray(assets.id, assetIds)).all() : [];
-  const assetById = new Map(assetRows.map((asset) => [asset.id, asset]));
-  const referenceAssetIds = referenceRows.map((referenceRow) => referenceRow.assetId);
-
-  return {
-    id: record.id,
-    mode: record.mode as ImageMode,
-    prompt: record.prompt,
-    effectivePrompt: record.effectivePrompt,
-    presetId: record.presetId,
-    size: {
-      width: record.width,
-      height: record.height
-    },
-    quality: record.quality as ImageQuality,
-    outputFormat: record.outputFormat as OutputFormat,
-    count: record.count,
-    status: record.status as GenerationStatus,
-    error: record.error ?? undefined,
-    referenceAssetIds: referenceAssetIds.length > 0 ? referenceAssetIds : record.referenceAssetId ? [record.referenceAssetId] : undefined,
-    referenceAssetId: record.referenceAssetId ?? undefined,
-    createdAt: record.createdAt,
-    outputs: outputRows.map((output) => ({
-      id: output.id,
-      status: output.status as OutputStatus,
-      asset: output.assetId ? toGeneratedAsset(assetById.get(output.assetId)) : undefined,
-      error: output.error ?? undefined
-    }))
-  };
-}
-
-function toGeneratedAsset(asset: (typeof assets.$inferSelect) | undefined): GeneratedAsset | undefined {
-  if (!asset) {
-    return undefined;
-  }
-
-  return {
-    id: asset.id,
-    url: `/api/assets/${asset.id}`,
-    fileName: asset.fileName,
-    mimeType: asset.mimeType,
-    width: asset.width,
-    height: asset.height
-  };
 }
 
 function resolveGenerationStatus(successCount: number, failureCount: number): GenerationStatus {

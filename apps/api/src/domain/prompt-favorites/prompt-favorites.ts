@@ -9,7 +9,7 @@ import type {
   UpdatePromptFavoriteGroupRequest,
   UpdatePromptFavoriteRequest
 } from "../contracts.js";
-import { db } from "../../infrastructure/database.js";
+import { databaseDriver, db } from "../../infrastructure/database.js";
 import { promptFavoriteGroups, promptFavorites } from "../../infrastructure/schema.js";
 import { getPromptPool } from "../prompt-pool/prompt-pool.js";
 
@@ -28,6 +28,13 @@ export class PromptFavoriteError extends Error {
 }
 
 export function listPromptFavorites(): PromptFavoritesResponse {
+  if (databaseDriver !== "sqlite") {
+    return {
+      groups: [defaultPromptFavoriteGroupView()],
+      favorites: []
+    };
+  }
+
   ensureDefaultGroup();
   return {
     groups: db
@@ -46,6 +53,8 @@ export function listPromptFavorites(): PromptFavoritesResponse {
 }
 
 export async function createPromptFavorite(input: CreatePromptFavoriteRequest): Promise<PromptFavoriteItem> {
+  assertPromptFavoritesWritable();
+
   const promptPoolItemId = normalizeId(input.promptPoolItemId);
   if (!promptPoolItemId) {
     throw new PromptFavoriteError("invalid_prompt_favorite", "Prompt pool item id is required.");
@@ -126,6 +135,8 @@ export async function createPromptFavorite(input: CreatePromptFavoriteRequest): 
 }
 
 export function updatePromptFavorite(favoriteId: string, input: UpdatePromptFavoriteRequest): PromptFavoriteItem {
+  assertPromptFavoritesWritable();
+
   const id = normalizeId(favoriteId);
   if (!id) {
     throw new PromptFavoriteError("prompt_favorite_not_found", "Prompt favorite was not found.", 404);
@@ -153,6 +164,8 @@ export function updatePromptFavorite(favoriteId: string, input: UpdatePromptFavo
 }
 
 export function deletePromptFavorite(favoriteId: string): void {
+  assertPromptFavoritesWritable();
+
   const id = normalizeId(favoriteId);
   if (!id || !getPromptFavoriteById(id)) {
     throw new PromptFavoriteError("prompt_favorite_not_found", "Prompt favorite was not found.", 404);
@@ -162,6 +175,8 @@ export function deletePromptFavorite(favoriteId: string): void {
 }
 
 export function markPromptFavoriteUsed(favoriteId: string): PromptFavoriteItem {
+  assertPromptFavoritesWritable();
+
   const id = normalizeId(favoriteId);
   const existing = id ? getPromptFavoriteById(id) : undefined;
   if (!existing) {
@@ -187,6 +202,8 @@ export function markPromptFavoriteUsed(favoriteId: string): PromptFavoriteItem {
 }
 
 export function createPromptFavoriteGroup(input: CreatePromptFavoriteGroupRequest): PromptFavoriteGroup {
+  assertPromptFavoritesWritable();
+
   const name = normalizeGroupName(input.name);
   if (!name) {
     throw new PromptFavoriteError("invalid_prompt_favorite_group", "Prompt favorite group name is required.");
@@ -221,6 +238,8 @@ export function createPromptFavoriteGroup(input: CreatePromptFavoriteGroupReques
 }
 
 export function updatePromptFavoriteGroup(groupIdValue: string, input: UpdatePromptFavoriteGroupRequest): PromptFavoriteGroup {
+  assertPromptFavoritesWritable();
+
   const groupId = normalizeGroupId(groupIdValue);
   if (!groupId) {
     throw new PromptFavoriteError("prompt_favorite_group_not_found", "Prompt favorite group was not found.", 404);
@@ -248,6 +267,8 @@ export function updatePromptFavoriteGroup(groupIdValue: string, input: UpdatePro
 }
 
 export function deletePromptFavoriteGroup(groupIdValue: string): void {
+  assertPromptFavoritesWritable();
+
   const groupId = normalizeGroupId(groupIdValue);
   if (!groupId) {
     throw new PromptFavoriteError("prompt_favorite_group_not_found", "Prompt favorite group was not found.", 404);
@@ -332,6 +353,27 @@ function toPromptFavoriteGroup(row: typeof promptFavoriteGroups.$inferSelect): P
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   };
+}
+
+function defaultPromptFavoriteGroupView(): PromptFavoriteGroup {
+  return {
+    id: DEFAULT_GROUP_ID,
+    name: DEFAULT_GROUP_NAME,
+    sortOrder: 0,
+    isDefault: true,
+    createdAt: "",
+    updatedAt: ""
+  };
+}
+
+function assertPromptFavoritesWritable(): void {
+  if (databaseDriver !== "sqlite") {
+    throw new PromptFavoriteError(
+      "unsupported_storage_driver",
+      "MySQL 模式当前不支持写入提示词收藏；后续任务会接入完整 store。",
+      400
+    );
+  }
 }
 
 function toPromptFavoriteItem(row: typeof promptFavorites.$inferSelect): PromptFavoriteItem {

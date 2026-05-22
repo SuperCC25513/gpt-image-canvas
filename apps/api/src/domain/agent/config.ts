@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { AgentLlmConfigView, MaskedSecret, SaveAgentLlmConfigRequest } from "../contracts.js";
-import { db } from "../../infrastructure/database.js";
+import { databaseDriver, db } from "../../infrastructure/database.js";
 import { agentLlmConfigs } from "../../infrastructure/schema.js";
 
 const ACTIVE_AGENT_LLM_CONFIG_ID = "active";
@@ -40,6 +40,10 @@ export function getUsableAgentLlmConfig(): UsableAgentLlmConfig | undefined {
 }
 
 export function saveAgentLlmConfig(input: SaveAgentLlmConfigRequest): AgentLlmConfigView {
+  if (databaseDriver !== "sqlite") {
+    throw new Error("MySQL 模式当前只支持环境变量图片 provider；Agent LLM 配置仍需后续任务接入。");
+  }
+
   const now = new Date().toISOString();
   const existing = getAgentLlmConfigRow();
   const apiKey = resolveApiKeyForSave(input, existing);
@@ -81,6 +85,10 @@ export function saveAgentLlmConfig(input: SaveAgentLlmConfigRequest): AgentLlmCo
 }
 
 function getAgentLlmConfigRow(): AgentLlmConfigRow | undefined {
+  if (databaseDriver !== "sqlite") {
+    return undefined;
+  }
+
   return db.select().from(agentLlmConfigs).where(eq(agentLlmConfigs.id, ACTIVE_AGENT_LLM_CONFIG_ID)).get();
 }
 
