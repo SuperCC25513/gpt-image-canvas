@@ -3,7 +3,7 @@
   "name": "public-gallery-visibility",
   "title": "图片公开与图片广场",
   "description": "新增输出级公开状态、公开图片广场、Gallery 公开开关和公开资产读取权限。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "web",
