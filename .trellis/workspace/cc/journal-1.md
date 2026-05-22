@@ -145,3 +145,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: 完成积分扣费与每日签到
+
+**Date**: 2026-05-22
+**Task**: 完成积分扣费与每日签到
+**Branch**: `main`
+
+### Summary
+
+实现积分余额、流水、注册赠送、每日签到、生成预扣和失败退款；补充 Web 积分卡片与移动端入口修复；完成 MySQL smoke、浏览器验证、typecheck 和 build。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `76d1d75` | (see git log) |
+| `496c2a4` | (see git log) |
+| `0274f17` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
