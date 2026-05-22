@@ -3,18 +3,31 @@ import type { GalleryExportRequest } from "../../domain/contracts.js";
 import { createZipStream, prepareZipFiles, type ZipFileInput } from "../../domain/assets/zip.js";
 import { getStoredAssetFile } from "../../domain/generation/image-generation.js";
 import { deleteGalleryOutput, getGalleryExportAssets, getGalleryImages } from "../../domain/project/project-store.js";
+import { requireAuth } from "../http/auth.js";
 import { downloadFileName, errorResponse } from "../http/errors.js";
 
 export function registerGalleryRoutes(app: Hono): void {
-  app.get("/api/gallery", async (c) => c.json(await getGalleryImages()));
+  app.get("/api/gallery", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    return c.json(await getGalleryImages(auth.user));
+  });
 
   app.post("/api/gallery/export", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const parsed = await parseGalleryExportRequest(c.req.raw);
     if (!parsed.ok) {
       return c.json(errorResponse(parsed.code, parsed.message), 400);
     }
 
-    const exportAssets = await getGalleryExportAssets(parsed.outputIds);
+    const exportAssets = await getGalleryExportAssets(parsed.outputIds, auth.user);
     if (exportAssets.length !== parsed.outputIds.length) {
       return c.json(errorResponse("gallery_export_not_found", "One or more Gallery images were not found."), 404);
     }
@@ -48,7 +61,12 @@ export function registerGalleryRoutes(app: Hono): void {
   });
 
   app.delete("/api/gallery/:outputId", async (c) => {
-    const deleted = await deleteGalleryOutput(c.req.param("outputId"));
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const deleted = await deleteGalleryOutput(c.req.param("outputId"), auth.user);
     if (!deleted) {
       return c.json(errorResponse("not_found", "Gallery image record not found."), 404);
     }

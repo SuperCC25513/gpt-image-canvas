@@ -1,13 +1,26 @@
 import type { Hono } from "hono";
 import { getProviderConfig, saveProviderConfig } from "../../domain/providers/provider-config.js";
+import { requireAuth } from "../http/auth.js";
 import { errorResponse, errorToMessage } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 import { parseProviderConfigPayload } from "../http/validation.js";
 
 export function registerProviderConfigRoutes(app: Hono): void {
-  app.get("/api/provider-config", (c) => c.json(getProviderConfig()));
+  app.get("/api/provider-config", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    return c.json(getProviderConfig());
+  });
 
   app.put("/api/provider-config", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
       return c.json(payload.error, 400);

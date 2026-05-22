@@ -9,17 +9,21 @@ import {
   composePrompt,
   validateSceneImageSize,
   type GenerationCount,
+  type CurrentUser,
   type ImageQuality,
   type ImageSize,
+  type LoginRequest,
   type OutputFormat,
   type ProviderSourceId,
   type ReferenceImageInput,
+  type RegisterRequest,
   type SaveAgentLlmConfigRequest,
   type SaveLocalOpenAIProviderConfig,
   type SaveProviderConfigRequest,
   type StylePresetId
 } from "../../domain/contracts.js";
 import { getStoredAssetFile } from "../../domain/generation/image-generation.js";
+import { userCanReadAsset } from "../../domain/storage/store.js";
 import { isProviderSourceOrder } from "../../domain/providers/provider-config.js";
 import type { EditImageProviderInput, ImageProviderInput } from "../../infrastructure/providers/image-provider.js";
 import { errorResponse, type ErrorResponseBody, type ParseResult } from "./errors.js";
@@ -27,6 +31,9 @@ import { errorResponse, type ErrorResponseBody, type ParseResult } from "./error
 const MAX_PROJECT_SNAPSHOT_BYTES = 100 * 1024 * 1024;
 const MAX_PROJECT_NAME_LENGTH = 120;
 const MAX_CLIENT_REQUEST_ID_LENGTH = 120;
+const MAX_AUTH_NAME_LENGTH = 80;
+const MAX_AUTH_EMAIL_LENGTH = 254;
+const MIN_AUTH_PASSWORD_LENGTH = 8;
 
 export interface ProjectPayload {
   name?: string;
@@ -68,6 +75,74 @@ export function parseGeneratePayload(input: unknown): ParseResult<ImageProviderI
   };
 }
 
+export function parseRegisterPayload(input: unknown): ParseResult<RegisterRequest> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_auth_request", "注册请求必须是 JSON 对象。")
+    };
+  }
+
+  const name = parseAuthName(input.name);
+  if (!name) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_auth_request", "请输入有效的用户名称。")
+    };
+  }
+
+  const email = parseAuthEmail(input.email);
+  if (!email) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_auth_request", "请输入有效的邮箱地址。")
+    };
+  }
+
+  const password = parseAuthPassword(input.password);
+  if (!password) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_auth_request", `密码至少需要 ${MIN_AUTH_PASSWORD_LENGTH} 个字符。`)
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      name,
+      email,
+      password
+    }
+  };
+}
+
+export function parseLoginPayload(input: unknown): ParseResult<LoginRequest> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_auth_request", "登录请求必须是 JSON 对象。")
+    };
+  }
+
+  const email = parseAuthEmail(input.email);
+  const password = typeof input.password === "string" ? input.password : undefined;
+  if (!email || !password) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_auth_request", "请输入邮箱和密码。")
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      email,
+      password
+    }
+  };
+}
+
 export function parseCodexPollPayload(input: unknown): ParseResult<{ deviceAuthId: string; userCode: string }> {
   if (!isRecord(input)) {
     return {
@@ -95,7 +170,7 @@ export function parseCodexPollPayload(input: unknown): ParseResult<{ deviceAuthI
   };
 }
 
-export async function parseEditPayload(input: unknown): Promise<ParseResult<EditImageProviderInput>> {
+export async function parseEditPayload(input: unknown, user?: CurrentUser): Promise<ParseResult<EditImageProviderInput>> {
   const base = parseBaseImagePayload(input);
   if (!base.ok) {
     return base;
@@ -119,7 +194,8 @@ export async function parseEditPayload(input: unknown): Promise<ParseResult<Edit
   }
 
   for (const referenceAssetId of referenceAssetIds.value) {
-    if (!(await getStoredAssetFile(referenceAssetId))) {
+    const canRead = user ? await userCanReadAsset(referenceAssetId, user) : Boolean(await getStoredAssetFile(referenceAssetId));
+    if (!canRead) {
       return {
         ok: false,
         error: errorResponse("invalid_request", "找不到可记录的参考图像资源。")
@@ -626,6 +702,36 @@ function parsePositiveIntegerValue(value: unknown): number | undefined {
 
 function parseOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function parseAuthName(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const name = value.trim().replace(/\s+/gu, " ");
+  return name && name.length <= MAX_AUTH_NAME_LENGTH ? name : undefined;
+}
+
+function parseAuthEmail(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const email = value.trim().toLowerCase();
+  if (!email || email.length > MAX_AUTH_EMAIL_LENGTH) {
+    return undefined;
+  }
+
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email) ? email : undefined;
+}
+
+function parseAuthPassword(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  return value.length >= MIN_AUTH_PASSWORD_LENGTH ? value : undefined;
 }
 
 function stringValue(value: unknown): string | undefined {

@@ -59,6 +59,7 @@ function migrateSqlite(sqlite: Database.Database): void {
   sqlite.exec(`
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT,
   name TEXT NOT NULL,
   snapshot_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS projects (
 
 CREATE TABLE IF NOT EXISTS assets (
   id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT,
   file_name TEXT NOT NULL,
   relative_path TEXT NOT NULL,
   mime_type TEXT NOT NULL,
@@ -86,6 +88,37 @@ CREATE TABLE IF NOT EXISTS provider_configs (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY NOT NULL,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  password_salt TEXT NOT NULL,
+  password_iterations INTEGER NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL,
+  status TEXT NOT NULL,
+  credits INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  id TEXT PRIMARY KEY NOT NULL,
+  allow_registration INTEGER NOT NULL DEFAULT 1,
+  require_approval INTEGER NOT NULL DEFAULT 0,
+  default_credits INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS agent_llm_configs (
   id TEXT PRIMARY KEY NOT NULL,
   api_key TEXT,
@@ -99,6 +132,7 @@ CREATE TABLE IF NOT EXISTS agent_llm_configs (
 
 CREATE TABLE IF NOT EXISTS agent_conversations (
   id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT,
   title TEXT NOT NULL,
   messages_json TEXT NOT NULL,
   context_json TEXT NOT NULL,
@@ -125,6 +159,7 @@ CREATE TABLE IF NOT EXISTS agent_skills (
 
 CREATE TABLE IF NOT EXISTS prompt_favorite_groups (
   id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT,
   name TEXT NOT NULL,
   sort_order INTEGER NOT NULL,
   created_at TEXT NOT NULL,
@@ -133,6 +168,7 @@ CREATE TABLE IF NOT EXISTS prompt_favorite_groups (
 
 CREATE TABLE IF NOT EXISTS prompt_favorites (
   id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT,
   source_type TEXT NOT NULL,
   source_id TEXT NOT NULL,
   group_id TEXT NOT NULL REFERENCES prompt_favorite_groups(id),
@@ -167,6 +203,7 @@ CREATE TABLE IF NOT EXISTS codex_oauth_tokens (
 
 CREATE TABLE IF NOT EXISTS generation_records (
   id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT,
   mode TEXT NOT NULL,
   prompt TEXT NOT NULL,
   effective_prompt TEXT NOT NULL,
@@ -184,6 +221,7 @@ CREATE TABLE IF NOT EXISTS generation_records (
 
 CREATE TABLE IF NOT EXISTS generation_outputs (
   id TEXT PRIMARY KEY NOT NULL,
+  user_id TEXT,
   generation_id TEXT NOT NULL REFERENCES generation_records(id) ON DELETE CASCADE,
   status TEXT NOT NULL,
   asset_id TEXT REFERENCES assets(id),
@@ -200,17 +238,36 @@ CREATE TABLE IF NOT EXISTS generation_reference_assets (
 );
 
 CREATE INDEX IF NOT EXISTS generation_records_created_at_idx ON generation_records(created_at);
+CREATE INDEX IF NOT EXISTS generation_records_user_id_idx ON generation_records(user_id);
 CREATE INDEX IF NOT EXISTS generation_outputs_generation_id_idx ON generation_outputs(generation_id);
+CREATE INDEX IF NOT EXISTS generation_outputs_user_id_idx ON generation_outputs(user_id);
 CREATE INDEX IF NOT EXISTS generation_outputs_asset_id_idx ON generation_outputs(asset_id);
 CREATE INDEX IF NOT EXISTS generation_reference_assets_generation_id_idx ON generation_reference_assets(generation_id);
 CREATE INDEX IF NOT EXISTS generation_reference_assets_asset_id_idx ON generation_reference_assets(asset_id);
+CREATE INDEX IF NOT EXISTS projects_user_id_idx ON projects(user_id);
+CREATE INDEX IF NOT EXISTS assets_user_id_idx ON assets(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users(email);
+CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS agent_conversations_updated_at_idx ON agent_conversations(updated_at);
+CREATE INDEX IF NOT EXISTS agent_conversations_user_id_idx ON agent_conversations(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS agent_skills_slug_idx ON agent_skills(slug);
-CREATE UNIQUE INDEX IF NOT EXISTS prompt_favorites_source_idx ON prompt_favorites(source_type, source_id);
+CREATE INDEX IF NOT EXISTS prompt_favorite_groups_user_id_idx ON prompt_favorite_groups(user_id);
+CREATE INDEX IF NOT EXISTS prompt_favorites_user_id_idx ON prompt_favorites(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS prompt_favorites_user_source_idx ON prompt_favorites(user_id, source_type, source_id);
 CREATE INDEX IF NOT EXISTS prompt_favorites_group_id_idx ON prompt_favorites(group_id);
 CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites(last_used_at);
 `);
 
+  ensureColumn(sqlite, "projects", "user_id", "user_id TEXT");
+  ensureColumn(sqlite, "assets", "user_id", "user_id TEXT");
+  ensureColumn(sqlite, "generation_records", "user_id", "user_id TEXT");
+  ensureColumn(sqlite, "generation_outputs", "user_id", "user_id TEXT");
+  ensureColumn(sqlite, "agent_conversations", "user_id", "user_id TEXT");
+  ensureColumn(sqlite, "prompt_favorite_groups", "user_id", "user_id TEXT");
+  ensureColumn(sqlite, "prompt_favorites", "user_id", "user_id TEXT");
+  sqlite.exec("DROP INDEX IF EXISTS prompt_favorites_source_idx");
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS prompt_favorites_user_source_idx ON prompt_favorites(user_id, source_type, source_id)");
   ensureColumn(sqlite, "codex_oauth_tokens", "access_token", "access_token TEXT");
   ensureColumn(sqlite, "codex_oauth_tokens", "refresh_token", "refresh_token TEXT");
   ensureColumn(sqlite, "codex_oauth_tokens", "id_token", "id_token TEXT");
@@ -250,6 +307,7 @@ CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites
   backfillGenerationReferenceAssets(sqlite);
   ensureProviderConfigRow(sqlite);
   ensureAgentLlmConfigRow(sqlite);
+  ensureAppSettingsRow(sqlite);
   ensurePromptFavoriteDefaultGroup(sqlite);
 }
 
@@ -300,6 +358,17 @@ function ensureAgentLlmConfigRow(sqlite: Database.Database): void {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run("active", null, "", "", 60000, 0, now, now);
+}
+
+function ensureAppSettingsRow(sqlite: Database.Database): void {
+  const now = new Date().toISOString();
+  sqlite
+    .prepare(
+      `INSERT OR IGNORE INTO app_settings
+        (id, allow_registration, require_approval, default_credits, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run("default", 1, 0, 0, now, now);
 }
 
 function ensurePromptFavoriteDefaultGroup(sqlite: Database.Database): void {

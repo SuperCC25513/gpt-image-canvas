@@ -1,8 +1,40 @@
 import { relations } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+export const users = sqliteTable("users", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  email: text("email").notNull(),
+  passwordSalt: text("password_salt").notNull(),
+  passwordIterations: integer("password_iterations").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  role: text("role").notNull(),
+  status: text("status").notNull(),
+  credits: integer("credits").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const sessions = sqliteTable("sessions", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: text("user_id").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at").notNull(),
+  lastSeenAt: text("last_seen_at")
+});
+
+export const appSettings = sqliteTable("app_settings", {
+  id: text("id").primaryKey(),
+  allowRegistration: integer("allow_registration").notNull(),
+  requireApproval: integer("require_approval").notNull(),
+  defaultCredits: integer("default_credits").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
+  userId: text("user_id"),
   name: text("name").notNull(),
   snapshotJson: text("snapshot_json").notNull(),
   createdAt: text("created_at").notNull(),
@@ -11,6 +43,7 @@ export const projects = sqliteTable("projects", {
 
 export const assets = sqliteTable("assets", {
   id: text("id").primaryKey(),
+  userId: text("user_id"),
   fileName: text("file_name").notNull(),
   relativePath: text("relative_path").notNull(),
   mimeType: text("mime_type").notNull(),
@@ -43,6 +76,7 @@ export const agentLlmConfigs = sqliteTable("agent_llm_configs", {
 
 export const agentConversations = sqliteTable("agent_conversations", {
   id: text("id").primaryKey(),
+  userId: text("user_id"),
   title: text("title").notNull(),
   messagesJson: text("messages_json").notNull(),
   contextJson: text("context_json").notNull(),
@@ -69,6 +103,7 @@ export const agentSkills = sqliteTable("agent_skills", {
 
 export const promptFavoriteGroups = sqliteTable("prompt_favorite_groups", {
   id: text("id").primaryKey(),
+  userId: text("user_id"),
   name: text("name").notNull(),
   sortOrder: integer("sort_order").notNull(),
   createdAt: text("created_at").notNull(),
@@ -77,6 +112,7 @@ export const promptFavoriteGroups = sqliteTable("prompt_favorite_groups", {
 
 export const promptFavorites = sqliteTable("prompt_favorites", {
   id: text("id").primaryKey(),
+  userId: text("user_id"),
   sourceType: text("source_type").notNull(),
   sourceId: text("source_id").notNull(),
   groupId: text("group_id")
@@ -113,6 +149,7 @@ export const codexOAuthTokens = sqliteTable("codex_oauth_tokens", {
 
 export const generationRecords = sqliteTable("generation_records", {
   id: text("id").primaryKey(),
+  userId: text("user_id"),
   mode: text("mode").notNull(),
   prompt: text("prompt").notNull(),
   effectivePrompt: text("effective_prompt").notNull(),
@@ -130,6 +167,7 @@ export const generationRecords = sqliteTable("generation_records", {
 
 export const generationOutputs = sqliteTable("generation_outputs", {
   id: text("id").primaryKey(),
+  userId: text("user_id"),
   generationId: text("generation_id")
     .notNull()
     .references(() => generationRecords.id, { onDelete: "cascade" }),

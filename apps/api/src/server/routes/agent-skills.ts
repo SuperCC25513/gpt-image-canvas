@@ -8,13 +8,26 @@ import {
   saveAgentSkill
 } from "../../domain/agent/skill-store.js";
 import type { SaveAgentSkillRequest } from "../../domain/contracts.js";
+import { requireAuth } from "../http/auth.js";
 import { errorResponse, errorToMessage } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 
 export function registerAgentSkillRoutes(app: Hono): void {
-  app.get("/api/agent-skills", (c) => c.json(listAgentSkills()));
+  app.get("/api/agent-skills", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
 
-  app.get("/api/agent-skills/:id", (c) => {
+    return c.json(listAgentSkills());
+  });
+
+  app.get("/api/agent-skills/:id", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const skill = getAgentSkill(c.req.param("id"));
     if (!skill) {
       return c.json(errorResponse("agent_skill_not_found", "Agent skill was not found."), 404);
@@ -24,6 +37,11 @@ export function registerAgentSkillRoutes(app: Hono): void {
   });
 
   app.post("/api/agent-skills", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
       return c.json(payload.error, 400);
@@ -37,6 +55,11 @@ export function registerAgentSkillRoutes(app: Hono): void {
   });
 
   app.put("/api/agent-skills/:id", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
       return c.json(payload.error, 400);
@@ -50,6 +73,11 @@ export function registerAgentSkillRoutes(app: Hono): void {
   });
 
   app.post("/api/agent-skills/import", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const contentType = c.req.header("content-type")?.toLowerCase() ?? "";
     if (!contentType.includes("multipart/form-data")) {
       return c.json(errorResponse("unsupported_media_type", "Agent skill import requires multipart/form-data."), 415);

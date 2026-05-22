@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   CreatePromptFavoriteGroupRequest,
   CreatePromptFavoriteRequest,
+  CurrentUser,
   PromptFavoriteGroup,
   PromptFavoriteItem,
   PromptFavoritesResponse,
@@ -27,32 +28,34 @@ export class PromptFavoriteError extends Error {
   }
 }
 
-export function listPromptFavorites(): PromptFavoritesResponse {
+export function listPromptFavorites(user: CurrentUser): PromptFavoritesResponse {
   if (databaseDriver !== "sqlite") {
     return {
-      groups: [defaultPromptFavoriteGroupView()],
+      groups: [defaultPromptFavoriteGroupView(user.id)],
       favorites: []
     };
   }
 
-  ensureDefaultGroup();
+  ensureDefaultGroup(user.id);
   return {
     groups: db
       .select()
       .from(promptFavoriteGroups)
+      .where(eq(promptFavoriteGroups.userId, user.id))
       .orderBy(asc(promptFavoriteGroups.sortOrder), asc(promptFavoriteGroups.createdAt))
       .all()
       .map(toPromptFavoriteGroup),
     favorites: db
       .select()
       .from(promptFavorites)
+      .where(eq(promptFavorites.userId, user.id))
       .orderBy(desc(promptFavorites.lastUsedAt), desc(promptFavorites.updatedAt), desc(promptFavorites.createdAt))
       .all()
       .map(toPromptFavoriteItem)
   };
 }
 
-export async function createPromptFavorite(input: CreatePromptFavoriteRequest): Promise<PromptFavoriteItem> {
+export async function createPromptFavorite(input: CreatePromptFavoriteRequest, user: CurrentUser): Promise<PromptFavoriteItem> {
   assertPromptFavoritesWritable();
 
   const promptPoolItemId = normalizeId(input.promptPoolItemId);
@@ -60,8 +63,12 @@ export async function createPromptFavorite(input: CreatePromptFavoriteRequest): 
     throw new PromptFavoriteError("invalid_prompt_favorite", "Prompt pool item id is required.");
   }
 
-  const groupId = normalizeGroupId(input.groupId) ?? DEFAULT_GROUP_ID;
-  const group = getPromptFavoriteGroupRow(groupId);
+  const requestedGroupId = normalizeGroupId(input.groupId);
+  const groupId = requestedGroupId ?? defaultGroupId(user.id);
+  if (!requestedGroupId || groupId === defaultGroupId(user.id)) {
+    ensureDefaultGroup(user.id);
+  }
+  const group = getPromptFavoriteGroupRow(groupId, user.id);
   if (!group) {
     throw new PromptFavoriteError("prompt_favorite_group_not_found", "Prompt favorite group was not found.", 404);
   }
@@ -72,7 +79,7 @@ export async function createPromptFavorite(input: CreatePromptFavoriteRequest): 
     throw new PromptFavoriteError("prompt_pool_item_not_found", "Prompt pool item was not found.", 404);
   }
 
-  const existing = getPromptFavoriteBySource("pool", item.id);
+  const existing = getPromptFavoriteBySource("pool", item.id, user.id);
   const now = nowIso();
   if (existing) {
     db.update(promptFavorites)
@@ -90,13 +97,14 @@ export async function createPromptFavorite(input: CreatePromptFavoriteRequest): 
       })
       .where(eq(promptFavorites.id, existing.id))
       .run();
-    return getPromptFavoriteById(existing.id) ?? toPromptFavoriteItem(existing);
+    return getPromptFavoriteById(existing.id, user.id) ?? toPromptFavoriteItem(existing);
   }
 
   const id = `favorite-${randomUUID()}`;
   db.insert(promptFavorites)
     .values({
       id,
+      userId: user.id,
       sourceType: "pool",
       sourceId: item.id,
       groupId,
@@ -115,7 +123,7 @@ export async function createPromptFavorite(input: CreatePromptFavoriteRequest): 
     })
     .run();
 
-  return getPromptFavoriteById(id) ?? {
+  return getPromptFavoriteById(id, user.id) ?? {
     id,
     sourceType: "pool",
     sourceId: item.id,
@@ -134,7 +142,7 @@ export async function createPromptFavorite(input: CreatePromptFavoriteRequest): 
   };
 }
 
-export function updatePromptFavorite(favoriteId: string, input: UpdatePromptFavoriteRequest): PromptFavoriteItem {
+export function updatePromptFavorite(favoriteId: string, input: UpdatePromptFavoriteRequest, user: CurrentUser): PromptFavoriteItem {
   assertPromptFavoritesWritable();
 
   const id = normalizeId(favoriteId);
@@ -142,13 +150,13 @@ export function updatePromptFavorite(favoriteId: string, input: UpdatePromptFavo
     throw new PromptFavoriteError("prompt_favorite_not_found", "Prompt favorite was not found.", 404);
   }
 
-  const existing = getPromptFavoriteById(id);
+  const existing = getPromptFavoriteById(id, user.id);
   if (!existing) {
     throw new PromptFavoriteError("prompt_favorite_not_found", "Prompt favorite was not found.", 404);
   }
 
   const groupId = normalizeGroupId(input.groupId);
-  if (!groupId || !getPromptFavoriteGroupRow(groupId)) {
+  if (!groupId || !getPromptFavoriteGroupRow(groupId, user.id)) {
     throw new PromptFavoriteError("prompt_favorite_group_not_found", "Prompt favorite group was not found.", 404);
   }
 
@@ -160,25 +168,25 @@ export function updatePromptFavorite(favoriteId: string, input: UpdatePromptFavo
     .where(eq(promptFavorites.id, id))
     .run();
 
-  return getPromptFavoriteById(id) ?? existing;
+  return getPromptFavoriteById(id, user.id) ?? existing;
 }
 
-export function deletePromptFavorite(favoriteId: string): void {
+export function deletePromptFavorite(favoriteId: string, user: CurrentUser): void {
   assertPromptFavoritesWritable();
 
   const id = normalizeId(favoriteId);
-  if (!id || !getPromptFavoriteById(id)) {
+  if (!id || !getPromptFavoriteById(id, user.id)) {
     throw new PromptFavoriteError("prompt_favorite_not_found", "Prompt favorite was not found.", 404);
   }
 
   db.delete(promptFavorites).where(eq(promptFavorites.id, id)).run();
 }
 
-export function markPromptFavoriteUsed(favoriteId: string): PromptFavoriteItem {
+export function markPromptFavoriteUsed(favoriteId: string, user: CurrentUser): PromptFavoriteItem {
   assertPromptFavoritesWritable();
 
   const id = normalizeId(favoriteId);
-  const existing = id ? getPromptFavoriteById(id) : undefined;
+  const existing = id ? getPromptFavoriteById(id, user.id) : undefined;
   if (!existing) {
     throw new PromptFavoriteError("prompt_favorite_not_found", "Prompt favorite was not found.", 404);
   }
@@ -193,7 +201,7 @@ export function markPromptFavoriteUsed(favoriteId: string): PromptFavoriteItem {
     .where(eq(promptFavorites.id, existing.id))
     .run();
 
-  return getPromptFavoriteById(existing.id) ?? {
+  return getPromptFavoriteById(existing.id, user.id) ?? {
     ...existing,
     useCount: existing.useCount + 1,
     lastUsedAt: now,
@@ -201,7 +209,7 @@ export function markPromptFavoriteUsed(favoriteId: string): PromptFavoriteItem {
   };
 }
 
-export function createPromptFavoriteGroup(input: CreatePromptFavoriteGroupRequest): PromptFavoriteGroup {
+export function createPromptFavoriteGroup(input: CreatePromptFavoriteGroupRequest, user: CurrentUser): PromptFavoriteGroup {
   assertPromptFavoritesWritable();
 
   const name = normalizeGroupName(input.name);
@@ -209,17 +217,18 @@ export function createPromptFavoriteGroup(input: CreatePromptFavoriteGroupReques
     throw new PromptFavoriteError("invalid_prompt_favorite_group", "Prompt favorite group name is required.");
   }
 
-  const existing = getPromptFavoriteGroups().find((group) => group.name === name);
+  const existing = getPromptFavoriteGroups(user.id).find((group) => group.name === name);
   if (existing) {
     return toPromptFavoriteGroup(existing);
   }
 
   const now = nowIso();
   const id = `group-${randomUUID()}`;
-  const sortOrder = nextGroupSortOrder();
+  const sortOrder = nextGroupSortOrder(user.id);
   db.insert(promptFavoriteGroups)
     .values({
       id,
+      userId: user.id,
       name,
       sortOrder,
       createdAt: now,
@@ -227,7 +236,7 @@ export function createPromptFavoriteGroup(input: CreatePromptFavoriteGroupReques
     })
     .run();
 
-  return getPromptFavoriteGroup(id) ?? {
+  return getPromptFavoriteGroup(id, user.id) ?? {
     id,
     name,
     sortOrder,
@@ -237,7 +246,7 @@ export function createPromptFavoriteGroup(input: CreatePromptFavoriteGroupReques
   };
 }
 
-export function updatePromptFavoriteGroup(groupIdValue: string, input: UpdatePromptFavoriteGroupRequest): PromptFavoriteGroup {
+export function updatePromptFavoriteGroup(groupIdValue: string, input: UpdatePromptFavoriteGroupRequest, user: CurrentUser): PromptFavoriteGroup {
   assertPromptFavoritesWritable();
 
   const groupId = normalizeGroupId(groupIdValue);
@@ -245,7 +254,7 @@ export function updatePromptFavoriteGroup(groupIdValue: string, input: UpdatePro
     throw new PromptFavoriteError("prompt_favorite_group_not_found", "Prompt favorite group was not found.", 404);
   }
 
-  const existing = getPromptFavoriteGroupRow(groupId);
+  const existing = getPromptFavoriteGroupRow(groupId, user.id);
   if (!existing) {
     throw new PromptFavoriteError("prompt_favorite_group_not_found", "Prompt favorite group was not found.", 404);
   }
@@ -263,10 +272,10 @@ export function updatePromptFavoriteGroup(groupIdValue: string, input: UpdatePro
     .where(eq(promptFavoriteGroups.id, groupId))
     .run();
 
-  return getPromptFavoriteGroup(groupId) ?? toPromptFavoriteGroup(existing);
+  return getPromptFavoriteGroup(groupId, user.id) ?? toPromptFavoriteGroup(existing);
 }
 
-export function deletePromptFavoriteGroup(groupIdValue: string): void {
+export function deletePromptFavoriteGroup(groupIdValue: string, user: CurrentUser): void {
   assertPromptFavoritesWritable();
 
   const groupId = normalizeGroupId(groupIdValue);
@@ -274,36 +283,38 @@ export function deletePromptFavoriteGroup(groupIdValue: string): void {
     throw new PromptFavoriteError("prompt_favorite_group_not_found", "Prompt favorite group was not found.", 404);
   }
 
-  const existing = getPromptFavoriteGroupRow(groupId);
+  const existing = getPromptFavoriteGroupRow(groupId, user.id);
   if (!existing) {
     throw new PromptFavoriteError("prompt_favorite_group_not_found", "Prompt favorite group was not found.", 404);
   }
 
-  if (groupId === DEFAULT_GROUP_ID) {
+  if (groupId === defaultGroupId(user.id)) {
     throw new PromptFavoriteError("prompt_favorite_default_group", "The default prompt favorite group cannot be deleted.");
   }
 
-  ensureDefaultGroup();
+  ensureDefaultGroup(user.id);
   const now = nowIso();
   db.update(promptFavorites)
     .set({
-      groupId: DEFAULT_GROUP_ID,
+      groupId: defaultGroupId(user.id),
       updatedAt: now
     })
-    .where(eq(promptFavorites.groupId, groupId))
+    .where(and(eq(promptFavorites.groupId, groupId), eq(promptFavorites.userId, user.id)))
     .run();
-  db.delete(promptFavoriteGroups).where(eq(promptFavoriteGroups.id, groupId)).run();
+  db.delete(promptFavoriteGroups).where(and(eq(promptFavoriteGroups.id, groupId), eq(promptFavoriteGroups.userId, user.id))).run();
 }
 
-function ensureDefaultGroup(): void {
-  if (getPromptFavoriteGroupRow(DEFAULT_GROUP_ID)) {
+function ensureDefaultGroup(userId: string): void {
+  const id = defaultGroupId(userId);
+  if (getPromptFavoriteGroupRow(id, userId)) {
     return;
   }
 
   const now = nowIso();
   db.insert(promptFavoriteGroups)
     .values({
-      id: DEFAULT_GROUP_ID,
+      id,
+      userId,
       name: DEFAULT_GROUP_NAME,
       sortOrder: 0,
       createdAt: now,
@@ -312,35 +323,40 @@ function ensureDefaultGroup(): void {
     .run();
 }
 
-function getPromptFavoriteById(id: string): PromptFavoriteItem | undefined {
-  const row = db.select().from(promptFavorites).where(eq(promptFavorites.id, id)).get();
+function getPromptFavoriteById(id: string, userId: string): PromptFavoriteItem | undefined {
+  const row = db.select().from(promptFavorites).where(and(eq(promptFavorites.id, id), eq(promptFavorites.userId, userId))).get();
   return row ? toPromptFavoriteItem(row) : undefined;
 }
 
-function getPromptFavoriteBySource(sourceType: "pool", sourceId: string): (typeof promptFavorites.$inferSelect) | undefined {
+function getPromptFavoriteBySource(sourceType: "pool", sourceId: string, userId: string): (typeof promptFavorites.$inferSelect) | undefined {
   return db
     .select()
     .from(promptFavorites)
-    .where(and(eq(promptFavorites.sourceType, sourceType), eq(promptFavorites.sourceId, sourceId)))
+    .where(and(eq(promptFavorites.sourceType, sourceType), eq(promptFavorites.sourceId, sourceId), eq(promptFavorites.userId, userId)))
     .get();
 }
 
-function getPromptFavoriteGroup(id: string): PromptFavoriteGroup | undefined {
-  const row = getPromptFavoriteGroupRow(id);
+function getPromptFavoriteGroup(id: string, userId: string): PromptFavoriteGroup | undefined {
+  const row = getPromptFavoriteGroupRow(id, userId);
   return row ? toPromptFavoriteGroup(row) : undefined;
 }
 
-function getPromptFavoriteGroupRow(id: string): (typeof promptFavoriteGroups.$inferSelect) | undefined {
-  return db.select().from(promptFavoriteGroups).where(eq(promptFavoriteGroups.id, id)).get();
+function getPromptFavoriteGroupRow(id: string, userId: string): (typeof promptFavoriteGroups.$inferSelect) | undefined {
+  return db.select().from(promptFavoriteGroups).where(and(eq(promptFavoriteGroups.id, id), eq(promptFavoriteGroups.userId, userId))).get();
 }
 
-function getPromptFavoriteGroups(): Array<typeof promptFavoriteGroups.$inferSelect> {
-  ensureDefaultGroup();
-  return db.select().from(promptFavoriteGroups).orderBy(asc(promptFavoriteGroups.sortOrder)).all();
+function getPromptFavoriteGroups(userId: string): Array<typeof promptFavoriteGroups.$inferSelect> {
+  ensureDefaultGroup(userId);
+  return db
+    .select()
+    .from(promptFavoriteGroups)
+    .where(eq(promptFavoriteGroups.userId, userId))
+    .orderBy(asc(promptFavoriteGroups.sortOrder))
+    .all();
 }
 
-function nextGroupSortOrder(): number {
-  const groups = getPromptFavoriteGroups();
+function nextGroupSortOrder(userId?: string): number {
+  const groups = userId ? getPromptFavoriteGroups(userId) : db.select().from(promptFavoriteGroups).all();
   return Math.max(0, ...groups.map((group) => group.sortOrder)) + 100;
 }
 
@@ -349,21 +365,25 @@ function toPromptFavoriteGroup(row: typeof promptFavoriteGroups.$inferSelect): P
     id: row.id,
     name: row.name,
     sortOrder: row.sortOrder,
-    isDefault: row.id === DEFAULT_GROUP_ID,
+    isDefault: row.id.startsWith(`${DEFAULT_GROUP_ID}:`) || row.id === DEFAULT_GROUP_ID,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt
   };
 }
 
-function defaultPromptFavoriteGroupView(): PromptFavoriteGroup {
+function defaultPromptFavoriteGroupView(userId: string): PromptFavoriteGroup {
   return {
-    id: DEFAULT_GROUP_ID,
+    id: defaultGroupId(userId),
     name: DEFAULT_GROUP_NAME,
     sortOrder: 0,
     isDefault: true,
     createdAt: "",
     updatedAt: ""
   };
+}
+
+function defaultGroupId(userId: string): string {
+  return `${DEFAULT_GROUP_ID}:${userId}`;
 }
 
 function assertPromptFavoritesWritable(): void {

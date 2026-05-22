@@ -15,6 +15,7 @@ import type {
   OutputFormat,
   ReferenceImageInput
 } from "../contracts.js";
+import type { CurrentUser } from "../contracts.js";
 import {
   ProviderError,
   type EditImageProviderInput,
@@ -74,7 +75,12 @@ const mimeTypes: Record<OutputFormat, string> = {
   webp: "image/webp"
 };
 
-export async function runTextToImageGeneration(input: ImageProviderInput, provider: ImageProvider, signal?: AbortSignal): Promise<GenerationResponse> {
+export async function runTextToImageGeneration(
+  input: ImageProviderInput,
+  provider: ImageProvider,
+  signal?: AbortSignal,
+  user?: CurrentUser
+): Promise<GenerationResponse> {
   const outputs = await mapWithConcurrency(
     Array.from({ length: input.count }, (_, index) => index),
     BATCH_CONCURRENCY,
@@ -87,7 +93,8 @@ export async function runTextToImageGeneration(input: ImageProviderInput, provid
       ...input,
       mode: "generate"
     },
-    outputs
+    outputs,
+    user
   );
 
   return {
@@ -98,9 +105,10 @@ export async function runTextToImageGeneration(input: ImageProviderInput, provid
 export async function runReferenceImageGeneration(
   input: EditImageProviderInput,
   provider: ImageProvider,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  user?: CurrentUser
 ): Promise<GenerationResponse> {
-  const referenceAssetIds = await ensureReferenceAssetIds(input);
+  const referenceAssetIds = await ensureReferenceAssetIds(input, user);
   const inputWithReferenceAssets: EditImageProviderInput = {
     ...input,
     referenceAssetIds,
@@ -119,7 +127,8 @@ export async function runReferenceImageGeneration(
       ...inputWithReferenceAssets,
       mode: "edit"
     },
-    outputs
+    outputs,
+    user
   );
 
   return {
@@ -127,17 +136,18 @@ export async function runReferenceImageGeneration(
   };
 }
 
-export async function createRunningTextToImageGeneration(input: ImageProviderInput): Promise<GenerationRecord> {
+export async function createRunningTextToImageGeneration(input: ImageProviderInput, user?: CurrentUser): Promise<GenerationRecord> {
   return createRunningGenerationRecord({
     ...input,
     mode: "generate"
-  });
+  }, user);
 }
 
 export async function createRunningReferenceImageGeneration(
-  input: EditImageProviderInput
+  input: EditImageProviderInput,
+  user?: CurrentUser
 ): Promise<{ record: GenerationRecord; input: EditImageProviderInput }> {
-  const referenceAssetIds = await ensureReferenceAssetIds(input);
+  const referenceAssetIds = await ensureReferenceAssetIds(input, user);
   const inputWithReferenceAssets: EditImageProviderInput = {
     ...input,
     referenceAssetIds,
@@ -148,7 +158,7 @@ export async function createRunningReferenceImageGeneration(
     record: await createRunningGenerationRecord({
       ...inputWithReferenceAssets,
       mode: "edit"
-    }),
+    }, user),
     input: inputWithReferenceAssets
   };
 }
@@ -157,7 +167,8 @@ export async function finishTextToImageGeneration(
   generationId: string,
   input: ImageProviderInput,
   provider: ImageProvider,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  user?: CurrentUser
 ): Promise<GenerationRecord> {
   const outputs = await mapWithConcurrency(
     Array.from({ length: input.count }, (_, index) => index),
@@ -172,7 +183,8 @@ export async function finishTextToImageGeneration(
       ...input,
       mode: "generate"
     },
-    outputs
+    outputs,
+    user
   );
 }
 
@@ -180,7 +192,8 @@ export async function finishReferenceImageGeneration(
   generationId: string,
   input: EditImageProviderInput,
   provider: ImageProvider,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  user?: CurrentUser
 ): Promise<GenerationRecord> {
   const outputs = await mapWithConcurrency(
     Array.from({ length: input.count }, (_, index) => index),
@@ -195,12 +208,13 @@ export async function finishReferenceImageGeneration(
       ...input,
       mode: "edit"
     },
-    outputs
+    outputs,
+    user
   );
 }
 
-export async function getGenerationRecord(generationId: string): Promise<GenerationRecord | undefined> {
-  return readGenerationRecord(generationId);
+export async function getGenerationRecord(generationId: string, user?: CurrentUser): Promise<GenerationRecord | undefined> {
+  return readGenerationRecord(generationId, user);
 }
 
 export async function cancelGenerationRecord(generationId: string): Promise<GenerationRecord | undefined> {
@@ -215,27 +229,27 @@ export async function markInterruptedGenerationRecordsFailed(): Promise<void> {
   await markInterruptedGenerationRecordsFailedInStore(INTERRUPTED_GENERATION_ERROR);
 }
 
-async function ensureReferenceAssetIds(input: EditImageProviderInput): Promise<string[]> {
+async function ensureReferenceAssetIds(input: EditImageProviderInput, user?: CurrentUser): Promise<string[]> {
   return Promise.all(
     input.referenceImages.map(async (referenceImage, index) => {
-      const existingAssetId = await persistedReferenceAssetId(input.referenceAssetIds?.[index]);
+      const existingAssetId = await persistedReferenceAssetId(input.referenceAssetIds?.[index], user);
       if (existingAssetId) {
         return existingAssetId;
       }
 
-      const savedReferenceAsset = await saveReferenceImageInput(referenceImage);
+      const savedReferenceAsset = await saveReferenceImageInput(referenceImage, user);
       return savedReferenceAsset.id;
     })
   );
 }
 
-async function persistedReferenceAssetId(assetId: string | undefined): Promise<string | undefined> {
+async function persistedReferenceAssetId(assetId: string | undefined, user?: CurrentUser): Promise<string | undefined> {
   if (!assetId) {
     return undefined;
   }
 
   for (const candidateAssetId of persistedReferenceAssetIdCandidates(assetId)) {
-    if (await assetExists(candidateAssetId)) {
+    if (await assetExists(candidateAssetId, user)) {
       return candidateAssetId;
     }
   }
@@ -254,7 +268,7 @@ function persistedReferenceAssetIdCandidates(assetId: string): string[] {
   return candidates.filter((candidate, index, values) => candidate && values.indexOf(candidate) === index);
 }
 
-export async function saveReferenceImageInput(input: ReferenceImageInput): Promise<GeneratedAsset> {
+export async function saveReferenceImageInput(input: ReferenceImageInput, user?: CurrentUser): Promise<GeneratedAsset> {
   const parsed = referenceDataUrlToBytes(input);
   const imageSize = await readImageSize(parsed.bytes);
   if (!imageSize) {
@@ -270,14 +284,15 @@ export async function saveReferenceImageInput(input: ReferenceImageInput): Promi
 
   await localAssetStorage.putObject({ filePath, bytes: parsed.bytes });
   await insertAsset({
-      id: assetId,
-      fileName,
-      relativePath,
-      mimeType: parsed.mimeType,
-      width: imageSize.width,
-      height: imageSize.height,
-      createdAt
-    });
+    id: assetId,
+    userId: user?.id ?? null,
+    fileName,
+    relativePath,
+    mimeType: parsed.mimeType,
+    width: imageSize.width,
+    height: imageSize.height,
+    createdAt
+  });
 
   return {
     id: assetId,
@@ -489,10 +504,10 @@ async function readImageSize(bytes: Buffer): Promise<ImageSize | undefined> {
   }
 }
 
-async function createRunningGenerationRecord(input: PersistedGenerationInput): Promise<GenerationRecord> {
+async function createRunningGenerationRecord(input: PersistedGenerationInput, user?: CurrentUser): Promise<GenerationRecord> {
   const createdAt = new Date().toISOString();
   const generationId = input.clientRequestId || randomUUID();
-  const existing = await readGenerationRecord(generationId);
+  const existing = await readGenerationRecord(generationId, user);
   if (existing) {
     return existing;
   }
@@ -503,6 +518,7 @@ async function createRunningGenerationRecord(input: PersistedGenerationInput): P
   await insertGenerationRecord(
     {
       id: generationId,
+      userId: user?.id ?? null,
       mode: input.mode,
       prompt: input.originalPrompt,
       effectivePrompt: input.prompt,
@@ -541,9 +557,10 @@ async function createRunningGenerationRecord(input: PersistedGenerationInput): P
 async function completeGenerationRecord(
   generationId: string,
   input: PersistedGenerationInput,
-  outputs: BatchOutputResult[]
+  outputs: BatchOutputResult[],
+  user?: CurrentUser
 ): Promise<GenerationRecord> {
-  const existing = await readGenerationRecord(generationId);
+  const existing = await readGenerationRecord(generationId, user);
   if (existing && isTerminalGenerationStatus(existing.status)) {
     return existing;
   }
@@ -558,7 +575,7 @@ async function completeGenerationRecord(
   await updateGenerationRecordCompletion(generationId, status, error ?? null, primaryReferenceAssetId ?? null);
   await replaceGenerationOutputs(generationId, outputs);
 
-  return (await readGenerationRecord(generationId)) ?? {
+  return (await readGenerationRecord(generationId, user)) ?? {
     id: generationId,
     mode: input.mode,
     prompt: input.originalPrompt,
@@ -580,7 +597,8 @@ async function completeGenerationRecord(
 async function saveCompletedGenerationRecord(
   generationId: string,
   input: PersistedGenerationInput,
-  outputs: BatchOutputResult[]
+  outputs: BatchOutputResult[],
+  user?: CurrentUser
 ): Promise<GenerationRecord> {
   const createdAt = new Date().toISOString();
   const successCount = outputs.filter((output) => output.status === "succeeded").length;
@@ -594,6 +612,7 @@ async function saveCompletedGenerationRecord(
   await insertGenerationRecord(
     {
       id: generationId,
+      userId: user?.id ?? null,
       mode: input.mode,
       prompt: input.originalPrompt,
       effectivePrompt: input.prompt,

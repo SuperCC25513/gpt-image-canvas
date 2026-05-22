@@ -1,4 +1,5 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, SQL } from "drizzle-orm";
+import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import type {
   GeneratedAsset,
@@ -12,6 +13,7 @@ import type {
   OutputStatus,
   ProjectState
 } from "../contracts.js";
+import type { CurrentUser } from "../contracts.js";
 import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import { assets, generationOutputs, generationRecords, generationReferenceAssets, projects } from "../../infrastructure/schema.js";
 
@@ -33,6 +35,7 @@ export interface GalleryExportAsset {
 
 export interface AssetRow {
   id: string;
+  userId: string | null;
   fileName: string;
   relativePath: string;
   mimeType: string;
@@ -43,6 +46,7 @@ export interface AssetRow {
 
 export interface GenerationRecordRow {
   id: string;
+  userId: string | null;
   mode: string;
   prompt: string;
   effectivePrompt: string;
@@ -60,6 +64,7 @@ export interface GenerationRecordRow {
 
 export interface GenerationOutputRow {
   id: string;
+  userId: string | null;
   generationId: string;
   status: string;
   assetId: string | null;
@@ -81,8 +86,21 @@ export interface StoredGenerationOutputInput {
   error?: string;
 }
 
+function canAccessOwner(user: CurrentUser, ownerId: string | null | undefined): boolean {
+  return user.role === "admin" || ownerId === user.id;
+}
+
+function sqliteOwnerWhere(column: SQLiteColumn, user: CurrentUser): SQL | undefined {
+  return user.role === "admin" ? undefined : eq(column, user.id);
+}
+
+function defaultProjectId(userId: string): string {
+  return `${DEFAULT_PROJECT_ID}:${userId}`;
+}
+
 interface ProjectRow {
   id: string;
+  userId: string | null;
   name: string;
   snapshotJson: string;
   createdAt: string;
@@ -124,13 +142,14 @@ function parseSnapshot(snapshotJson: string): unknown | null {
   return JSON.parse(snapshotJson) as unknown;
 }
 
-export async function ensureDefaultProject(): Promise<void> {
-  const existing = await getDefaultProjectRow();
+export async function ensureDefaultProject(user: CurrentUser): Promise<void> {
+  const existing = await getDefaultProjectRow(user);
 
   if (existing) {
     return;
   }
-  if (await defaultProjectRowExists()) {
+  const projectId = defaultProjectId(user.id);
+  if (await defaultProjectRowExists(projectId)) {
     return;
   }
 
@@ -138,7 +157,8 @@ export async function ensureDefaultProject(): Promise<void> {
   if (databaseDriver === "sqlite") {
     db.insert(projects)
       .values({
-        id: DEFAULT_PROJECT_ID,
+        id: projectId,
+        userId: user.id,
         name: DEFAULT_PROJECT_NAME,
         snapshotJson: "null",
         createdAt,
@@ -149,17 +169,17 @@ export async function ensureDefaultProject(): Promise<void> {
   }
 
   await getMySqlPool().execute(
-    `INSERT INTO projects (id, name, snapshot_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [DEFAULT_PROJECT_ID, DEFAULT_PROJECT_NAME, "null", createdAt, createdAt]
+    `INSERT INTO projects (id, user_id, name, snapshot_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [projectId, user.id, DEFAULT_PROJECT_NAME, "null", createdAt, createdAt]
   );
 }
 
-export async function saveProjectSnapshot(input: ProjectSnapshotInput): Promise<ProjectState> {
-  await ensureDefaultProject();
+export async function saveProjectSnapshot(input: ProjectSnapshotInput, user: CurrentUser): Promise<ProjectState> {
+  await ensureDefaultProject(user);
 
   const updatedAt = nowIso();
-  const current = await getDefaultProjectRow();
+  const current = await getDefaultProjectRow(user);
   const name = input.name ?? current?.name ?? DEFAULT_PROJECT_NAME;
 
   if (databaseDriver === "sqlite") {
@@ -169,31 +189,31 @@ export async function saveProjectSnapshot(input: ProjectSnapshotInput): Promise<
         snapshotJson: input.snapshotJson,
         updatedAt
       })
-      .where(eq(projects.id, DEFAULT_PROJECT_ID))
+      .where(eq(projects.id, current?.id ?? defaultProjectId(user.id)))
       .run();
   } else {
     await getMySqlPool().execute(
       `UPDATE projects
        SET name = ?, snapshot_json = ?, updated_at = ?
        WHERE id = ?`,
-      [name, input.snapshotJson, updatedAt, DEFAULT_PROJECT_ID]
+      [name, input.snapshotJson, updatedAt, current?.id ?? defaultProjectId(user.id)]
     );
   }
 
-  return getProjectState();
+  return getProjectState(user);
 }
 
-export async function getProjectState(): Promise<ProjectState> {
-  await ensureDefaultProject();
+export async function getProjectState(user: CurrentUser): Promise<ProjectState> {
+  await ensureDefaultProject(user);
 
-  const project = await getDefaultProjectRow();
+  const project = await getDefaultProjectRow(user);
 
   if (!project) {
     return {
-      id: DEFAULT_PROJECT_ID,
+      id: defaultProjectId(user.id),
       name: DEFAULT_PROJECT_NAME,
       snapshot: null,
-      history: await getGenerationHistory(),
+      history: await getGenerationHistory(user),
       updatedAt: nowIso()
     };
   }
@@ -202,12 +222,12 @@ export async function getProjectState(): Promise<ProjectState> {
     id: project.id,
     name: project.name,
     snapshot: parseSnapshot(project.snapshotJson),
-    history: await getGenerationHistory(),
+    history: await getGenerationHistory(user),
     updatedAt: project.updatedAt
   };
 }
 
-export async function getGalleryImages(): Promise<GalleryResponse> {
+export async function getGalleryImages(user: CurrentUser): Promise<GalleryResponse> {
   if (databaseDriver === "sqlite") {
     const rows = db
       .select({
@@ -218,7 +238,7 @@ export async function getGalleryImages(): Promise<GalleryResponse> {
       .from(generationOutputs)
       .innerJoin(generationRecords, eq(generationOutputs.generationId, generationRecords.id))
       .innerJoin(assets, eq(generationOutputs.assetId, assets.id))
-      .where(eq(generationOutputs.status, "succeeded"))
+      .where(and(eq(generationOutputs.status, "succeeded"), sqliteOwnerWhere(generationOutputs.userId, user)))
       .orderBy(desc(generationOutputs.createdAt))
       .all();
 
@@ -253,8 +273,9 @@ export async function getGalleryImages(): Promise<GalleryResponse> {
      INNER JOIN generation_records ON generation_outputs.generation_id = generation_records.id
      INNER JOIN assets ON generation_outputs.asset_id = assets.id
      WHERE generation_outputs.status = ?
+       ${user.role === "admin" ? "" : "AND generation_outputs.user_id = ?"}
      ORDER BY generation_outputs.created_at DESC`,
-    ["succeeded"]
+    user.role === "admin" ? ["succeeded"] : ["succeeded", user.id]
   );
 
   return {
@@ -265,6 +286,7 @@ export async function getGalleryImages(): Promise<GalleryResponse> {
           row.createdAt,
           {
             id: row.generationId,
+            userId: null,
             mode: row.mode,
             prompt: row.prompt,
             effectivePrompt: row.effectivePrompt,
@@ -281,6 +303,7 @@ export async function getGalleryImages(): Promise<GalleryResponse> {
           },
           {
             id: row.assetId,
+            userId: null,
             fileName: row.fileName,
             relativePath: row.relativePath,
             mimeType: row.mimeType,
@@ -294,19 +317,25 @@ export async function getGalleryImages(): Promise<GalleryResponse> {
   };
 }
 
-export async function deleteGalleryOutput(outputId: string): Promise<boolean> {
+export async function deleteGalleryOutput(outputId: string, user: CurrentUser): Promise<boolean> {
   if (databaseDriver === "sqlite") {
-    const result = db.delete(generationOutputs).where(eq(generationOutputs.id, outputId)).run();
+    const result = db
+      .delete(generationOutputs)
+      .where(and(eq(generationOutputs.id, outputId), sqliteOwnerWhere(generationOutputs.userId, user)))
+      .run();
     return result.changes > 0;
   }
 
-  const [result] = await getMySqlPool().execute<ResultSetHeader>("DELETE FROM generation_outputs WHERE id = ?", [
-    outputId
-  ]);
+  const [result] = await getMySqlPool().execute<ResultSetHeader>(
+    `DELETE FROM generation_outputs
+     WHERE id = ?
+       ${user.role === "admin" ? "" : "AND user_id = ?"}`,
+    user.role === "admin" ? [outputId] : [outputId, user.id]
+  );
   return result.affectedRows > 0;
 }
 
-export async function getGalleryExportAssets(outputIds: string[]): Promise<GalleryExportAsset[]> {
+export async function getGalleryExportAssets(outputIds: string[], user: CurrentUser): Promise<GalleryExportAsset[]> {
   if (outputIds.length === 0) {
     return [];
   }
@@ -321,7 +350,13 @@ export async function getGalleryExportAssets(outputIds: string[]): Promise<Galle
       })
       .from(generationOutputs)
       .innerJoin(assets, eq(generationOutputs.assetId, assets.id))
-      .where(and(inArray(generationOutputs.id, outputIds), eq(generationOutputs.status, "succeeded")))
+      .where(
+        and(
+          inArray(generationOutputs.id, outputIds),
+          eq(generationOutputs.status, "succeeded"),
+          sqliteOwnerWhere(generationOutputs.userId, user)
+        )
+      )
       .all();
 
     return orderRowsByOutputIds(outputIds, rows);
@@ -335,8 +370,9 @@ export async function getGalleryExportAssets(outputIds: string[]): Promise<Galle
      FROM generation_outputs
      INNER JOIN assets ON generation_outputs.asset_id = assets.id
      WHERE generation_outputs.id IN (${placeholders(outputIds)})
-       AND generation_outputs.status = ?`,
-    [...outputIds, "succeeded"]
+       AND generation_outputs.status = ?
+       ${user.role === "admin" ? "" : "AND generation_outputs.user_id = ?"}`,
+    user.role === "admin" ? [...outputIds, "succeeded"] : [...outputIds, "succeeded", user.id]
   );
 
   return orderRowsByOutputIds(outputIds, rows);
@@ -349,6 +385,7 @@ export async function findAssetById(assetId: string): Promise<AssetRow | undefin
 
   const [rows] = await getMySqlPool().execute<AssetPacket[]>(
     `SELECT id,
+            user_id AS userId,
             file_name AS fileName,
             relative_path AS relativePath,
             mime_type AS mimeType,
@@ -363,7 +400,16 @@ export async function findAssetById(assetId: string): Promise<AssetRow | undefin
   return rows[0];
 }
 
-export async function assetExists(assetId: string): Promise<boolean> {
+export async function userCanReadAsset(assetId: string, user: CurrentUser): Promise<boolean> {
+  const asset = await findAssetById(assetId);
+  return Boolean(asset && canAccessOwner(user, asset.userId));
+}
+
+export async function assetExists(assetId: string, user?: CurrentUser): Promise<boolean> {
+  if (user) {
+    return userCanReadAsset(assetId, user);
+  }
+
   if (databaseDriver === "sqlite") {
     return Boolean(db.select({ id: assets.id }).from(assets).where(eq(assets.id, assetId)).get());
   }
@@ -382,9 +428,9 @@ export async function insertAsset(asset: AssetRow): Promise<void> {
   }
 
   await getMySqlPool().execute(
-    `INSERT INTO assets (id, file_name, relative_path, mime_type, width, height, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [asset.id, asset.fileName, asset.relativePath, asset.mimeType, asset.width, asset.height, asset.createdAt]
+    `INSERT INTO assets (id, user_id, file_name, relative_path, mime_type, width, height, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [asset.id, asset.userId, asset.fileName, asset.relativePath, asset.mimeType, asset.width, asset.height, asset.createdAt]
   );
 }
 
@@ -397,10 +443,11 @@ export async function insertGenerationRecord(record: GenerationRecordRow, refere
 
   await getMySqlPool().execute(
     `INSERT INTO generation_records
-      (id, mode, prompt, effective_prompt, preset_id, width, height, quality, output_format, count, status, error, reference_asset_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, user_id, mode, prompt, effective_prompt, preset_id, width, height, quality, output_format, count, status, error, reference_asset_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       record.id,
+      record.userId,
       record.mode,
       record.prompt,
       record.effectivePrompt,
@@ -480,11 +527,14 @@ export async function replaceGenerationOutputs(generationId: string, outputs: St
 
 export async function insertGenerationOutputs(generationId: string, outputs: StoredGenerationOutputInput[]): Promise<void> {
   const createdAt = nowIso();
+  const generation = await findGenerationRecordRow(generationId);
+  const userId = generation?.userId ?? null;
 
   for (const output of outputs) {
     if (output.asset) {
       await insertAsset({
         id: output.asset.id,
+        userId,
         fileName: output.asset.fileName,
         relativePath: `assets/${output.asset.fileName}`,
         mimeType: output.asset.mimeType,
@@ -498,6 +548,7 @@ export async function insertGenerationOutputs(generationId: string, outputs: Sto
       db.insert(generationOutputs)
         .values({
           id: output.id,
+          userId,
           generationId,
           status: output.status,
           assetId: output.asset?.id ?? null,
@@ -507,9 +558,9 @@ export async function insertGenerationOutputs(generationId: string, outputs: Sto
         .run();
     } else {
       await getMySqlPool().execute(
-        `INSERT INTO generation_outputs (id, generation_id, status, asset_id, error, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [output.id, generationId, output.status, output.asset?.id ?? null, output.error ?? null, createdAt]
+        `INSERT INTO generation_outputs (id, user_id, generation_id, status, asset_id, error, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [output.id, userId, generationId, output.status, output.asset?.id ?? null, output.error ?? null, createdAt]
       );
     }
   }
@@ -535,9 +586,9 @@ export async function markInterruptedGenerationRecordsFailed(error: string): Pro
   );
 }
 
-export async function readGenerationRecord(generationId: string): Promise<ApiGenerationRecord | undefined> {
+export async function readGenerationRecord(generationId: string, user?: CurrentUser): Promise<ApiGenerationRecord | undefined> {
   const record = await findGenerationRecordRow(generationId);
-  if (!record) {
+  if (!record || (user && !canAccessOwner(user, record.userId))) {
     return undefined;
   }
 
@@ -551,13 +602,14 @@ export async function readGenerationRecord(generationId: string): Promise<ApiGen
   return generationRecordFromRows(record, outputRows, assetById, referenceAssetIds);
 }
 
-async function getDefaultProjectRow(): Promise<ProjectRow | undefined> {
+async function getDefaultProjectRow(user: CurrentUser): Promise<ProjectRow | undefined> {
   try {
     if (databaseDriver === "sqlite") {
-      const row = db.select().from(projects).where(eq(projects.id, DEFAULT_PROJECT_ID)).get();
+      const row = db.select().from(projects).where(eq(projects.userId, user.id)).get();
       return row
         ? {
             id: row.id,
+            userId: row.userId,
             name: row.name,
             snapshotJson: row.snapshotJson,
             createdAt: row.createdAt,
@@ -569,12 +621,15 @@ async function getDefaultProjectRow(): Promise<ProjectRow | undefined> {
     const [rows] = await getMySqlPool().execute<ProjectPacket[]>(
       `SELECT id,
               name,
+              user_id AS userId,
               snapshot_json AS snapshotJson,
               created_at AS createdAt,
               updated_at AS updatedAt
        FROM projects
-       WHERE id = ?`,
-      [DEFAULT_PROJECT_ID]
+       WHERE user_id = ?
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [user.id]
     );
     return rows[0];
   } catch (error) {
@@ -586,16 +641,16 @@ async function getDefaultProjectRow(): Promise<ProjectRow | undefined> {
   }
 }
 
-async function defaultProjectRowExists(): Promise<boolean> {
+async function defaultProjectRowExists(projectId: string): Promise<boolean> {
   try {
     if (databaseDriver === "sqlite") {
-      const row = db.select({ id: projects.id }).from(projects).where(eq(projects.id, DEFAULT_PROJECT_ID)).get();
+      const row = db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).get();
       return Boolean(row);
     }
 
     const [rows] = await getMySqlPool().execute<Array<RowDataPacket & { id: string }>>(
       "SELECT id FROM projects WHERE id = ?",
-      [DEFAULT_PROJECT_ID]
+      [projectId]
     );
     return Boolean(rows[0]?.id);
   } catch {
@@ -603,9 +658,9 @@ async function defaultProjectRowExists(): Promise<boolean> {
   }
 }
 
-async function getGenerationHistory(): Promise<ApiGenerationRecord[]> {
+async function getGenerationHistory(user: CurrentUser): Promise<ApiGenerationRecord[]> {
   try {
-    return await readGenerationHistory();
+    return await readGenerationHistory(user);
   } catch (error) {
     warnOnce(
       "history-read-fallback",
@@ -615,11 +670,17 @@ async function getGenerationHistory(): Promise<ApiGenerationRecord[]> {
   }
 }
 
-async function readGenerationHistory(): Promise<ApiGenerationRecord[]> {
+async function readGenerationHistory(user: CurrentUser): Promise<ApiGenerationRecord[]> {
   const records =
     databaseDriver === "sqlite"
-      ? db.select().from(generationRecords).orderBy(desc(generationRecords.createdAt)).limit(20).all()
-      : await findRecentMySqlGenerationRows();
+      ? db
+          .select()
+          .from(generationRecords)
+          .where(sqliteOwnerWhere(generationRecords.userId, user))
+          .orderBy(desc(generationRecords.createdAt))
+          .limit(20)
+          .all()
+      : await findRecentMySqlGenerationRows(user);
   if (records.length === 0) {
     return [];
   }
@@ -705,9 +766,10 @@ async function findGenerationReferenceAssetRows(generationId: string): Promise<G
   return rows;
 }
 
-async function findRecentMySqlGenerationRows(): Promise<GenerationRecordRow[]> {
+async function findRecentMySqlGenerationRows(user: CurrentUser): Promise<GenerationRecordRow[]> {
   const [rows] = await getMySqlPool().execute<GenerationRecordPacket[]>(
-    `${generationRecordSelectSql("")} ORDER BY created_at DESC LIMIT 20`
+    `${generationRecordSelectSql(user.role === "admin" ? "" : "WHERE user_id = ?")} ORDER BY created_at DESC LIMIT 20`,
+    user.role === "admin" ? [] : [user.id]
   );
   return rows;
 }
@@ -799,6 +861,7 @@ async function insertMySqlGenerationReferenceAssets(
 
 function generationRecordSelectSql(whereClause: string): string {
   return `SELECT id,
+                 user_id AS userId,
                  mode,
                  prompt,
                  effective_prompt AS effectivePrompt,
@@ -817,6 +880,7 @@ function generationRecordSelectSql(whereClause: string): string {
 
 function generationOutputSelectSql(): string {
   return `SELECT id,
+                 user_id AS userId,
                  generation_id AS generationId,
                  status,
                  asset_id AS assetId,
@@ -835,6 +899,7 @@ function generationReferenceAssetSelectSql(): string {
 
 function assetSelectSql(): string {
   return `SELECT id,
+                 user_id AS userId,
                  file_name AS fileName,
                  relative_path AS relativePath,
                  mime_type AS mimeType,

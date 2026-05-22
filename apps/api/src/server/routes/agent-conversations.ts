@@ -5,16 +5,29 @@ import {
   getAgentConversationSummaries,
   saveAgentConversation
 } from "../../domain/agent/conversation-store.js";
+import { requireAuth } from "../http/auth.js";
 import { errorResponse, type ErrorResponseBody } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 
 const AGENT_CONVERSATION_ROLES = new Set(["user", "assistant", "thinking", "system", "error", "question", "plan"]);
 
 export function registerAgentConversationRoutes(app: Hono): void {
-  app.get("/api/agent-conversations", (c) => c.json({ conversations: getAgentConversationSummaries() }));
+  app.get("/api/agent-conversations", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
 
-  app.get("/api/agent-conversations/:id", (c) => {
-    const conversation = getAgentConversation(c.req.param("id"));
+    return c.json({ conversations: getAgentConversationSummaries(auth.user) });
+  });
+
+  app.get("/api/agent-conversations/:id", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const conversation = getAgentConversation(c.req.param("id"), auth.user);
     if (!conversation) {
       return c.json(errorResponse("not_found", "Agent conversation not found."), 404);
     }
@@ -23,6 +36,11 @@ export function registerAgentConversationRoutes(app: Hono): void {
   });
 
   app.put("/api/agent-conversations/:id", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
       return c.json(payload.error, 400);
@@ -34,7 +52,7 @@ export function registerAgentConversationRoutes(app: Hono): void {
     }
 
     try {
-      return c.json({ conversation: saveAgentConversation({ id: c.req.param("id"), ...parsed.value }) });
+      return c.json({ conversation: saveAgentConversation({ id: c.req.param("id"), ...parsed.value }, auth.user) });
     } catch {
       return c.json(errorResponse("invalid_agent_conversation", "Agent conversation could not be saved."), 400);
     }

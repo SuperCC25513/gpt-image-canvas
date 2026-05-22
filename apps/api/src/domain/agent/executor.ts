@@ -11,6 +11,7 @@ import {
   type GenerationPlan,
   type GenerationRecord,
   type GenerationReference,
+  type CurrentUser,
   type ImageQuality,
   type ImageSize,
   type OutputFormat,
@@ -31,6 +32,7 @@ export type AgentPlanExecutionMode = "execute" | "retry_failed";
 
 export interface AgentPlanExecutionInput extends StoredAgentGenerationPlan {
   mode: AgentPlanExecutionMode;
+  user?: CurrentUser;
   provider?: ImageProvider;
   requestId?: string;
   runId: string;
@@ -215,9 +217,10 @@ async function executeGenerationJob(input: AgentPlanExecutionInput & {
               referenceAssetId: references.referenceAssetIds[0]
             },
             input.provider,
-            input.signal
+            input.signal,
+            input.user
           )
-        : await runTextToImageGeneration(request, input.provider, input.signal);
+        : await runTextToImageGeneration(request, input.provider, input.signal, input.user);
     throwIfAborted(input.signal);
 
     input.job.outputs = response.record.outputs;

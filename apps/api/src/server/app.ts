@@ -2,6 +2,7 @@ import { relative } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
+import { initializeAuthFoundation } from "../domain/auth/auth-store.js";
 import { runtimePaths } from "../infrastructure/runtime.js";
 import { errorResponse } from "./http/errors.js";
 import { registerAgentConfigRoutes } from "./routes/agent-config.js";
@@ -19,9 +20,11 @@ import { registerPromptPoolRoutes } from "./routes/prompt-pool.js";
 import { registerProviderConfigRoutes } from "./routes/provider-config.js";
 
 export const agentWebSocketServer = new WebSocketServer({ noServer: true });
-export const app = createApp();
+export const app = await createApp();
 
-export function createApp(): Hono {
+export async function createApp(): Promise<Hono> {
+  await initializeAuthFoundation();
+
   const app = new Hono();
 
   app.onError((error, c) => {

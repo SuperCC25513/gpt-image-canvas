@@ -1,13 +1,26 @@
 import type { Hono } from "hono";
 import { getAgentLlmConfig, saveAgentLlmConfig } from "../../domain/agent/config.js";
+import { requireAuth } from "../http/auth.js";
 import { errorResponse, errorToMessage } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 import { parseAgentLlmConfigPayload } from "../http/validation.js";
 
 export function registerAgentConfigRoutes(app: Hono): void {
-  app.get("/api/agent-config", (c) => c.json(getAgentLlmConfig()));
+  app.get("/api/agent-config", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    return c.json(getAgentLlmConfig());
+  });
 
   app.put("/api/agent-config", async (c) => {
+    const auth = await requireAuth(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
       return c.json(payload.error, 400);

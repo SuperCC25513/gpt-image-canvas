@@ -10,6 +10,7 @@ import {
   type AgentErrorEvent,
   type AgentSelectedCanvasReference,
   type AgentServerEvent,
+  type CurrentUser,
   type GeneratedAsset,
   type GenerationPlan
 } from "../contracts.js";
@@ -23,6 +24,7 @@ import {
 import { createGenerationPlan, type AgentPlannerConversationContext } from "./planner.js";
 import { resolvePlanningSkillLoadoutForRequest } from "./skill-store.js";
 import { getStoredAssetFile, saveReferenceImageInput } from "../generation/image-generation.js";
+import { userCanReadAsset } from "../storage/store.js";
 
 const OPEN_READY_STATE = 1;
 const AGENT_SOCKET_SERVER_HEARTBEAT_INTERVAL_MS = 10_000;
@@ -52,6 +54,7 @@ interface ActiveAgentRun {
 
 interface AgentSocketSession {
   connectionId: string;
+  user: CurrentUser;
   conversationId?: string;
   ws?: WSContext;
   activeRun?: ActiveAgentRun;
@@ -83,8 +86,8 @@ interface MessageParseError {
 
 const sessions = new Map<string, AgentSocketSession>();
 
-export function createAgentWebSocketEvents(connectionId?: string, runId?: string, conversationId?: string): WSEvents {
-  const { resumeFailedRunId, session } = resolveAgentSocketSession(connectionId, runId, conversationId);
+export function createAgentWebSocketEvents(connectionId: string | undefined, runId: string | undefined, conversationId: string | undefined, user: CurrentUser): WSEvents {
+  const { resumeFailedRunId, session } = resolveAgentSocketSession(connectionId, runId, conversationId, user);
 
   return {
     onOpen(_event, ws) {
@@ -132,10 +135,11 @@ export function closeAllAgentSessions(reason = "server_shutdown"): void {
   sessions.clear();
 }
 
-function createAgentSocketSession(conversationId?: string): AgentSocketSession {
-  const contextSnapshot = getAgentConversationContext(conversationId);
+function createAgentSocketSession(conversationId: string | undefined, user: CurrentUser): AgentSocketSession {
+  const contextSnapshot = getAgentConversationContext(conversationId, user);
   return {
     connectionId: randomUUID(),
+    user,
     conversationId: normalizeConversationId(conversationId),
     plans: new Map(),
     conversationContext: conversationContextFromSnapshot(contextSnapshot),
@@ -165,28 +169,33 @@ function hasConversationContext(context: AgentConversationContext): boolean {
 function resolveAgentSocketSession(
   requestedConnectionId?: string,
   requestedRunId?: string,
-  requestedConversationId?: string
+  requestedConversationId?: string,
+  user?: CurrentUser
 ): { session: AgentSocketSession; resumeFailedRunId?: string } {
+  if (!user) {
+    throw new Error("Agent WebSocket requires an authenticated user.");
+  }
+
   const connectionId = requestedConnectionId?.trim();
   const runId = requestedRunId?.trim();
   const conversationId = normalizeConversationId(requestedConversationId);
   if (connectionId) {
     const existingSession = sessions.get(connectionId);
-    if (existingSession) {
+    if (existingSession && existingSession.user.id === user.id) {
       existingSession.conversationId ??= conversationId;
       return { session: existingSession };
     }
   }
 
   if (runId) {
-    const activeRunSession = [...sessions.values()].find((session) => session.activeRun?.id === runId);
+    const activeRunSession = [...sessions.values()].find((session) => session.activeRun?.id === runId && session.user.id === user.id);
     if (activeRunSession) {
       activeRunSession.conversationId ??= conversationId;
       return { session: activeRunSession };
     }
   }
 
-  const session = createAgentSocketSession(conversationId);
+  const session = createAgentSocketSession(conversationId, user);
   return {
     session,
     resumeFailedRunId: connectionId && runId ? runId : undefined
@@ -443,7 +452,7 @@ async function handleAgentPlanMessage(
     : [];
   let clientSelectedReferences: AgentSelectedCanvasReference[];
   try {
-    clientSelectedReferences = await persistAgentSelectedReferences(rawClientSelectedReferences);
+    clientSelectedReferences = await persistAgentSelectedReferences(rawClientSelectedReferences, session.user);
   } catch (error) {
     finishAgentPlanRunWithError(
       session,
@@ -680,11 +689,12 @@ function contextResolvedReferenceFromOutput(output: AgentConversationOutputRefer
 }
 
 async function persistAgentSelectedReferences(
-  references: AgentSelectedCanvasReference[]
+  references: AgentSelectedCanvasReference[],
+  user: CurrentUser
 ): Promise<AgentSelectedCanvasReference[]> {
   return Promise.all(
     references.slice(0, MAX_AGENT_SELECTED_REFERENCES).map(async (reference) => {
-      const storedAssetId = await storedAssetIdForAgentReference(reference.assetId);
+      const storedAssetId = await storedAssetIdForAgentReference(reference.assetId, user);
       if (storedAssetId) {
         return {
           ...reference,
@@ -699,7 +709,7 @@ async function persistAgentSelectedReferences(
       const asset = await saveReferenceImageInput({
         dataUrl: reference.dataUrl,
         fileName: fileNameForSelectedReference(reference)
-      });
+      }, user);
 
       return {
         ...reference,
@@ -713,11 +723,13 @@ async function persistAgentSelectedReferences(
   );
 }
 
-async function storedAssetIdForAgentReference(assetId: string): Promise<string | undefined> {
+async function storedAssetIdForAgentReference(assetId: string, user: CurrentUser): Promise<string | undefined> {
   for (const candidate of storedAssetIdCandidates(assetId)) {
-    const stored = await getStoredAssetFile(candidate);
-    if (stored) {
-      return stored.id;
+    if (await userCanReadAsset(candidate, user)) {
+      const stored = await getStoredAssetFile(candidate);
+      if (stored) {
+        return stored.id;
+      }
     }
   }
 
@@ -762,12 +774,16 @@ function storeConversationContextForSession(session: AgentSocketSession): void {
     return;
   }
 
-  saveAgentConversationContext(session.conversationId, {
-    previousUserText: session.conversationContext.previousUserText,
-    pendingUserText: session.conversationContext.pendingUserText,
-    previousPlan: session.conversationContext.previousPlan,
-    previousOutputs: session.conversationContext.previousOutputs
-  });
+  saveAgentConversationContext(
+    session.conversationId,
+    {
+      previousUserText: session.conversationContext.previousUserText,
+      pendingUserText: session.conversationContext.pendingUserText,
+      previousPlan: session.conversationContext.previousPlan,
+      previousOutputs: session.conversationContext.previousOutputs
+    },
+    session.user
+  );
 }
 
 async function handleAgentPlanExecutionMessage(
@@ -780,6 +796,7 @@ async function handleAgentPlanExecutionMessage(
   try {
     result = await executeGenerationPlan({
       ...storedPlan,
+      user: session.user,
       mode: message.type === "execute_plan" ? "execute" : "retry_failed",
       requestId: message.requestId,
       runId: activeRun.id,

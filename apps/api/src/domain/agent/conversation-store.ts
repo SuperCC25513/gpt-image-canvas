@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   MAX_AGENT_SELECTED_REFERENCES,
   type AgentConversation,
@@ -6,6 +6,7 @@ import {
   type AgentConversationMessage,
   type AgentConversationMessageRole,
   type AgentConversationSummary,
+  type CurrentUser,
   type GenerationPlan
 } from "../contracts.js";
 import { db } from "../../infrastructure/database.js";
@@ -16,6 +17,7 @@ const AGENT_CONVERSATION_QUERY_LIMIT = 50;
 const MAX_AGENT_CONVERSATION_MESSAGES = 200;
 const MAX_AGENT_CONVERSATION_TITLE_LENGTH = 120;
 const MAX_AGENT_CONVERSATION_PREVIEW_LENGTH = 160;
+const SYSTEM_AGENT_USER_ID = "system";
 const AGENT_CONVERSATION_ROLES: readonly AgentConversationMessageRole[] = [
   "user",
   "assistant",
@@ -30,10 +32,12 @@ const emptyContext: AgentConversationContextSnapshot = {
   previousOutputs: []
 };
 
-export function getAgentConversationSummaries(): AgentConversationSummary[] {
+export function getAgentConversationSummaries(user?: CurrentUser): AgentConversationSummary[] {
+  const userId = conversationUserId(user);
   return db
     .select()
     .from(agentConversations)
+    .where(eq(agentConversations.userId, userId))
     .orderBy(desc(agentConversations.updatedAt))
     .limit(AGENT_CONVERSATION_QUERY_LIMIT)
     .all()
@@ -42,18 +46,18 @@ export function getAgentConversationSummaries(): AgentConversationSummary[] {
     .slice(0, AGENT_CONVERSATION_HISTORY_LIMIT);
 }
 
-export function getAgentConversation(conversationId: string): AgentConversation | undefined {
-  const row = getAgentConversationRow(conversationId);
+export function getAgentConversation(conversationId: string, user?: CurrentUser): AgentConversation | undefined {
+  const row = getAgentConversationRow(conversationId, conversationUserId(user));
   return row ? toAgentConversation(row) : undefined;
 }
 
-export function getAgentConversationContext(conversationId: string | undefined): AgentConversationContextSnapshot | undefined {
+export function getAgentConversationContext(conversationId: string | undefined, user?: CurrentUser): AgentConversationContextSnapshot | undefined {
   const id = normalizeConversationId(conversationId);
   if (!id) {
     return undefined;
   }
 
-  const row = getAgentConversationRow(id);
+  const row = getAgentConversationRow(id, conversationUserId(user));
   return row ? parseContext(row.contextJson) : undefined;
 }
 
@@ -61,13 +65,14 @@ export function saveAgentConversation(input: {
   id: string;
   title?: string;
   messages: AgentConversationMessage[];
-}): AgentConversation {
+}, user?: CurrentUser): AgentConversation {
   const id = normalizeConversationId(input.id);
   if (!id) {
     throw new Error("Agent conversation id is required.");
   }
 
-  const existing = getAgentConversationRow(id);
+  const userId = conversationUserId(user);
+  const existing = getAgentConversationRow(id, userId);
   const createdAt = existing?.createdAt ?? nowIso();
   const updatedAt = nowIso();
   const messages = sanitizeMessages(input.messages);
@@ -89,6 +94,7 @@ export function saveAgentConversation(input: {
     db.insert(agentConversations)
       .values({
         id,
+        userId,
         title,
         messagesJson,
         contextJson,
@@ -98,7 +104,7 @@ export function saveAgentConversation(input: {
       .run();
   }
 
-  return getAgentConversation(id) ?? {
+  return getAgentConversation(id, user) ?? {
     id,
     title,
     messages,
@@ -109,14 +115,16 @@ export function saveAgentConversation(input: {
 
 export function saveAgentConversationContext(
   conversationId: string | undefined,
-  context: AgentConversationContextSnapshot | undefined
+  context: AgentConversationContextSnapshot | undefined,
+  user?: CurrentUser
 ): void {
   const id = normalizeConversationId(conversationId);
   if (!id || !context) {
     return;
   }
 
-  const existing = getAgentConversationRow(id);
+  const userId = conversationUserId(user);
+  const existing = getAgentConversationRow(id, userId);
   const createdAt = existing?.createdAt ?? nowIso();
   const updatedAt = nowIso();
   const contextJson = JSON.stringify(sanitizeContext(context));
@@ -135,6 +143,7 @@ export function saveAgentConversationContext(
   db.insert(agentConversations)
     .values({
       id,
+      userId,
       title: "Agent conversation",
       messagesJson: "[]",
       contextJson,
@@ -144,8 +153,16 @@ export function saveAgentConversationContext(
     .run();
 }
 
-function getAgentConversationRow(conversationId: string): (typeof agentConversations.$inferSelect) | undefined {
-  return db.select().from(agentConversations).where(eq(agentConversations.id, conversationId)).get();
+function getAgentConversationRow(conversationId: string, userId: string): (typeof agentConversations.$inferSelect) | undefined {
+  return db
+    .select()
+    .from(agentConversations)
+    .where(and(eq(agentConversations.id, conversationId), eq(agentConversations.userId, userId)))
+    .get();
+}
+
+function conversationUserId(user: CurrentUser | undefined): string {
+  return user?.id ?? SYSTEM_AGENT_USER_ID;
 }
 
 function toAgentConversation(row: typeof agentConversations.$inferSelect): AgentConversation {
