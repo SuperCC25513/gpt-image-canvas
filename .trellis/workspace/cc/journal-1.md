@@ -248,3 +248,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 修复后端业务逻辑风险
+
+**Date**: 2026-05-22
+**Task**: 修复后端业务逻辑风险
+**Package**: api
+**Branch**: `main`
+
+### Summary
+
+收紧 Codex OAuth 鉴权和 Agent 执行资产权限，补注册审核 pending 成功态契约与验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dc646a0` | (see git log) |
+| `9e62c71` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
