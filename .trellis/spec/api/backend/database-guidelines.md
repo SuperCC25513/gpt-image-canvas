@@ -235,3 +235,66 @@ if (!(await userCanReadAsset(assetId, user))) {
 }
 const file = await getStoredAssetFile(assetId);
 ```
+
+## 场景：积分扣费与每日签到
+
+### 1. 范围 / 触发
+
+- 触发：修改注册、签到、生成入口、生成完成/失败路径、应用设置或用户余额。
+- 范围：`users.credits`、`app_settings` 的积分字段、`credit_transactions`、`user_checkins`、`generation_records`。
+
+### 2. 签名
+
+- 设置字段：`app_settings.default_credits`、`generation_credit_cost`、`checkin_credit`、`max_images_per_request`。
+- 流水表：`credit_transactions(id, user_id, delta, reason, related_generation_id, related_output_id, related_checkin_date, admin_note, created_at)`。
+- 签到表：`user_checkins(user_id, checkin_date, credits_awarded, created_at)`，唯一键为 `user_id + checkin_date`。
+- API：`GET /api/auth/me` 返回 `settings` 和可选 `checkin`；`POST /api/checkin` 返回更新后的 `user`、`checkin` 和可选 `transaction`。
+- 生成入口：`startTextToImageGenerationTask(input, user)` / `startReferenceImageGenerationTask(input, user)` 在创建 provider 前调用 `reserveGenerationCredits()`。
+
+### 3. 契约
+
+- 注册默认积分、每张图消耗、签到奖励和单次生成上限都从 `app_settings` 读取，缺失或非法值回退到 shared 默认值。
+- 所有余额变化必须在数据库事务内同时写 `credit_transactions`，不能只更新 `users.credits`。
+- 每日签到用 `user_id + checkin_date` 唯一约束保证幂等；重复签到返回当前状态，不重复加积分。
+- 生成前按 `count * generation_credit_cost` 预扣。余额不足返回 `402 insufficient_credits`，不能进入 provider 调用。
+- 生成全部失败、取消或服务重启中断时按本次请求全额退款；部分失败只按失败输出数退款。
+- 退款流水用 `related_generation_id + reason` 保持幂等，避免重复调用失败处理导致余额重复增加。
+
+### 4. 验证与错误矩阵
+
+- 新注册用户获得默认积分，并有 `registration_bonus` 流水。
+- 首次签到增加余额并写 `daily_checkin` 流水；重复签到余额不变。
+- 积分不足时生成入口返回稳定错误码，余额和流水不变。
+- 成功生成后只保留 `generation_charge` 负向流水。
+- 部分失败后同时存在 `generation_charge` 和 `generation_refund`，最终余额只扣成功输出对应积分。
+- SQLite 和 MySQL 两条路径都必须保持同一错误码、同一事务语义和同一幂等行为。
+
+### 5. 良好 / 基线 / 错误
+
+- 良好：先事务预扣，再创建运行中 generation，再调用 provider；完成后按失败输出数退款。
+- 基线：`generation_credit_cost=0` 时生成不扣费也不写扣费流水，可作为运营临时关闭扣费的降级开关。
+- 错误：provider 调用失败后直接把 generation 标记为 failed，但没有调用退款逻辑，导致余额永久少扣。
+
+### 6. 必跑测试
+
+- `pnpm typecheck`
+- `pnpm build`
+- MySQL smoke：注册赠送、首次/重复签到、余额不足不进入 provider、无 provider 失败全额退款。
+- 域层 fake provider smoke：成功生成只扣成功数量；部分失败按失败数量退款，并检查 `credit_transactions` 流水。
+- UI smoke：浏览器验证余额、签到按钮、预计消耗、积分不足提示和移动端抽屉布局。
+
+### 7. 错误写法 vs 正确写法
+
+错误：
+
+```ts
+await updateUserCredits(user.id, user.credits - cost);
+const provider = await createConfiguredImageProvider(signal);
+```
+
+正确：
+
+```ts
+await reserveGenerationCredits(user, generationId, input.count);
+const provider = await createConfiguredImageProvider(signal);
+```

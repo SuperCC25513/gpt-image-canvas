@@ -21,6 +21,7 @@ Important persistence rules:
 - Never write generated assets outside the configured data/assets path.
 - Validate asset paths before reading from disk.
 - Keep generation records, outputs, reference assets, and asset rows consistent.
+- 积分余额变更必须在数据库事务内同时写入 `credit_transactions`。生成预扣、失败退款、注册赠送和每日签到都不能只改 `users.credits`。
 - If changing snapshot format, preserve old project restore behavior or document migration behavior.
 - SQLite 旧单用户数据只有在 `.env` 完整设置 `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME` 后才会回填给管理员；缺少管理员配置时，owner 为空的数据不能被普通注册用户继承。
 - Do not run local `pnpm dev` and Docker against the same `data/` directory at the same time.
@@ -44,6 +45,7 @@ Provider errors should become stable API errors where possible. Avoid exposing r
 - Batch generation uses bounded concurrency.
 - Individual output failures should be represented in output status instead of erasing the whole record when partial results exist.
 - 生成图片成功后必须能从本地资产目录读取；本地写入失败时不能记录成成功资产。
+- 生成前先按 `count * generation_credit_cost` 预扣积分。全部失败按本次输出数退款，部分失败只退失败输出对应积分；退款流水按 generation id 保持幂等。
 
 ## Agent Execution
 

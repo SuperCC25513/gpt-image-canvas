@@ -17,7 +17,7 @@
 - SQLite 文本列使用 `text`，MySQL 对主键和索引字段使用 `VARCHAR`，对快照、prompt、JSON 内容使用 `TEXT`/`LONGTEXT`。
 - SQLite 布尔值使用 `integer` 的 `0/1`，MySQL 使用 `TINYINT` 的 `0/1`。
 - 两种驱动都用 ISO 字符串保存时间，排序依赖 ISO 字符串的字典序。
-- 两种驱动都包含用户、会话、最小系统设置和私有数据 `user_id` 归属字段。公开状态、积分签到和审计表由后续任务追加。
+- 两种驱动都包含用户、会话、系统设置、积分流水、每日签到和私有数据 `user_id` 归属字段。审计表由后续任务追加。
 
 ## `users`
 
@@ -33,7 +33,7 @@ Stores local account identities and password hashes.
 | `password_hash` | text | Required password hash. |
 | `role` | text | Required user role (`user` or `admin`). |
 | `status` | text | Required user status (`active`, `pending`, or `disabled`). |
-| `credits` | integer | Required credit balance seed for later tasks. |
+| `credits` | integer | Required current credit balance. |
 | `created_at` | text | Required ISO timestamp. |
 | `updated_at` | text | Required ISO timestamp. |
 
@@ -59,8 +59,42 @@ Stores minimal registration settings.
 | `allow_registration` | integer | Required boolean flag stored as integer; defaults to `1`. |
 | `require_approval` | integer | Required boolean flag stored as integer; defaults to `0`. |
 | `default_credits` | integer | Required default credits for registered users. |
+| `generation_credit_cost` | integer | Required credits charged per requested output; defaults to `1`. |
+| `checkin_credit` | integer | Required daily check-in reward; defaults to `1`. |
+| `max_images_per_request` | integer | Required per-request generation count limit; defaults to `16`. |
 | `created_at` | text | Required ISO timestamp. |
 | `updated_at` | text | Required ISO timestamp. |
+
+## `credit_transactions`
+
+Stores the immutable audit trail for every credit balance change.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | text | Primary key. |
+| `user_id` | text | Required owner user ID. |
+| `delta` | integer | Required signed balance change. |
+| `reason` | text | Required reason (`registration_bonus`, `daily_checkin`, `generation_charge`, `generation_refund`, or `admin_adjustment`). |
+| `related_generation_id` | text | Optional generation id for charge/refund entries. |
+| `related_output_id` | text | Optional output id reserved for per-output adjustments. |
+| `related_checkin_date` | text | Optional local date key for check-in entries. |
+| `admin_note` | text | Optional administrator note for manual adjustments. |
+| `created_at` | text | Required ISO timestamp. |
+
+唯一索引：`credit_transactions_generation_reason_idx` 覆盖 `related_generation_id` 和 `reason`，保证同一生成记录的扣费或退款流水幂等。
+
+## `user_checkins`
+
+Stores daily check-in rewards.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `user_id` | text | Required owner user ID. |
+| `checkin_date` | text | Required local date key (`YYYY-MM-DD`). |
+| `credits_awarded` | integer | Required reward amount granted for this check-in. |
+| `created_at` | text | Required ISO timestamp. |
+
+主键或唯一约束：`user_id + checkin_date`，保证同一用户每天只能签到一次。
 
 ## `projects`
 
@@ -273,3 +307,4 @@ Stores multiple reference assets used by one generation.
 - `generation_outputs.asset_id` optionally references `assets.id`.
 - `generation_reference_assets.generation_id` references `generation_records.id` with cascade delete.
 - `generation_reference_assets.asset_id` references `assets.id`.
+- `credit_transactions.user_id` and `user_checkins.user_id` reference the owner user for balance audit and daily reward enforcement.
