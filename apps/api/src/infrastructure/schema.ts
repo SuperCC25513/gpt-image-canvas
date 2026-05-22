@@ -212,6 +212,24 @@ export const generationOutputs = sqliteTable("generation_outputs", {
   createdAt: text("created_at").notNull()
 });
 
+export const generationAudits = sqliteTable("generation_audits", {
+  id: text("id").primaryKey(),
+  generationId: text("generation_id").notNull(),
+  userId: text("user_id"),
+  userName: text("user_name"),
+  userEmail: text("user_email"),
+  mode: text("mode").notNull(),
+  prompt: text("prompt").notNull(),
+  isPublic: integer("is_public").notNull(),
+  status: text("status").notNull(),
+  errorSummary: text("error_summary"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  outputsJson: text("outputs_json").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
 export const generationReferenceAssets = sqliteTable("generation_reference_assets", {
   generationId: text("generation_id")
     .notNull()

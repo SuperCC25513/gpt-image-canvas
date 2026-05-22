@@ -6,8 +6,13 @@ import {
   PROVIDER_SOURCE_IDS,
   SIZE_PRESETS,
   STYLE_PRESETS,
+  USER_ROLES,
+  USER_STATUSES,
   composePrompt,
   validateSceneImageSize,
+  type AdminCreditAdjustmentRequest,
+  type AdminSettingsUpdateRequest,
+  type AdminUserUpdateRequest,
   type GenerationCount,
   type CurrentUser,
   type ImageQuality,
@@ -35,6 +40,7 @@ const MAX_CLIENT_REQUEST_ID_LENGTH = 120;
 const MAX_AUTH_NAME_LENGTH = 80;
 const MAX_AUTH_EMAIL_LENGTH = 254;
 const MIN_AUTH_PASSWORD_LENGTH = 8;
+const MAX_ADMIN_NOTE_LENGTH = 240;
 
 export interface ProjectPayload {
   name?: string;
@@ -168,6 +174,140 @@ export function parseCodexPollPayload(input: unknown): ParseResult<{ deviceAuthI
       deviceAuthId,
       userCode
     }
+  };
+}
+
+export function parseAdminUserPatchPayload(input: unknown): ParseResult<AdminUserUpdateRequest> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_request", "用户更新请求必须是 JSON 对象。")
+    };
+  }
+
+  const value: AdminUserUpdateRequest = {};
+  if (Object.hasOwn(input, "role")) {
+    if (typeof input.role !== "string" || !USER_ROLES.includes(input.role as (typeof USER_ROLES)[number])) {
+      return {
+        ok: false,
+        error: errorResponse("invalid_admin_request", "不支持的用户角色。")
+      };
+    }
+    value.role = input.role as AdminUserUpdateRequest["role"];
+  }
+
+  if (Object.hasOwn(input, "status")) {
+    if (typeof input.status !== "string" || !USER_STATUSES.includes(input.status as (typeof USER_STATUSES)[number])) {
+      return {
+        ok: false,
+        error: errorResponse("invalid_admin_request", "不支持的用户状态。")
+      };
+    }
+    value.status = input.status as AdminUserUpdateRequest["status"];
+  }
+
+  if (!value.role && !value.status) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_request", "至少需要提供角色或状态。")
+    };
+  }
+
+  return {
+    ok: true,
+    value
+  };
+}
+
+export function parseAdminCreditAdjustmentPayload(input: unknown): ParseResult<AdminCreditAdjustmentRequest> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_credit_adjustment", "积分调整请求必须是 JSON 对象。")
+    };
+  }
+
+  if (input.mode !== "set" && input.mode !== "delta") {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_credit_adjustment", "积分调整模式必须是 set 或 delta。")
+    };
+  }
+
+  const amount = parseInteger(input.amount);
+  if (amount === undefined || (input.mode === "set" && amount < 0)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_credit_adjustment", "积分数值必须是有效整数。")
+    };
+  }
+
+  const note = typeof input.note === "string" ? input.note.trim().slice(0, MAX_ADMIN_NOTE_LENGTH) : undefined;
+  return {
+    ok: true,
+    value: {
+      mode: input.mode,
+      amount,
+      note: note || undefined
+    }
+  };
+}
+
+export function parseAdminSettingsPayload(input: unknown): ParseResult<AdminSettingsUpdateRequest> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_settings", "系统设置请求必须是 JSON 对象。")
+    };
+  }
+
+  const value: AdminSettingsUpdateRequest = {};
+  for (const key of ["allowRegistration", "requireApproval"] as const) {
+    if (Object.hasOwn(input, key)) {
+      if (typeof input[key] !== "boolean") {
+        return {
+          ok: false,
+          error: errorResponse("invalid_admin_settings", "开关设置必须是布尔值。")
+        };
+      }
+      value[key] = input[key];
+    }
+  }
+
+  for (const key of ["defaultCredits", "generationCreditCost", "checkinCredit"] as const) {
+    if (Object.hasOwn(input, key)) {
+      const amount = parseInteger(input[key]);
+      if (amount === undefined || amount < 0) {
+        return {
+          ok: false,
+          error: errorResponse("invalid_admin_settings", "积分设置必须是非负整数。")
+        };
+      }
+      value[key] = amount;
+    }
+  }
+
+  if (Object.hasOwn(input, "maxImagesPerRequest")) {
+    const maxImagesPerRequest = parseInteger(input.maxImagesPerRequest);
+    if (maxImagesPerRequest === undefined || maxImagesPerRequest < 1 || maxImagesPerRequest > Math.max(...GENERATION_COUNTS)) {
+      return {
+        ok: false,
+        error: errorResponse("invalid_admin_settings", `单次生成数量上限必须在 1-${Math.max(...GENERATION_COUNTS)} 之间。`)
+      };
+    }
+    value.maxImagesPerRequest = maxImagesPerRequest;
+  }
+
+  if (Object.keys(value).length === 0) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_settings", "至少需要提供一个系统设置。")
+    };
+  }
+
+  return {
+    ok: true,
+    value
   };
 }
 
@@ -724,6 +864,17 @@ function parsePositiveIntegerValue(value: unknown): number | undefined {
         : Number.NaN;
 
   return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function parseInteger(value: unknown): number | undefined {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number.parseInt(value.trim(), 10)
+        : Number.NaN;
+
+  return Number.isInteger(parsed) ? parsed : undefined;
 }
 
 function parseOptionalString(value: unknown): string | undefined {

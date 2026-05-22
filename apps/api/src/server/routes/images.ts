@@ -6,6 +6,7 @@ import {
   startReferenceImageGenerationTask,
   startTextToImageGenerationTask
 } from "../../domain/generation/generation-tasks.js";
+import type { GenerationAuditRequestContext } from "../../domain/admin/audit-store.js";
 import { CreditDomainError } from "../../domain/credits/credit-store.js";
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
 import { requireAuth } from "../http/auth.js";
@@ -35,7 +36,7 @@ export function registerImageRoutes(app: Hono): void {
     }
 
     try {
-      return c.json({ record: await startTextToImageGenerationTask(parsed.value, auth.user) });
+      return c.json({ record: await startTextToImageGenerationTask(parsed.value, auth.user, auditContextFromRequest(c.req.raw)) });
     } catch (error) {
       if (error instanceof CreditDomainError) {
         return creditErrorJson(error);
@@ -66,7 +67,7 @@ export function registerImageRoutes(app: Hono): void {
     }
 
     try {
-      return c.json({ record: await startReferenceImageGenerationTask(parsed.value, auth.user) });
+      return c.json({ record: await startReferenceImageGenerationTask(parsed.value, auth.user, auditContextFromRequest(c.req.raw)) });
     } catch (error) {
       if (error instanceof CreditDomainError) {
         return creditErrorJson(error);
@@ -109,6 +110,23 @@ export function registerImageRoutes(app: Hono): void {
 
     return c.json({ record });
   });
+}
+
+function auditContextFromRequest(request: Request): GenerationAuditRequestContext {
+  return {
+    ipAddress: firstForwardedIp(request.headers.get("x-forwarded-for")) ?? headerSummary(request.headers.get("x-real-ip")),
+    userAgent: headerSummary(request.headers.get("user-agent"), 500)
+  };
+}
+
+function firstForwardedIp(value: string | null): string | undefined {
+  const first = value?.split(",")[0]?.trim();
+  return headerSummary(first ?? null, 191);
+}
+
+function headerSummary(value: string | null, maxLength = 191): string | undefined {
+  const sanitized = value?.replace(/[\r\n]/gu, " ").trim();
+  return sanitized ? sanitized.slice(0, maxLength) : undefined;
 }
 
 function creditErrorJson(error: CreditDomainError): Response {

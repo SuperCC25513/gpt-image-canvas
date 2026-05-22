@@ -293,6 +293,26 @@ function schemaStatements(): string[] {
       CONSTRAINT generation_outputs_generation_fk FOREIGN KEY (generation_id) REFERENCES generation_records(id) ON DELETE CASCADE,
       CONSTRAINT generation_outputs_asset_fk FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE SET NULL
     ) ${tableOptions}`,
+    `CREATE TABLE IF NOT EXISTS generation_audits (
+      id VARCHAR(191) PRIMARY KEY NOT NULL,
+      generation_id VARCHAR(191) NOT NULL,
+      user_id VARCHAR(191),
+      user_name TEXT,
+      user_email VARCHAR(254),
+      mode VARCHAR(32) NOT NULL,
+      prompt LONGTEXT NOT NULL,
+      is_public TINYINT NOT NULL DEFAULT 0,
+      status VARCHAR(32) NOT NULL,
+      error_summary TEXT,
+      ip_address VARCHAR(191),
+      user_agent TEXT,
+      outputs_json LONGTEXT NOT NULL,
+      created_at VARCHAR(32) NOT NULL,
+      updated_at VARCHAR(32) NOT NULL,
+      UNIQUE KEY generation_audits_generation_id_idx (generation_id),
+      KEY generation_audits_created_at_idx (created_at),
+      KEY generation_audits_user_id_idx (user_id)
+    ) ${tableOptions}`,
     `CREATE TABLE IF NOT EXISTS generation_reference_assets (
       generation_id VARCHAR(191) NOT NULL,
       asset_id VARCHAR(191) NOT NULL,
@@ -315,6 +335,20 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlColumn(pool, "generation_outputs", "is_public", "TINYINT NOT NULL DEFAULT 0");
   await ensureMySqlColumn(pool, "generation_outputs", "published_at", "VARCHAR(32)");
   await ensureMySqlColumn(pool, "generation_outputs", "public_title", "TEXT");
+  await ensureMySqlColumn(pool, "generation_audits", "generation_id", "VARCHAR(191) NOT NULL");
+  await ensureMySqlColumn(pool, "generation_audits", "user_id", "VARCHAR(191)");
+  await ensureMySqlColumn(pool, "generation_audits", "user_name", "TEXT");
+  await ensureMySqlColumn(pool, "generation_audits", "user_email", "VARCHAR(254)");
+  await ensureMySqlColumn(pool, "generation_audits", "mode", "VARCHAR(32) NOT NULL DEFAULT 'generate'");
+  await ensureMySqlColumn(pool, "generation_audits", "prompt", "LONGTEXT NOT NULL");
+  await ensureMySqlColumn(pool, "generation_audits", "is_public", "TINYINT NOT NULL DEFAULT 0");
+  await ensureMySqlColumn(pool, "generation_audits", "status", "VARCHAR(32) NOT NULL DEFAULT 'running'");
+  await ensureMySqlColumn(pool, "generation_audits", "error_summary", "TEXT");
+  await ensureMySqlColumn(pool, "generation_audits", "ip_address", "VARCHAR(191)");
+  await ensureMySqlColumn(pool, "generation_audits", "user_agent", "TEXT");
+  await ensureMySqlColumn(pool, "generation_audits", "outputs_json", "LONGTEXT NOT NULL");
+  await ensureMySqlColumn(pool, "generation_audits", "created_at", "VARCHAR(32) NOT NULL");
+  await ensureMySqlColumn(pool, "generation_audits", "updated_at", "VARCHAR(32) NOT NULL");
   await ensureMySqlColumn(pool, "app_settings", "generation_credit_cost", `INT NOT NULL DEFAULT ${DEFAULT_GENERATION_CREDIT_COST}`);
   await ensureMySqlColumn(pool, "app_settings", "checkin_credit", `INT NOT NULL DEFAULT ${DEFAULT_CHECKIN_CREDIT}`);
   await ensureMySqlColumn(pool, "app_settings", "max_images_per_request", `INT NOT NULL DEFAULT ${DEFAULT_MAX_IMAGES_PER_REQUEST}`);
@@ -326,6 +360,9 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlIndex(pool, "generation_records", "generation_records_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "generation_outputs", "generation_outputs_user_id_idx", "user_id");
   await ensureMySqlCompositeIndex(pool, "generation_outputs", "generation_outputs_public_idx", ["is_public", "published_at"]);
+  await ensureMySqlUniqueIndex(pool, "generation_audits", "generation_audits_generation_id_idx", "generation_id");
+  await ensureMySqlIndex(pool, "generation_audits", "generation_audits_created_at_idx", "created_at");
+  await ensureMySqlIndex(pool, "generation_audits", "generation_audits_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "credit_transactions", "credit_transactions_user_id_idx", "user_id");
   await ensureMySqlCompositeIndex(pool, "credit_transactions", "credit_transactions_generation_reason_idx", [
     "related_generation_id",
@@ -368,6 +405,14 @@ async function ensureMySqlIndex(pool: Pool, tableName: string, indexName: string
   }
 
   await pool.query(`CREATE INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)} (${quoteIdentifier(columnName)})`);
+}
+
+async function ensureMySqlUniqueIndex(pool: Pool, tableName: string, indexName: string, columnName: string): Promise<void> {
+  if (await mySqlIndexExists(pool, tableName, indexName)) {
+    return;
+  }
+
+  await pool.query(`CREATE UNIQUE INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(tableName)} (${quoteIdentifier(columnName)})`);
 }
 
 async function ensureMySqlCompositeIndex(

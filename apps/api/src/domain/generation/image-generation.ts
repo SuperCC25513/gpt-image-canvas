@@ -16,6 +16,7 @@ import type {
   ReferenceImageInput
 } from "../contracts.js";
 import type { CurrentUser } from "../contracts.js";
+import { markInterruptedGenerationAuditsFailed, updateGenerationAuditFromRecord } from "../admin/audit-store.js";
 import { refundGenerationCreditsForFailures, refundInterruptedGenerationCredits } from "../credits/credit-store.js";
 import {
   ProviderError,
@@ -224,6 +225,7 @@ export async function cancelGenerationRecord(generationId: string): Promise<Gene
   const record = await updateGenerationRecordStatus(generationId, "cancelled", CANCELLED_GENERATION_ERROR);
   if (record) {
     await refundGenerationCreditsForFailures(generationId, record.count, record.count);
+    await updateGenerationAuditSafely(record);
   }
   return record;
 }
@@ -232,6 +234,7 @@ export async function failGenerationRecord(generationId: string, error: string):
   const record = await updateGenerationRecordStatus(generationId, "failed", sanitizeGenerationErrorMessage(error));
   if (record) {
     await refundGenerationCreditsForFailures(generationId, record.count, record.count);
+    await updateGenerationAuditSafely(record);
   }
   return record;
 }
@@ -239,6 +242,7 @@ export async function failGenerationRecord(generationId: string, error: string):
 export async function markInterruptedGenerationRecordsFailed(): Promise<void> {
   await refundInterruptedGenerationCredits();
   await markInterruptedGenerationRecordsFailedInStore(INTERRUPTED_GENERATION_ERROR);
+  await markInterruptedGenerationAuditsFailedSafely(INTERRUPTED_GENERATION_ERROR);
 }
 
 async function ensureReferenceAssetIds(input: EditImageProviderInput, user?: CurrentUser): Promise<string[]> {
@@ -588,7 +592,7 @@ async function completeGenerationRecord(
   await replaceGenerationOutputs(generationId, outputs.map((output) => generationOutputWithVisibility(output, input)));
   await refundGenerationCreditsForFailures(generationId, failureCount, input.count);
 
-  return (await readGenerationRecord(generationId, user)) ?? {
+  const completedRecord = (await readGenerationRecord(generationId, user)) ?? {
     id: generationId,
     mode: input.mode,
     prompt: input.originalPrompt,
@@ -605,6 +609,9 @@ async function completeGenerationRecord(
     createdAt: existing?.createdAt ?? new Date().toISOString(),
     outputs: outputs.map((output) => toGenerationOutput(generationOutputWithVisibility(output, input)))
   };
+  await updateGenerationAuditSafely(completedRecord);
+
+  return completedRecord;
 }
 
 async function saveCompletedGenerationRecord(
@@ -644,7 +651,7 @@ async function saveCompletedGenerationRecord(
   );
   await insertGenerationOutputs(generationId, outputs.map((output) => generationOutputWithVisibility(output, input)));
 
-  return {
+  const completedRecord = {
     id: generationId,
     mode: input.mode,
     prompt: input.originalPrompt,
@@ -661,6 +668,9 @@ async function saveCompletedGenerationRecord(
     createdAt,
     outputs: outputs.map((output) => toGenerationOutput(generationOutputWithVisibility(output, input)))
   };
+  await updateGenerationAuditSafely(completedRecord);
+
+  return completedRecord;
 }
 
 async function updateGenerationRecordStatus(
@@ -680,6 +690,22 @@ async function updateGenerationRecordStatus(
   await updateGenerationRecordStatusInStore(generationId, status, error);
 
   return readGenerationRecord(generationId);
+}
+
+async function updateGenerationAuditSafely(record: GenerationRecord): Promise<void> {
+  try {
+    await updateGenerationAuditFromRecord(record);
+  } catch (error) {
+    console.warn(`Generation audit update failed: ${errorToMessage(error)}`);
+  }
+}
+
+async function markInterruptedGenerationAuditsFailedSafely(errorMessage: string): Promise<void> {
+  try {
+    await markInterruptedGenerationAuditsFailed(errorMessage);
+  } catch (error) {
+    console.warn(`Generation audit interruption update failed: ${errorToMessage(error)}`);
+  }
 }
 
 function isTerminalGenerationStatus(status: GenerationStatus): boolean {

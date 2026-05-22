@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { GenerationRecord } from "../contracts.js";
 import type { CurrentUser } from "../contracts.js";
+import { recordGenerationAuditStart, type GenerationAuditRequestContext } from "../admin/audit-store.js";
 import { refundGenerationCreditsForFailures, reserveGenerationCredits } from "../credits/credit-store.js";
 import { createConfiguredImageProvider } from "../providers/image-provider-selection.js";
 import type { EditImageProviderInput, ImageProviderInput } from "../../infrastructure/providers/image-provider.js";
@@ -26,7 +27,11 @@ export async function initializeGenerationTaskManager(): Promise<void> {
   await markInterruptedGenerationRecordsFailed();
 }
 
-export async function startTextToImageGenerationTask(input: ImageProviderInput, user: CurrentUser): Promise<GenerationRecord> {
+export async function startTextToImageGenerationTask(
+  input: ImageProviderInput,
+  user: CurrentUser,
+  auditContext?: GenerationAuditRequestContext
+): Promise<GenerationRecord> {
   const generationId = input.clientRequestId || randomUUID();
   const inputWithRequestId = {
     ...input,
@@ -43,8 +48,10 @@ export async function startTextToImageGenerationTask(input: ImageProviderInput, 
     throw error;
   }
   if (isTerminalGenerationStatus(record.status) || activeGenerationTasks.has(record.id)) {
+    await recordGenerationAuditStartSafely(record, user, inputWithRequestId.isPublic === true, auditContext);
     return record;
   }
+  await recordGenerationAuditStartSafely(record, user, inputWithRequestId.isPublic === true, auditContext);
 
   startBackgroundGenerationTask(record.id, async (signal) => {
     const provider = await createConfiguredImageProvider(signal);
@@ -54,7 +61,11 @@ export async function startTextToImageGenerationTask(input: ImageProviderInput, 
   return record;
 }
 
-export async function startReferenceImageGenerationTask(input: EditImageProviderInput, user: CurrentUser): Promise<GenerationRecord> {
+export async function startReferenceImageGenerationTask(
+  input: EditImageProviderInput,
+  user: CurrentUser,
+  auditContext?: GenerationAuditRequestContext
+): Promise<GenerationRecord> {
   const generationId = input.clientRequestId || randomUUID();
   const inputWithRequestId = {
     ...input,
@@ -71,8 +82,10 @@ export async function startReferenceImageGenerationTask(input: EditImageProvider
     throw error;
   }
   if (isTerminalGenerationStatus(running.record.status) || activeGenerationTasks.has(running.record.id)) {
+    await recordGenerationAuditStartSafely(running.record, user, inputWithRequestId.isPublic === true, auditContext);
     return running.record;
   }
+  await recordGenerationAuditStartSafely(running.record, user, inputWithRequestId.isPublic === true, auditContext);
 
   startBackgroundGenerationTask(running.record.id, async (signal) => {
     const provider = await createConfiguredImageProvider(signal);
@@ -116,6 +129,24 @@ function startBackgroundGenerationTask(generationId: string, run: (signal: Abort
       }
     }
   })();
+}
+
+async function recordGenerationAuditStartSafely(
+  record: GenerationRecord,
+  user: CurrentUser,
+  isPublic: boolean,
+  context: GenerationAuditRequestContext | undefined
+): Promise<void> {
+  try {
+    await recordGenerationAuditStart({
+      record,
+      user,
+      isPublic,
+      context
+    });
+  } catch (error) {
+    console.warn(`Generation audit start failed: ${errorToMessage(error)}`);
+  }
 }
 
 function isTerminalGenerationStatus(status: GenerationRecord["status"]): boolean {

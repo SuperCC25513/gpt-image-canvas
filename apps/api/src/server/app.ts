@@ -9,6 +9,7 @@ import { registerAgentConfigRoutes } from "./routes/agent-config.js";
 import { registerAgentConversationRoutes } from "./routes/agent-conversations.js";
 import { registerAgentSkillRoutes } from "./routes/agent-skills.js";
 import { registerAgentWebSocketRoutes } from "./routes/agent-ws.js";
+import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerCoreRoutes } from "./routes/core.js";
@@ -34,6 +35,7 @@ export async function createApp(): Promise<Hono> {
 
   registerCoreRoutes(app);
   registerAuthRoutes(app);
+  registerAdminRoutes(app);
   registerProviderConfigRoutes(app);
   registerAgentConfigRoutes(app);
   registerAgentConversationRoutes(app);

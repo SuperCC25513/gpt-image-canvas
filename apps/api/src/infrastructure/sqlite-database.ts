@@ -260,6 +260,24 @@ CREATE TABLE IF NOT EXISTS generation_outputs (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS generation_audits (
+  id TEXT PRIMARY KEY NOT NULL,
+  generation_id TEXT NOT NULL,
+  user_id TEXT,
+  user_name TEXT,
+  user_email TEXT,
+  mode TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  is_public INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  error_summary TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  outputs_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS generation_reference_assets (
   generation_id TEXT NOT NULL REFERENCES generation_records(id) ON DELETE CASCADE,
   asset_id TEXT NOT NULL REFERENCES assets(id),
@@ -274,6 +292,9 @@ CREATE INDEX IF NOT EXISTS generation_outputs_generation_id_idx ON generation_ou
 CREATE INDEX IF NOT EXISTS generation_outputs_user_id_idx ON generation_outputs(user_id);
 CREATE INDEX IF NOT EXISTS generation_outputs_asset_id_idx ON generation_outputs(asset_id);
 CREATE INDEX IF NOT EXISTS generation_outputs_public_idx ON generation_outputs(is_public, published_at);
+CREATE UNIQUE INDEX IF NOT EXISTS generation_audits_generation_id_idx ON generation_audits(generation_id);
+CREATE INDEX IF NOT EXISTS generation_audits_created_at_idx ON generation_audits(created_at);
+CREATE INDEX IF NOT EXISTS generation_audits_user_id_idx ON generation_audits(user_id);
 CREATE INDEX IF NOT EXISTS generation_reference_assets_generation_id_idx ON generation_reference_assets(generation_id);
 CREATE INDEX IF NOT EXISTS generation_reference_assets_asset_id_idx ON generation_reference_assets(asset_id);
 CREATE INDEX IF NOT EXISTS projects_user_id_idx ON projects(user_id);
@@ -302,6 +323,23 @@ CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites
   ensureColumn(sqlite, "generation_outputs", "published_at", "published_at TEXT");
   ensureColumn(sqlite, "generation_outputs", "public_title", "public_title TEXT");
   sqlite.exec("CREATE INDEX IF NOT EXISTS generation_outputs_public_idx ON generation_outputs(is_public, published_at)");
+  ensureColumn(sqlite, "generation_audits", "generation_id", "generation_id TEXT NOT NULL DEFAULT ''");
+  ensureColumn(sqlite, "generation_audits", "user_id", "user_id TEXT");
+  ensureColumn(sqlite, "generation_audits", "user_name", "user_name TEXT");
+  ensureColumn(sqlite, "generation_audits", "user_email", "user_email TEXT");
+  ensureColumn(sqlite, "generation_audits", "mode", "mode TEXT NOT NULL DEFAULT 'generate'");
+  ensureColumn(sqlite, "generation_audits", "prompt", "prompt TEXT NOT NULL DEFAULT ''");
+  ensureColumn(sqlite, "generation_audits", "is_public", "is_public INTEGER NOT NULL DEFAULT 0");
+  ensureColumn(sqlite, "generation_audits", "status", "status TEXT NOT NULL DEFAULT 'running'");
+  ensureColumn(sqlite, "generation_audits", "error_summary", "error_summary TEXT");
+  ensureColumn(sqlite, "generation_audits", "ip_address", "ip_address TEXT");
+  ensureColumn(sqlite, "generation_audits", "user_agent", "user_agent TEXT");
+  ensureColumn(sqlite, "generation_audits", "outputs_json", "outputs_json TEXT NOT NULL DEFAULT '[]'");
+  ensureColumn(sqlite, "generation_audits", "created_at", "created_at TEXT NOT NULL DEFAULT ''");
+  ensureColumn(sqlite, "generation_audits", "updated_at", "updated_at TEXT NOT NULL DEFAULT ''");
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS generation_audits_generation_id_idx ON generation_audits(generation_id)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS generation_audits_created_at_idx ON generation_audits(created_at)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS generation_audits_user_id_idx ON generation_audits(user_id)");
   ensureColumn(sqlite, "app_settings", "generation_credit_cost", `generation_credit_cost INTEGER NOT NULL DEFAULT ${DEFAULT_GENERATION_CREDIT_COST}`);
   ensureColumn(sqlite, "app_settings", "checkin_credit", `checkin_credit INTEGER NOT NULL DEFAULT ${DEFAULT_CHECKIN_CREDIT}`);
   ensureColumn(sqlite, "app_settings", "max_images_per_request", `max_images_per_request INTEGER NOT NULL DEFAULT ${DEFAULT_MAX_IMAGES_PER_REQUEST}`);
