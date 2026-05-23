@@ -16,7 +16,11 @@ import {
 } from "../contracts.js";
 import { getAgentConversationContext, saveAgentConversationContext } from "./conversation-store.js";
 import { getUsableAgentLlmConfig } from "./config.js";
-import { executeGenerationPlan, type StoredAgentGenerationPlan } from "./executor.js";
+import {
+  executeGenerationPlan,
+  isExecutableGenerationPlan,
+  type StoredAgentGenerationPlan
+} from "./executor.js";
 import { createGenerationPlan, type AgentPlannerConversationContext } from "./planner.js";
 import { resolvePlanningSkillLoadoutForRequest } from "./skill-store.js";
 import { getStoredAssetFile, saveReferenceImageInput } from "../generation/image-generation.js";
@@ -1170,12 +1174,23 @@ function resolveStoredPlanForExecution(
   message: Extract<AgentClientMessage, { type: "execute_plan" | "retry_failed" }>
 ): StoredAgentGenerationPlan | undefined {
   const storedPlan = session.plans.get(message.planId);
-  return storedPlan
-    ? {
-        ...storedPlan,
-        selectedReferences: storedPlan.selectedReferences
-      }
-    : undefined;
+  if (storedPlan) {
+    return {
+      ...storedPlan,
+      selectedReferences: storedPlan.selectedReferences
+    };
+  }
+
+  if (!message.plan || message.plan.id !== message.planId || !isExecutableGenerationPlan(message.plan)) {
+    return undefined;
+  }
+
+  const restoredPlan: StoredAgentGenerationPlan = {
+    plan: message.plan,
+    selectedReferences: Array.isArray(message.selectedReferences) ? message.selectedReferences : []
+  };
+  session.plans.set(message.planId, restoredPlan);
+  return restoredPlan;
 }
 
 function cancelActiveRun(
