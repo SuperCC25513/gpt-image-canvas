@@ -30,14 +30,21 @@ import {
 } from "@gpt-image-canvas/shared";
 import { localizedApiErrorMessage, useI18n, type Locale, type Translate } from "../../shared/i18n";
 
-interface ProviderConfigDialogProps {
+type ProviderConfigPanelVariant = "dialog" | "page";
+
+export interface ProviderConfigPanelProps {
   isAuthLoading: boolean;
   isCodexStarting: boolean;
-  onClose: () => void;
+  onClose?: () => void;
   onLogoutCodex: () => Promise<void>;
   onRefreshAgentConfig: () => Promise<AgentLlmConfigView | null>;
   onRefreshAuthStatus: () => Promise<AuthStatusResponse | null>;
   onStartCodexLogin: () => Promise<void>;
+  variant?: ProviderConfigPanelVariant;
+}
+
+interface ProviderConfigDialogProps extends Omit<ProviderConfigPanelProps, "onClose" | "variant"> {
+  onClose: () => void;
 }
 
 interface LocalProviderFormState {
@@ -78,15 +85,16 @@ const emptyAgentLlmForm: AgentLlmFormState = {
   supportsVision: false
 };
 
-export function ProviderConfigDialog({
+export function ProviderConfigPanel({
   isAuthLoading,
   isCodexStarting,
   onClose,
   onLogoutCodex,
   onRefreshAgentConfig,
   onRefreshAuthStatus,
-  onStartCodexLogin
-}: ProviderConfigDialogProps) {
+  onStartCodexLogin,
+  variant = "page"
+}: ProviderConfigPanelProps) {
   const { formatDateTime: formatLocaleDateTime, locale, t } = useI18n();
   const [config, setConfig] = useState<ProviderConfigResponse | null>(null);
   const [agentConfig, setAgentConfig] = useState<AgentLlmConfigView | null>(null);
@@ -199,6 +207,10 @@ export function ProviderConfigDialog({
   }, [loadAgentConfig, loadProviderConfig]);
 
   useEffect(() => {
+    if (variant !== "dialog" || !onClose) {
+      return undefined;
+    }
+
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") {
         return;
@@ -212,7 +224,7 @@ export function ProviderConfigDialog({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onClose]);
+  }, [onClose, variant]);
 
   function applyProviderConfig(nextConfig: ProviderConfigResponse): void {
     setConfig(nextConfig);
@@ -457,15 +469,9 @@ export function ProviderConfigDialog({
     void onStartCodexLogin();
   }
 
-  const dialog = (
-    <div className="provider-config-backdrop app-modal-backdrop" data-testid="provider-config-dialog" role="presentation" onClick={onClose}>
-      <div
-        aria-labelledby="provider-config-title"
-        aria-modal="true"
-        className="provider-config-dialog app-modal-surface"
-        role="dialog"
-        onClick={(event) => event.stopPropagation()}
-      >
+  const panel = (
+    <div className={`provider-config-panel provider-config-panel--${variant}`} data-testid={variant === "page" ? "provider-config-panel" : undefined}>
+      {variant === "dialog" && onClose ? (
         <header className="provider-config-dialog__header">
           <div className="provider-config-dialog__title-group">
             <p>{t("navSettings")}</p>
@@ -475,6 +481,7 @@ export function ProviderConfigDialog({
             <X className="size-4" aria-hidden="true" />
           </button>
         </header>
+      ) : null}
 
         <div className="provider-config-dialog__body">
           {isLoading ? (
@@ -862,6 +869,23 @@ export function ProviderConfigDialog({
             {t("providerSave")}
           </button>
         </footer>
+      </div>
+  );
+
+  return panel;
+}
+
+export function ProviderConfigDialog(props: ProviderConfigDialogProps) {
+  const dialog = (
+    <div className="provider-config-backdrop app-modal-backdrop" data-testid="provider-config-dialog" role="presentation" onClick={props.onClose}>
+      <div
+        aria-labelledby="provider-config-title"
+        aria-modal="true"
+        className="provider-config-dialog app-modal-surface"
+        role="dialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <ProviderConfigPanel {...props} variant="dialog" />
       </div>
     </div>
   );

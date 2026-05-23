@@ -72,8 +72,8 @@ import {
   summarizeGenerationPlanOutputs
 } from "../agent/AgentPlanNodeShape";
 import { AgentSkillDialog } from "../agent/AgentSkillDialog";
+import type { AdminTab } from "../admin/AdminPage";
 import { HomePage } from "../home/HomePage";
-import { ProviderConfigDialog } from "../provider-config/ProviderConfigDialog";
 import {
   CUSTOM_SIZE_PRESET_ID,
   DEFAULT_GENERATION_CREDIT_COST,
@@ -331,6 +331,13 @@ function preloadAdminPage(): void {
 
 type PersistedSnapshot = TLEditorSnapshot | TLStoreSnapshot;
 type AppRoute = "home" | "canvas" | "pool" | "gallery" | "publicGallery" | "admin";
+const DEFAULT_ADMIN_TAB: AdminTab = "users";
+const ADMIN_TAB_PATHS = {
+  users: "/admin/users",
+  providers: "/admin/providers",
+  audits: "/admin/audits",
+  settings: "/admin/settings"
+} satisfies Record<AdminTab, string>;
 type SaveStatus = "loading" | "saved" | "pending" | "saving" | "error";
 type GenerationMode = "text" | "reference";
 type PanelTab = "manual" | "agent";
@@ -604,6 +611,30 @@ function imageSizeValidationMessage(reason: ImageSizeValidationReason | undefine
   }
 }
 
+function normalizePathname(pathname: string): string {
+  return pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
+
+function isAdminPath(pathname: string): boolean {
+  const normalizedPathname = normalizePathname(pathname);
+  return normalizedPathname === "/admin" || normalizedPathname.startsWith("/admin/");
+}
+
+function isKnownAdminPath(pathname: string): boolean {
+  const normalizedPathname = normalizePathname(pathname);
+  return normalizedPathname === "/admin" || (Object.values(ADMIN_TAB_PATHS) as string[]).includes(normalizedPathname);
+}
+
+function pathForAdminTab(tab: AdminTab): string {
+  return ADMIN_TAB_PATHS[tab];
+}
+
+function adminTabFromLocation(): AdminTab {
+  const pathname = normalizePathname(window.location.pathname);
+  const tabEntry = (Object.entries(ADMIN_TAB_PATHS) as Array<[AdminTab, string]>).find(([, path]) => path === pathname);
+  return tabEntry?.[0] ?? DEFAULT_ADMIN_TAB;
+}
+
 function routeFromLocation(): AppRoute {
   if (window.location.pathname === "/canvas") {
     return "canvas";
@@ -617,7 +648,7 @@ function routeFromLocation(): AppRoute {
     return "publicGallery";
   }
 
-  if (window.location.pathname === "/admin") {
+  if (isAdminPath(window.location.pathname)) {
     return "admin";
   }
 
@@ -638,7 +669,7 @@ function pathForRoute(route: AppRoute): string {
   }
 
   if (route === "admin") {
-    return "/admin";
+    return pathForAdminTab(DEFAULT_ADMIN_TAB);
   }
 
   return route === "gallery" ? "/gallery" : "/";
@@ -2570,7 +2601,6 @@ function BrandName() {
 }
 
 function TopNavigation({
-  onOpenProviderConfig,
   route,
   onNavigate,
   onPreloadGallery,
@@ -2578,7 +2608,6 @@ function TopNavigation({
   onPreloadAdmin,
   isAdmin
 }: {
-  onOpenProviderConfig: () => void;
   route: AppRoute;
   onNavigate: (route: AppRoute) => void;
   onPreloadGallery: () => void;
@@ -2615,6 +2644,22 @@ function TopNavigation({
               {t("navHome")}
             </a>
             <a
+              aria-current={route === "publicGallery" ? "page" : undefined}
+              className="top-navigation__link"
+              data-active={route === "publicGallery"}
+              data-testid="nav-public-gallery"
+              href="/public-gallery"
+              onFocus={onPreloadGallery}
+              onMouseEnter={onPreloadGallery}
+              onClick={(event) => {
+                event.preventDefault();
+                onNavigate("publicGallery");
+              }}
+            >
+              <Globe2 className="size-4" aria-hidden="true" />
+              {t("navPublicGallery")}
+            </a>
+            <a
               aria-current={route === "canvas" ? "page" : undefined}
               className="top-navigation__link"
               data-active={route === "canvas"}
@@ -2645,22 +2690,6 @@ function TopNavigation({
               {t("navPool")}
             </a>
             <a
-              aria-current={route === "publicGallery" ? "page" : undefined}
-              className="top-navigation__link"
-              data-active={route === "publicGallery"}
-              data-testid="nav-public-gallery"
-              href="/public-gallery"
-              onFocus={onPreloadGallery}
-              onMouseEnter={onPreloadGallery}
-              onClick={(event) => {
-                event.preventDefault();
-                onNavigate("publicGallery");
-              }}
-            >
-              <Globe2 className="size-4" aria-hidden="true" />
-              {t("navPublicGallery")}
-            </a>
-            <a
               aria-current={route === "gallery" ? "page" : undefined}
               className="top-navigation__link"
               data-active={route === "gallery"}
@@ -2682,7 +2711,7 @@ function TopNavigation({
                 className="top-navigation__link"
                 data-active={route === "admin"}
                 data-testid="nav-admin"
-                href="/admin"
+                href={pathForAdminTab(DEFAULT_ADMIN_TAB)}
                 onFocus={onPreloadAdmin}
                 onMouseEnter={onPreloadAdmin}
                 onClick={(event) => {
@@ -2696,17 +2725,6 @@ function TopNavigation({
             ) : null}
           </nav>
           <LanguageSwitcher />
-          <button
-            aria-label={t("navOpenProviderConfig")}
-            className="top-navigation__settings"
-            data-testid="global-provider-settings"
-            title={t("navProviderConfig")}
-            type="button"
-            onClick={onOpenProviderConfig}
-          >
-            <Settings className="size-4" aria-hidden="true" />
-            <span>{t("navSettings")}</span>
-          </button>
         </div>
       </div>
     </header>
@@ -3086,6 +3104,7 @@ export function App() {
     setUserPreferences: syncTldrawUserPreferences
   });
   const [route, setRoute] = useState<AppRoute>(() => routeFromLocation());
+  const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(() => adminTabFromLocation());
   const shouldAutoOpenCanvasRef = useRef(route !== "gallery");
   const [panelTab, setPanelTab] = useState<PanelTab>("manual");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("text");
@@ -3118,7 +3137,6 @@ export function App() {
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const [isMobileDrawer, setIsMobileDrawer] = useState(false);
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
-  const [isProviderConfigDialogOpen, setIsProviderConfigDialogOpen] = useState(false);
   const [isAgentSkillDialogOpen, setIsAgentSkillDialogOpen] = useState(false);
   const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -3248,6 +3266,7 @@ export function App() {
   const isReferenceReady = isReferenceMode && referenceSelection.status === "ready";
   const referenceValidationMessage = isReferenceMode && !isReferenceReady ? referenceSelection.hint : "";
   const accountUser = accountStatus?.authenticated ? accountStatus.user : undefined;
+  const isCurrentUserAdmin = accountUser?.role === "admin";
   const creditSettings = accountStatus?.settings;
   const generationCreditCost = creditSettings?.generationCreditCost ?? DEFAULT_GENERATION_CREDIT_COST;
   const maxImagesPerRequest = creditSettings?.maxImagesPerRequest ?? DEFAULT_MAX_IMAGES_PER_REQUEST;
@@ -3294,6 +3313,26 @@ export function App() {
       }
     }
     setRoute(nextRoute);
+    if (nextRoute === "admin") {
+      setActiveAdminTab(DEFAULT_ADMIN_TAB);
+    }
+  }, []);
+
+  const navigateToAdminTab = useCallback((nextTab: AdminTab, options: { replace?: boolean } = {}): void => {
+    if (!options.replace) {
+      shouldAutoOpenCanvasRef.current = false;
+    }
+
+    const nextPath = pathForAdminTab(nextTab);
+    if (window.location.pathname !== nextPath) {
+      if (options.replace) {
+        window.history.replaceState(null, "", nextPath);
+      } else {
+        window.history.pushState(null, "", nextPath);
+      }
+    }
+    setRoute("admin");
+    setActiveAdminTab(nextTab);
   }, []);
 
   const visibleHistory = useMemo(
@@ -3485,9 +3524,23 @@ export function App() {
 
   useEffect(() => {
     const updateRoute = (): void => {
-      setRoute(routeFromLocation());
+      const nextRoute = routeFromLocation();
+      setRoute(nextRoute);
+
+      if (nextRoute !== "admin") {
+        return;
+      }
+
+      const nextAdminTab = adminTabFromLocation();
+      setActiveAdminTab(nextAdminTab);
+
+      const currentPathname = normalizePathname(window.location.pathname);
+      if (currentPathname === "/admin" || !isKnownAdminPath(currentPathname)) {
+        window.history.replaceState(null, "", pathForAdminTab(nextAdminTab));
+      }
     };
 
+    updateRoute();
     window.addEventListener("popstate", updateRoute);
     return () => {
       window.removeEventListener("popstate", updateRoute);
@@ -3682,10 +3735,6 @@ export function App() {
       canvasShellRef.current?.focus({ preventScroll: true });
     });
   }, []);
-
-  function closeProviderConfigDialog(): void {
-    setIsProviderConfigDialogOpen(false);
-  }
 
   async function startCodexLogin(): Promise<void> {
     window.clearTimeout(codexPollTimerRef.current);
@@ -5987,10 +6036,9 @@ export function App() {
   return (
     <div className="app-root" data-canvas-theme={route === "canvas" && isCanvasDarkMode ? "dark" : "light"}>
       <TopNavigation
-        isAdmin={accountUser?.role === "admin"}
+        isAdmin={isCurrentUserAdmin}
         route={route}
         onNavigate={navigateToRoute}
-        onOpenProviderConfig={() => setIsProviderConfigDialogOpen(true)}
         onPreloadAdmin={preloadAdminPage}
         onPreloadGallery={preloadGalleryPage}
         onPreloadPool={preloadPromptPoolPage}
@@ -6000,10 +6048,7 @@ export function App() {
           authError={authError}
           authStatus={authStatus}
           isAuthLoading={isAuthLoading}
-          isCodexStarting={codexLoginStatus === "starting"}
-          onOpenProviderConfig={() => setIsProviderConfigDialogOpen(true)}
           onOpenGallery={() => navigateToRoute("gallery")}
-          onStartCodexLogin={startCodexLogin}
         />
       ) : null}
       {route === "admin" ? (
@@ -6017,7 +6062,19 @@ export function App() {
             </main>
           }
         >
-          <LazyAdminPage currentUser={accountUser} />
+          <LazyAdminPage
+            activeTab={activeAdminTab}
+            currentUser={accountUser}
+            onSelectTab={navigateToAdminTab}
+            providerConfig={{
+              isAuthLoading,
+              isCodexStarting: codexLoginStatus === "starting",
+              onLogoutCodex: logoutCodexSession,
+              onRefreshAgentConfig: loadAgentConfig,
+              onRefreshAuthStatus: loadAuthStatus,
+              onStartCodexLogin: startCodexLogin
+            }}
+          />
         </Suspense>
       ) : null}
       <main className="app-shell app-view relative flex min-h-0 overflow-hidden bg-neutral-950 text-neutral-900" data-active-route={route} hidden={route !== "canvas"}>
@@ -6730,8 +6787,14 @@ export function App() {
             <button
               className="agent-model-pill"
               data-configured={isAgentConfigured}
+              disabled={!isCurrentUserAdmin}
+              title={isCurrentUserAdmin ? t("agentOpenModelConfig") : t("agentConfigAskAdmin")}
               type="button"
-              onClick={() => setIsProviderConfigDialogOpen(true)}
+              onClick={() => {
+                if (isCurrentUserAdmin) {
+                  navigateToAdminTab("providers");
+                }
+              }}
             >
               <span className="agent-model-pill__icon" data-state={isAgentConfigured ? "ready" : "missing"}>
                 {isAgentConfigLoading ? (
@@ -6750,7 +6813,14 @@ export function App() {
                       ? t(agentConfig?.supportsVision ? "agentVisionMode" : "agentTextOnlyMode")
                       : t("agentConfigMissingTitle")}
                 </strong>
-                <span>{agentConfigError || (isAgentConfigured ? t("agentConfigReadyCopy", { model: agentConfig?.model ?? "" }) : t("agentOpenModelConfig"))}</span>
+                <span>
+                  {agentConfigError ||
+                    (isAgentConfigured
+                      ? t("agentConfigReadyCopy", { model: agentConfig?.model ?? "" })
+                      : isCurrentUserAdmin
+                        ? t("agentOpenModelConfig")
+                        : t("agentConfigAskAdmin"))}
+                </span>
               </span>
             </button>
             <div className="agent-chat-head__actions">
@@ -7336,17 +7406,6 @@ export function App() {
         document.body
       ) : null}
       </main>
-      {isProviderConfigDialogOpen ? (
-        <ProviderConfigDialog
-          isAuthLoading={isAuthLoading}
-          isCodexStarting={codexLoginStatus === "starting"}
-          onClose={closeProviderConfigDialog}
-          onLogoutCodex={logoutCodexSession}
-          onRefreshAgentConfig={loadAgentConfig}
-          onRefreshAuthStatus={loadAuthStatus}
-          onStartCodexLogin={startCodexLogin}
-        />
-      ) : null}
       {route === "pool" ? (
         <Suspense
           fallback={

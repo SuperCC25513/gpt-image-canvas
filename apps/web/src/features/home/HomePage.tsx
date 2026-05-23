@@ -5,8 +5,7 @@ import {
   KeyRound,
   Loader2,
   ShieldCheck,
-  Sparkles,
-  Terminal
+  Sparkles
 } from "lucide-react";
 import type { AuthStatusResponse } from "@gpt-image-canvas/shared";
 import productPreviewUrl from "../../../../../docs/assets/app-preview.png";
@@ -16,20 +15,14 @@ interface HomePageProps {
   authError: string;
   authStatus: AuthStatusResponse | null;
   isAuthLoading: boolean;
-  isCodexStarting: boolean;
-  onOpenProviderConfig: () => void;
   onOpenGallery: () => void;
-  onStartCodexLogin: () => void;
 }
 
 export function HomePage({
   authError,
   authStatus,
   isAuthLoading,
-  isCodexStarting,
-  onOpenProviderConfig,
-  onOpenGallery,
-  onStartCodexLogin
+  onOpenGallery
 }: HomePageProps) {
   const { t } = useI18n();
   const providerLabel =
@@ -106,23 +99,6 @@ export function HomePage({
                 )}
               </span>
               <span className="home-command-state__copy">{isAuthLoading ? t("homeAuthChecking") : providerLabel}</span>
-            </div>
-            <div className="home-command-actions">
-              <span aria-hidden="true">/</span>
-              <button
-                className="home-command-action home-command-action--primary"
-                data-testid="home-codex-login"
-                disabled={isAuthLoading || isCodexStarting}
-                type="button"
-                onClick={onStartCodexLogin}
-              >
-                {isCodexStarting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <KeyRound className="size-4" aria-hidden="true" />}
-                {t("homeStartCodex")}
-              </button>
-              <button className="home-command-action" data-testid="home-api-setup" type="button" onClick={onOpenProviderConfig}>
-                <Terminal className="size-4" aria-hidden="true" />
-                {t("homeApiSetup")}
-              </button>
             </div>
           </div>
 

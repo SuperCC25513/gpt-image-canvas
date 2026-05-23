@@ -137,9 +137,7 @@
   animation: home-rise-in 560ms var(--motion-ease-standard) 220ms both;
 }
 
-.home-command-state,
-.home-command-actions,
-.home-command-action {
+.home-command-state {
   display: inline-flex;
   min-width: 0;
   align-items: center;
@@ -182,71 +180,6 @@
 .home-command-state__copy {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.home-command-actions {
-  flex: 0 1 auto;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.65rem;
-  color: rgb(21 17 13 / 0.42);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 900;
-}
-
-.home-command-action {
-  position: relative;
-  min-height: 2.2rem;
-  justify-content: center;
-  gap: 0.36rem;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  letter-spacing: 0;
-  padding: 0 0.06rem;
-  text-transform: uppercase;
-  transition:
-    color 160ms ease,
-    transform 160ms ease;
-}
-
-.home-command-action::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: 0.28rem;
-  left: 0;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.22;
-  transform: scaleX(0.64);
-  transform-origin: left;
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease;
-}
-
-.home-command-action:hover {
-  color: var(--accent-dark);
-  transform: translateY(-1px);
-}
-
-.home-command-action:hover::after {
-  opacity: 0.82;
-  transform: scaleX(1);
-}
-
-.home-command-action--primary {
-  color: var(--accent-dark);
-}
-
-.home-command-action:disabled {
-  cursor: not-allowed;
-  color: #8e8071;
-  opacity: 0.62;
-  transform: none;
 }
 
 .home-auth-error {
@@ -882,13 +815,8 @@
     margin-top: 1.25rem;
   }
 
-  .home-command-state,
-  .home-command-actions {
+  .home-command-state {
     flex-basis: 100%;
-  }
-
-  .home-command-actions {
-    justify-content: space-between;
   }
 
   .home-proof-line {

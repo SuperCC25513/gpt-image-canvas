@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Coins,
+  KeyRound,
   Loader2,
   RefreshCw,
   Save,
@@ -25,8 +26,16 @@ import type {
   UserStatus
 } from "@gpt-image-canvas/shared";
 import { localizedApiErrorMessage, useI18n, type Locale, type Translate } from "../../shared/i18n";
+import { ProviderConfigPanel, type ProviderConfigPanelProps } from "../provider-config/ProviderConfigDialog";
 
-type AdminTab = "users" | "settings" | "audits";
+export type AdminTab = "users" | "providers" | "settings" | "audits";
+
+interface AdminPageProps {
+  activeTab: AdminTab;
+  currentUser?: CurrentUser;
+  onSelectTab: (tab: AdminTab) => void;
+  providerConfig: Omit<ProviderConfigPanelProps, "onClose" | "variant">;
+}
 
 interface CreditFormState {
   mode: AdminCreditAdjustmentMode;
@@ -43,9 +52,8 @@ const initialCreditForm: CreditFormState = {
   note: ""
 };
 
-export function AdminPage({ currentUser }: { currentUser?: CurrentUser }) {
+export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig }: AdminPageProps) {
   const { formatDateTime, locale, t } = useI18n();
-  const [activeTab, setActiveTab] = useState<AdminTab>("users");
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [userSearch, setUserSearch] = useState("");
   const [settings, setSettings] = useState<AdminSettings | null>(null);
@@ -242,9 +250,10 @@ export function AdminPage({ currentUser }: { currentUser?: CurrentUser }) {
         </header>
 
         <div className="admin-tabs" role="tablist" aria-label={t("adminTabsAria")}>
-          <TabButton active={activeTab === "users"} label={t("adminUsersTab")} tab="users" onSelect={setActiveTab} />
-          <TabButton active={activeTab === "settings"} label={t("adminSettingsTab")} tab="settings" onSelect={setActiveTab} />
-          <TabButton active={activeTab === "audits"} label={t("adminAuditsTab")} tab="audits" onSelect={setActiveTab} />
+          <TabButton active={activeTab === "users"} label={t("adminUsersTab")} tab="users" onSelect={onSelectTab} />
+          <TabButton active={activeTab === "providers"} label={t("adminProvidersTab")} tab="providers" onSelect={onSelectTab} />
+          <TabButton active={activeTab === "audits"} label={t("adminAuditsTab")} tab="audits" onSelect={onSelectTab} />
+          <TabButton active={activeTab === "settings"} label={t("adminSettingsTab")} tab="settings" onSelect={onSelectTab} />
         </div>
 
         {error ? <AdminAlert tone="error" message={error} /> : null}
@@ -375,6 +384,17 @@ export function AdminPage({ currentUser }: { currentUser?: CurrentUser }) {
             ) : (
               <EmptyState label={t("adminEmptyUsers")} />
             )}
+          </section>
+        ) : null}
+
+        {activeTab === "providers" ? (
+          <section className="admin-panel" aria-labelledby="admin-providers-title">
+            <PanelHeading
+              icon={<KeyRound className="size-5" aria-hidden="true" />}
+              title={t("adminProvidersTitle")}
+              description={t("adminProvidersSubtitle")}
+            />
+            <ProviderConfigPanel {...providerConfig} variant="page" />
           </section>
         ) : null}
 

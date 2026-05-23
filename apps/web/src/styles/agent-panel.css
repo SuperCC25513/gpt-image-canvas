@@ -698,6 +698,16 @@
   box-shadow: 0 8px 18px rgb(51 36 24 / 0.08);
 }
 
+.agent-model-pill:disabled {
+  cursor: default;
+}
+
+.agent-model-pill:disabled:hover {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
 .agent-param-chip[aria-expanded="true"] {
   border-color: #bfe7df;
   background: #e5fbf5;
