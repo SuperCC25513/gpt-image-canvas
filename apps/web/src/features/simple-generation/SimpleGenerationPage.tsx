@@ -21,7 +21,6 @@ import {
   CUSTOM_SIZE_PRESET_ID,
   DEFAULT_GENERATION_CREDIT_COST,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
-  GENERATION_COUNTS,
   IMAGE_QUALITIES,
   MAX_IMAGE_DIMENSION,
   MIN_IMAGE_DIMENSION,
@@ -49,6 +48,7 @@ import {
   readApiErrorMessage
 } from "../../shared/api/generation";
 import { useI18n } from "../../shared/i18n";
+import { generationCountsWithinLimit } from "../../shared/generationCounts";
 import { sizeValidationMessage } from "../../shared/imageValidation";
 
 const SIMPLE_DEFAULT_SIZE_PRESET_ID = "square-1k";
@@ -127,6 +127,8 @@ export function SimpleGenerationPage({
   const creditSettings = accountStatus?.settings;
   const generationCreditCost = creditSettings?.generationCreditCost ?? DEFAULT_GENERATION_CREDIT_COST;
   const maxImagesPerRequest = creditSettings?.maxImagesPerRequest ?? DEFAULT_MAX_IMAGES_PER_REQUEST;
+  const generationCountOptions = useMemo(() => generationCountsWithinLimit(maxImagesPerRequest), [maxImagesPerRequest]);
+  const fallbackGenerationCount = generationCountOptions[generationCountOptions.length - 1] ?? 1;
   const estimatedCreditCost = Math.max(0, count * generationCreditCost);
   const trimmedPrompt = prompt.trim();
   const dimensionValidationMessage = sizeValidationMessage(width, height, t, locale);
@@ -151,6 +153,12 @@ export function SimpleGenerationPage({
   const canGenerate = !validationMessage && !isGenerating;
   const visibleResults = useMemo(() => combineRecentResults(sessionItems, galleryItems), [galleryItems, sessionItems]);
   const latestAssets = latestRecord ? generatedAssetsForRecord(latestRecord) : [];
+
+  useEffect(() => {
+    if (!generationCountOptions.includes(count)) {
+      setCount(fallbackGenerationCount);
+    }
+  }, [count, fallbackGenerationCount, generationCountOptions]);
 
   async function loadGalleryItems(signal?: AbortSignal): Promise<void> {
     setIsGalleryLoading(true);
@@ -379,20 +387,31 @@ export function SimpleGenerationPage({
               void submitGeneration();
             }}
           >
-            <label className="simple-generation-field simple-generation-field--prompt">
-              <span className="control-label">{t("generationPromptLabel")}</span>
+            <section className="simple-prompt-panel" aria-labelledby="simple-prompt-title">
+              <div className="simple-prompt-panel__header">
+                <div>
+                  <label className="control-label" id="simple-prompt-title" htmlFor="simple-generation-prompt-input">
+                    {t("generationPromptLabel")}
+                  </label>
+                  <p id="simple-prompt-hint">{t("simpleGenerationPromptHint")}</p>
+                </div>
+                <span className="simple-prompt-panel__count">{t("simpleGenerationPromptCount", { count: prompt.length })}</span>
+              </div>
               <textarea
+                id="simple-generation-prompt-input"
                 aria-invalid={Boolean(!trimmedPrompt && generationWarning)}
+                aria-describedby="simple-prompt-hint"
                 className="prompt-textarea simple-generation-prompt"
                 placeholder={t("simpleGenerationPromptPlaceholder")}
                 value={prompt}
                 data-testid="simple-generation-prompt"
                 onChange={(event) => setPrompt(event.target.value)}
               />
-            </label>
+            </section>
 
             {!trimmedPrompt ? (
               <div className="simple-prompt-starters" data-testid="simple-prompt-starters">
+                <span>{t("simpleGenerationPromptExamples")}</span>
                 {promptStarters.map((starter) => (
                   <button
                     className="prompt-chip"
@@ -466,7 +485,7 @@ export function SimpleGenerationPage({
               <div className="simple-generation-field">
                 <span className="control-label">{t("generationCountLabel")}</span>
                 <div className="simple-count-grid" data-testid="simple-count-grid">
-                  {GENERATION_COUNTS.map((item) => (
+                  {generationCountOptions.map((item) => (
                     <button
                       className={item === count ? "segmented-control is-active" : "segmented-control"}
                       key={item}
