@@ -382,3 +382,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 后端生成业务逻辑修复
+
+**Date**: 2026-05-23
+**Task**: 后端生成业务逻辑修复
+**Branch**: `main`
+
+### Summary
+
+统一 Agent 生成业务入口，补齐积分预扣/退款、生成记录、审计流水和 partial 状态处理；提交完成事务化并补充验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bf2933c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
