@@ -15,6 +15,7 @@ interface HomePageProps {
   authError: string;
   authStatus: AuthStatusResponse | null;
   isAuthLoading: boolean;
+  onOpenGenerate: () => void;
   onOpenGallery: () => void;
 }
 
@@ -22,6 +23,7 @@ export function HomePage({
   authError,
   authStatus,
   isAuthLoading,
+  onOpenGenerate,
   onOpenGallery
 }: HomePageProps) {
   const { t } = useI18n();
@@ -100,6 +102,11 @@ export function HomePage({
               </span>
               <span className="home-command-state__copy">{isAuthLoading ? t("homeAuthChecking") : providerLabel}</span>
             </div>
+            <button className="home-gallery-link home-gallery-link--primary" data-testid="home-generate-link" type="button" onClick={onOpenGenerate}>
+              <Sparkles className="size-4" aria-hidden="true" />
+              {t("homeGenerate")}
+              <ArrowRight className="size-4" aria-hidden="true" />
+            </button>
           </div>
 
           {authError ? (

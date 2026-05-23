@@ -538,6 +538,10 @@
   justify-self: start;
 }
 
+.home-gallery-link--primary {
+  color: var(--accent-dark);
+}
+
 .home-section-heading {
   display: grid;
   max-width: 48rem;

@@ -13,6 +13,7 @@
 - `features/gallery/`：Gallery 页面、导出、删除、复用。
 - `features/pool/`：Prompt Pool 和收藏操作。
 - `features/home/`：首页/工作台入口。
+- `features/simple-generation/`：低门槛文生图入口。它复用现有生成 API 和 Gallery 资产链路，结果先停留在简单页，用户主动继续时再交给画布。
 - `features/provider-config/`：图片 provider 和 Agent LLM 配置弹窗。
 - `features/prompt-favorites/`：收藏 API helper。
 
@@ -20,6 +21,8 @@
 
 - `shared/i18n/index.tsx`：locale、翻译函数、API error code 映射、格式化。
 - `shared/api/assets.ts`：资产 URL helper。
+- `shared/api/generation.ts`：生成记录、Gallery 响应的 runtime guard，以及跨页面 API 错误读取 helper。
+- `shared/imageValidation.ts`：Web 层共享的图片尺寸校验文案映射。
 - 更多跨 feature helper 优先放 `shared/`，但不要提前抽象；三处以上重复或跨 feature 使用再提。
 
 ## 样式组织

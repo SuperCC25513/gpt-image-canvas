@@ -23,8 +23,6 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  IMAGE_QUALITIES,
-  OUTPUT_FORMATS,
   SIZE_PRESETS,
   STYLE_PRESETS,
   type GalleryVisibilityResponse,
@@ -35,8 +33,9 @@ import {
   type PublicGalleryResponse,
   type UpdateGalleryVisibilityRequest
 } from "@gpt-image-canvas/shared";
-import { localizedApiErrorMessage, useI18n, type Locale, type Translate } from "../../shared/i18n";
+import { useI18n, type Translate } from "../../shared/i18n";
 import { assetDownloadUrl, assetPreviewUrl } from "../../shared/api/assets";
+import { isGalleryResponse, readApiErrorMessage } from "../../shared/api/generation";
 
 interface GalleryPageProps {
   variant?: "private" | "public";
@@ -93,7 +92,7 @@ export function GalleryPage({ variant = "private", onDeleted, onReuse }: Gallery
           signal: controller.signal
         });
         if (!response.ok) {
-          throw new Error(await readGalleryError(response, locale, t));
+          throw new Error(await readApiErrorMessage(response, locale, t("galleryRequestFailed", { status: response.status })));
         }
 
         const body = (await response.json()) as unknown;
@@ -284,7 +283,7 @@ export function GalleryPage({ variant = "private", onDeleted, onReuse }: Gallery
       });
 
       if (!response.ok) {
-        throw new Error(await readGalleryError(response, locale, t));
+        throw new Error(await readApiErrorMessage(response, locale, t("galleryRequestFailed", { status: response.status })));
       }
 
       const archive = await response.blob();
@@ -357,7 +356,7 @@ export function GalleryPage({ variant = "private", onDeleted, onReuse }: Gallery
         body: JSON.stringify(request)
       });
       if (!response.ok) {
-        throw new Error(await readGalleryError(response, locale, t));
+        throw new Error(await readApiErrorMessage(response, locale, t("galleryRequestFailed", { status: response.status })));
       }
 
       const body = (await response.json()) as GalleryVisibilityResponse;
@@ -380,7 +379,7 @@ export function GalleryPage({ variant = "private", onDeleted, onReuse }: Gallery
         method: "DELETE"
       });
       if (!response.ok) {
-        throw new Error(await readGalleryError(response, locale, t));
+        throw new Error(await readApiErrorMessage(response, locale, t("galleryRequestFailed", { status: response.status })));
       }
 
       setItems((current) => current.filter((galleryItem) => galleryItem.outputId !== item.outputId));
@@ -1196,86 +1195,8 @@ function publicAuthorName(item: GalleryImageItem): string | undefined {
   return "authorName" in item ? (item as PublicGalleryItem).authorName : undefined;
 }
 
-function isGalleryResponse(value: unknown): value is GalleryResponse | PublicGalleryResponse {
-  if (!isRecord(value) || !Array.isArray(value.items)) {
-    return false;
-  }
-
-  return value.items.every(isGalleryImageItem);
-}
-
-function isGalleryImageItem(value: unknown): value is GalleryImageItem {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  return (
-    typeof value.outputId === "string" &&
-    typeof value.generationId === "string" &&
-    isImageMode(value.mode) &&
-    typeof value.prompt === "string" &&
-    typeof value.effectivePrompt === "string" &&
-    typeof value.presetId === "string" &&
-    isImageSize(value.size) &&
-    typeof value.quality === "string" &&
-    (IMAGE_QUALITIES as readonly string[]).includes(value.quality) &&
-    typeof value.outputFormat === "string" &&
-    (OUTPUT_FORMATS as readonly string[]).includes(value.outputFormat) &&
-    typeof value.createdAt === "string" &&
-    isGeneratedAsset(value.asset) &&
-    typeof value.isPublic === "boolean" &&
-    (value.publishedAt === undefined || typeof value.publishedAt === "string") &&
-    (value.publicTitle === undefined || typeof value.publicTitle === "string") &&
-    (value.authorName === undefined || typeof value.authorName === "string") &&
-    (value.providerLabel === undefined || typeof value.providerLabel === "string")
-  );
-}
-
-function isGeneratedAsset(value: unknown): value is GalleryImageItem["asset"] {
-  return (
-    isRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.url === "string" &&
-    typeof value.fileName === "string" &&
-    typeof value.mimeType === "string" &&
-    isFiniteNumber(value.width) &&
-    isFiniteNumber(value.height)
-  );
-}
-
-function isImageSize(value: unknown): value is GalleryImageItem["size"] {
-  return isRecord(value) && isFiniteNumber(value.width) && isFiniteNumber(value.height);
-}
-
-function isImageMode(value: unknown): value is GalleryImageItem["mode"] {
-  return value === "generate" || value === "edit";
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function normalizeSearchText(value: string): string {
   return value.replace(/\s+/gu, " ").trim().toLocaleLowerCase();
-}
-
-async function readGalleryError(response: Response, locale: Locale, t: Translate): Promise<string> {
-  try {
-    const body = (await response.json()) as { error?: { code?: string; message?: string } };
-    return localizedApiErrorMessage({
-      code: body.error?.code,
-      fallbackMessage: body.error?.message,
-      fallbackText: t("galleryRequestFailed", { status: response.status }),
-      locale,
-      status: response.status
-    });
-  } catch {
-    return t("galleryRequestFailed", { status: response.status });
-  }
 }
 
 function contentDispositionFileName(value: string | null): string | undefined {

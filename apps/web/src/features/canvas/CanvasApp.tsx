@@ -74,25 +74,21 @@ import {
 import { AgentSkillDialog } from "../agent/AgentSkillDialog";
 import type { AdminTab } from "../admin/AdminPage";
 import { HomePage } from "../home/HomePage";
+import { SimpleGenerationPage } from "../simple-generation/SimpleGenerationPage";
 import {
   CUSTOM_SIZE_PRESET_ID,
   DEFAULT_GENERATION_CREDIT_COST,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
   GENERATION_COUNTS,
-  IMAGE_SIZE_MULTIPLE,
   IMAGE_QUALITIES,
   MAX_AGENT_SELECTED_REFERENCES,
-  MAX_IMAGE_ASPECT_RATIO,
   MAX_IMAGE_DIMENSION,
   MAX_REFERENCE_IMAGES,
-  MAX_TOTAL_PIXELS,
   MIN_IMAGE_DIMENSION,
-  MIN_TOTAL_PIXELS,
   OUTPUT_FORMATS,
   SIZE_PRESETS,
   STYLE_PRESETS,
   resolutionTierForSize,
-  validateImageSize,
   type AgentConversation,
   type AgentConversationListResponse,
   type AgentConversationMessage,
@@ -121,7 +117,6 @@ import {
   type GeneratedAsset,
   type ImageQuality,
   type ImageSize,
-  type ImageSizeValidationReason,
   type OutputFormat,
   type ProjectState,
   type PromptFavoriteGroup,
@@ -134,6 +129,7 @@ import {
 } from "@gpt-image-canvas/shared";
 import { LOCALES, localizedApiErrorMessage, useI18n, type Locale, type Translate } from "../../shared/i18n";
 import { assetDownloadUrl, assetPreviewUrl } from "../../shared/api/assets";
+import { sizeValidationMessage } from "../../shared/imageValidation";
 import {
   deletePromptFavorite,
   fetchPromptFavorites,
@@ -330,7 +326,7 @@ function preloadAdminPage(): void {
 }
 
 type PersistedSnapshot = TLEditorSnapshot | TLStoreSnapshot;
-type AppRoute = "home" | "canvas" | "pool" | "gallery" | "publicGallery" | "admin";
+type AppRoute = "home" | "generate" | "canvas" | "pool" | "gallery" | "publicGallery" | "admin";
 const DEFAULT_ADMIN_TAB: AdminTab = "users";
 const ADMIN_TAB_PATHS = {
   users: "/admin/users",
@@ -466,6 +462,12 @@ interface GenerationSubmitInput {
   isPublic: boolean;
 }
 
+interface PendingCanvasImport {
+  assets: GeneratedAsset[];
+  prompt: string;
+  requestId: string;
+}
+
 interface GenerationReferenceInput {
   referenceImages: ReferenceImageInput[];
   referenceAssetIds?: string[];
@@ -572,43 +574,8 @@ function normalizeDimension(value: string): number {
   return Number.parseInt(value, 10);
 }
 
-function sizeValidationMessage(width: number, height: number, t: Translate, locale: Locale): string {
-  const result = validateImageSize({ width, height });
-
-  if (result.ok) {
-    return "";
-  }
-
-  return imageSizeValidationMessage(result.reason, t, locale);
-}
-
 function generationValidationMessage(promptValue: string, widthValue: number, heightValue: number, t: Translate, locale: Locale): string {
   return promptValue.trim() ? sizeValidationMessage(widthValue, heightValue, t, locale) : t("promptRequired");
-}
-
-function imageSizeValidationMessage(reason: ImageSizeValidationReason | undefined, t: Translate, locale: Locale): string {
-  const numberFormat = new Intl.NumberFormat(locale);
-
-  switch (reason) {
-    case "non_integer":
-      return t("imageSizeNonInteger");
-    case "too_small":
-      return t("imageSizeTooSmall", { min: MIN_IMAGE_DIMENSION });
-    case "too_large":
-      return t("imageSizeTooLarge", { max: MAX_IMAGE_DIMENSION });
-    case "not_multiple":
-      return t("imageSizeNotMultiple", { multiple: IMAGE_SIZE_MULTIPLE });
-    case "aspect_ratio":
-      return t("imageSizeAspectRatio", { maxRatio: MAX_IMAGE_ASPECT_RATIO });
-    case "total_pixels_too_small":
-      return t("imageSizeTotalTooSmall", { minPixels: numberFormat.format(MIN_TOTAL_PIXELS) });
-    case "total_pixels_too_large":
-      return t("imageSizeTotalTooLarge", { maxPixels: numberFormat.format(MAX_TOTAL_PIXELS) });
-    case "unsupported_preset":
-      return t("imageSizeUnsupportedPreset");
-    default:
-      return t("imageSizeUnsupportedPreset");
-  }
 }
 
 function normalizePathname(pathname: string): string {
@@ -636,6 +603,10 @@ function adminTabFromLocation(): AdminTab {
 }
 
 function routeFromLocation(): AppRoute {
+  if (window.location.pathname === "/generate") {
+    return "generate";
+  }
+
   if (window.location.pathname === "/canvas") {
     return "canvas";
   }
@@ -656,6 +627,10 @@ function routeFromLocation(): AppRoute {
 }
 
 function pathForRoute(route: AppRoute): string {
+  if (route === "generate") {
+    return "/generate";
+  }
+
   if (route === "canvas") {
     return "/canvas";
   }
@@ -2644,6 +2619,20 @@ function TopNavigation({
               {t("navHome")}
             </a>
             <a
+              aria-current={route === "generate" ? "page" : undefined}
+              className="top-navigation__link"
+              data-active={route === "generate"}
+              data-testid="nav-generate"
+              href="/generate"
+              onClick={(event) => {
+                event.preventDefault();
+                onNavigate("generate");
+              }}
+            >
+              <Sparkles className="size-4" aria-hidden="true" />
+              {t("navGenerate")}
+            </a>
+            <a
               aria-current={route === "publicGallery" ? "page" : undefined}
               className="top-navigation__link"
               data-active={route === "publicGallery"}
@@ -3106,6 +3095,7 @@ export function App() {
   const [route, setRoute] = useState<AppRoute>(() => routeFromLocation());
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(() => adminTabFromLocation());
   const shouldAutoOpenCanvasRef = useRef(route !== "gallery");
+  const [pendingCanvasImport, setPendingCanvasImport] = useState<PendingCanvasImport | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>("manual");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("text");
   const [prompt, setPrompt] = useState("");
@@ -3334,6 +3324,23 @@ export function App() {
     setRoute("admin");
     setActiveAdminTab(nextTab);
   }, []);
+
+  const continueGeneratedAssetsOnCanvas = useCallback(
+    (input: { assets: GeneratedAsset[]; prompt: string }): void => {
+      const assets = input.assets.filter((asset) => asset.id);
+      if (assets.length === 0) {
+        return;
+      }
+
+      setPendingCanvasImport({
+        assets,
+        prompt: input.prompt,
+        requestId: crypto.randomUUID()
+      });
+      navigateToRoute("canvas");
+    },
+    [navigateToRoute]
+  );
 
   const visibleHistory = useMemo(
     () => (isHistoryExpanded ? generationHistory : generationHistory.slice(0, HISTORY_COLLAPSED_LIMIT)),
@@ -3710,9 +3717,6 @@ export function App() {
       return;
     }
 
-    if (route === "canvas" && !hasGenerationProvider) {
-      navigateToRoute("home", { replace: true });
-    }
   }, [authStatus, hasGenerationProvider, isAuthLoading, navigateToRoute, route]);
 
   useEffect(() => {
@@ -4159,6 +4163,83 @@ export function App() {
 
     recoverActiveGenerationPolling();
   }, [generationHistory, isProjectLoaded]);
+
+  useEffect(() => {
+    if (route !== "canvas" || !pendingCanvasImport || !isProjectLoaded) {
+      return;
+    }
+
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+
+    const existingShapeIds: TLShapeId[] = [];
+    const imageShapes: Array<Partial<TLImageShape> & { id: TLShapeId; type: "image" }> = [];
+    const assets: TLAsset[] = [];
+    const displaySizes = pendingCanvasImport.assets.map((asset) =>
+      displaySize({
+        width: asset.width,
+        height: asset.height
+      })
+    );
+    const columns = pendingCanvasImport.assets.length >= 5 ? 4 : pendingCanvasImport.assets.length === 1 ? 1 : 2;
+    const layout: AgentOutputPlacementLayout = {
+      columns,
+      rows: Math.max(1, Math.ceil(pendingCanvasImport.assets.length / columns)),
+      cellWidth: Math.max(...displaySizes.map((size) => size.width), 1),
+      cellHeight: Math.max(...displaySizes.map((size) => size.height), 1)
+    };
+
+    pendingCanvasImport.assets.forEach((asset, index) => {
+      const existingShapeId = findCanvasImageShapeByAssetId(editor, asset.id);
+      if (existingShapeId) {
+        existingShapeIds.push(existingShapeId);
+        return;
+      }
+
+      const assetRecordId = createTldrawAssetId(asset.id);
+      if (!editor.getAsset(assetRecordId)) {
+        assets.push(createImageAsset(asset));
+      }
+
+      const placement = agentOutputPlacementForSize(
+        editor,
+        {
+          width: asset.width,
+          height: asset.height
+        },
+        index,
+        layout
+      );
+      imageShapes.push(createImageShape(asset, placement, pendingCanvasImport.prompt));
+    });
+
+    editor.run(() => {
+      if (assets.length > 0) {
+        editor.createAssets(assets);
+      }
+      if (imageShapes.length > 0) {
+        editor.createShapes(imageShapes);
+        editor.bringToFront(imageShapes.map((shape) => shape.id));
+      }
+    });
+
+    const selectedShapeIds = [...existingShapeIds, ...imageShapes.map((shape) => shape.id)];
+    if (selectedShapeIds.length > 0) {
+      editor.select(...selectedShapeIds);
+      editor.zoomToSelection({ animation: { duration: 220 } });
+    }
+
+    if (imageShapes.length > 0) {
+      void saveProjectSnapshot(editor);
+      setGenerationMessage(t("generationImageInserted", { count: imageShapes.length }));
+    } else if (existingShapeIds.length > 0) {
+      setGenerationMessage(t("generationLocateSucceeded"));
+    }
+
+    setPendingCanvasImport((current) => (current?.requestId === pendingCanvasImport.requestId ? null : current));
+  }, [isProjectLoaded, pendingCanvasImport, route, saveProjectSnapshot, t]);
 
   async function executeGeneration(
     input: GenerationSubmitInput,
@@ -6048,7 +6129,22 @@ export function App() {
           authError={authError}
           authStatus={authStatus}
           isAuthLoading={isAuthLoading}
+          onOpenGenerate={() => navigateToRoute("generate")}
           onOpenGallery={() => navigateToRoute("gallery")}
+        />
+      ) : null}
+      {route === "generate" ? (
+        <SimpleGenerationPage
+          accountError={accountError}
+          accountStatus={accountStatus}
+          authError={authError}
+          authStatus={authStatus}
+          isAccountLoading={isAccountLoading}
+          isAuthLoading={isAuthLoading}
+          onContinueOnCanvas={continueGeneratedAssetsOnCanvas}
+          onOpenCanvas={() => navigateToRoute("canvas")}
+          onOpenGallery={() => navigateToRoute("gallery")}
+          onRefreshAccountStatus={() => void loadAccountStatus()}
         />
       ) : null}
       {route === "admin" ? (
