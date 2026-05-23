@@ -424,6 +424,9 @@ export function ProviderConfigPanel({
       }
 
       const savedConfig = (await response.json()) as ProviderConfigResponse;
+      applyProviderConfig(savedConfig);
+      await onRefreshAuthStatus();
+
       let savedAgentConfig: AgentLlmConfigView | null = null;
       if (agentBody) {
         const agentResponse = await fetch("/api/agent-config", {
@@ -439,11 +442,10 @@ export function ProviderConfigPanel({
         savedAgentConfig = (await agentResponse.json()) as AgentLlmConfigView;
       }
 
-      applyProviderConfig(savedConfig);
       if (savedAgentConfig) {
         applyAgentConfig(savedAgentConfig);
       }
-      await Promise.all([onRefreshAuthStatus(), onRefreshAgentConfig()]);
+      await onRefreshAgentConfig();
       setMessage({
         tone: "success",
         text: savedConfig.activeSource
