@@ -499,6 +499,23 @@ export function SimpleGenerationPage({
               </div>
             </div>
 
+            <label className="publish-toggle" data-enabled={publishGeneration}>
+              <input
+                checked={publishGeneration}
+                className="publish-toggle__input"
+                data-testid="simple-generation-public-toggle"
+                type="checkbox"
+                onChange={(event) => setPublishGeneration(event.target.checked)}
+              />
+              <span className="publish-toggle__icon" aria-hidden="true">
+                {publishGeneration ? <Globe2 className="size-4" /> : <LockKeyhole className="size-4" />}
+              </span>
+              <span className="publish-toggle__copy">
+                <span>{t("generationPublishLabel")}</span>
+                <small>{t("generationPublishHint")}</small>
+              </span>
+            </label>
+
             <details className="simple-advanced">
               <summary>
                 <span>
@@ -572,21 +589,6 @@ export function SimpleGenerationPage({
                     </select>
                   </label>
                 </div>
-                <label className="publish-toggle" data-enabled={publishGeneration}>
-                  <input
-                    checked={publishGeneration}
-                    className="publish-toggle__input"
-                    type="checkbox"
-                    onChange={(event) => setPublishGeneration(event.target.checked)}
-                  />
-                  <span className="publish-toggle__icon" aria-hidden="true">
-                    {publishGeneration ? <Globe2 className="size-4" /> : <LockKeyhole className="size-4" />}
-                  </span>
-                  <span className="publish-toggle__copy">
-                    <span>{t("generationPublishLabel")}</span>
-                    <small>{t("generationPublishHint")}</small>
-                  </span>
-                </label>
               </div>
             </details>
 
