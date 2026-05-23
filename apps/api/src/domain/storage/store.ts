@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray, SQL } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, desc, eq, inArray, sql, SQL } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
-import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import type {
   GeneratedAsset,
   GalleryImageItem,
@@ -19,7 +20,15 @@ import type {
 } from "../contracts.js";
 import type { CurrentUser } from "../contracts.js";
 import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
-import { assets, generationOutputs, generationRecords, generationReferenceAssets, projects, users } from "../../infrastructure/schema.js";
+import {
+  assets,
+  creditTransactions,
+  generationOutputs,
+  generationRecords,
+  generationReferenceAssets,
+  projects,
+  users
+} from "../../infrastructure/schema.js";
 
 const DEFAULT_PROJECT_ID = "default";
 const DEFAULT_PROJECT_NAME = "Default Project";
@@ -93,6 +102,24 @@ export interface StoredGenerationOutputInput {
   error?: string;
   isPublic?: boolean;
   publicTitle?: string;
+}
+
+export interface GenerationRecordOwner {
+  id: string;
+  userId: string | null;
+  status: string;
+  count: number;
+}
+
+export interface CompleteGenerationRecordInput {
+  generationId: string;
+  status: GenerationStatus;
+  error: string | null;
+  referenceAssetId: string | null;
+  outputs: StoredGenerationOutputInput[];
+  failedCount: number;
+  fallbackCount: number;
+  expectedUserId?: string;
 }
 
 function canAccessOwner(user: CurrentUser, ownerId: string | null | undefined): boolean {
@@ -754,18 +781,105 @@ export async function replaceGenerationOutputs(generationId: string, outputs: St
   await insertGenerationOutputs(generationId, outputs);
 }
 
+export async function completeGenerationRecordWithOutputs(input: CompleteGenerationRecordInput): Promise<void> {
+  if (databaseDriver === "sqlite") {
+    db.transaction((tx) => {
+      const generation = tx
+        .select()
+        .from(generationRecords)
+        .where(eq(generationRecords.id, input.generationId))
+        .get();
+      if (!generation) {
+        throw new Error("Generation record not found.");
+      }
+      assertExpectedGenerationUser(generation.userId, input.expectedUserId);
+
+      const createdAt = nowIso();
+      tx.delete(generationOutputs).where(eq(generationOutputs.generationId, input.generationId)).run();
+      for (const output of input.outputs) {
+        insertSqliteGenerationOutput(tx, input.generationId, generation.userId, output, createdAt);
+      }
+      refundGenerationCreditsInSqliteTransaction(tx, generation, input);
+      tx.update(generationRecords)
+        .set({
+          status: input.status,
+          error: input.error,
+          referenceAssetId: input.referenceAssetId
+        })
+        .where(eq(generationRecords.id, input.generationId))
+        .run();
+    });
+    return;
+  }
+
+  const connection = await getMySqlPool().getConnection();
+  try {
+    await connection.beginTransaction();
+    const [generationRows] = await connection.execute<Array<RowDataPacket & { id: string; userId: string | null; count: number }>>(
+      `SELECT id,
+              user_id AS userId,
+              count
+       FROM generation_records
+       WHERE id = ?
+       LIMIT 1
+       FOR UPDATE`,
+      [input.generationId]
+    );
+    const generation = generationRows[0];
+    if (!generation) {
+      throw new Error("Generation record not found.");
+    }
+    assertExpectedGenerationUser(generation.userId, input.expectedUserId);
+
+    const createdAt = nowIso();
+    await connection.execute("DELETE FROM generation_outputs WHERE generation_id = ?", [input.generationId]);
+    for (const output of input.outputs) {
+      await insertMySqlGenerationOutput(connection, input.generationId, generation.userId, output, createdAt);
+    }
+    await refundGenerationCreditsInMySqlTransaction(connection, generation, input);
+    await connection.execute(
+      `UPDATE generation_records
+       SET status = ?, error = ?, reference_asset_id = ?
+       WHERE id = ?`,
+      [input.status, input.error, input.referenceAssetId, input.generationId]
+    );
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function insertGenerationOutputs(generationId: string, outputs: StoredGenerationOutputInput[]): Promise<void> {
   const createdAt = nowIso();
   const generation = await findGenerationRecordRow(generationId);
   const userId = generation?.userId ?? null;
 
   for (const output of outputs) {
-    const isPublic = output.isPublic === true;
-    const publishedAt = isPublic ? createdAt : null;
-    const publicTitle = isPublic ? normalizePublicTitle(output.publicTitle) : null;
+    if (databaseDriver === "sqlite") {
+      insertSqliteGenerationOutput(db, generationId, userId, output, createdAt);
+    } else {
+      await insertMySqlGenerationOutput(getMySqlPool(), generationId, userId, output, createdAt);
+    }
+  }
+}
 
-    if (output.asset) {
-      await insertAsset({
+function insertSqliteGenerationOutput(
+  tx: Pick<typeof db, "insert">,
+  generationId: string,
+  userId: string | null,
+  output: StoredGenerationOutputInput,
+  createdAt: string
+): void {
+  const isPublic = output.isPublic === true;
+  const publishedAt = isPublic ? createdAt : null;
+  const publicTitle = isPublic ? normalizePublicTitle(output.publicTitle) : null;
+
+  if (output.asset) {
+    tx.insert(assets)
+      .values({
         id: output.asset.id,
         userId,
         fileName: output.asset.fileName,
@@ -774,44 +888,206 @@ export async function insertGenerationOutputs(generationId: string, outputs: Sto
         width: output.asset.width,
         height: output.asset.height,
         createdAt
-      });
-    }
-
-    if (databaseDriver === "sqlite") {
-      db.insert(generationOutputs)
-        .values({
-          id: output.id,
-          userId,
-          generationId,
-          status: output.status,
-          assetId: output.asset?.id ?? null,
-          error: output.error ?? null,
-          isPublic: isPublic ? 1 : 0,
-          publishedAt,
-          publicTitle,
-          createdAt
-        })
-        .run();
-    } else {
-      await getMySqlPool().execute(
-        `INSERT INTO generation_outputs
-          (id, user_id, generation_id, status, asset_id, error, is_public, published_at, public_title, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          output.id,
-          userId,
-          generationId,
-          output.status,
-          output.asset?.id ?? null,
-          output.error ?? null,
-          isPublic ? 1 : 0,
-          publishedAt,
-          publicTitle,
-          createdAt
-        ]
-      );
-    }
+      })
+      .run();
   }
+
+  tx.insert(generationOutputs)
+    .values({
+      id: output.id,
+      userId,
+      generationId,
+      status: output.status,
+      assetId: output.asset?.id ?? null,
+      error: output.error ?? null,
+      isPublic: isPublic ? 1 : 0,
+      publishedAt,
+      publicTitle,
+      createdAt
+    })
+    .run();
+}
+
+async function insertMySqlGenerationOutput(
+  connection: Pick<PoolConnection, "execute">,
+  generationId: string,
+  userId: string | null,
+  output: StoredGenerationOutputInput,
+  createdAt: string
+): Promise<void> {
+  const isPublic = output.isPublic === true;
+  const publishedAt = isPublic ? createdAt : null;
+  const publicTitle = isPublic ? normalizePublicTitle(output.publicTitle) : null;
+
+  if (output.asset) {
+    await connection.execute(
+      `INSERT INTO assets (id, user_id, file_name, relative_path, mime_type, width, height, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        output.asset.id,
+        userId,
+        output.asset.fileName,
+        `assets/${output.asset.fileName}`,
+        output.asset.mimeType,
+        output.asset.width,
+        output.asset.height,
+        createdAt
+      ]
+    );
+  }
+
+  await connection.execute(
+    `INSERT INTO generation_outputs
+      (id, user_id, generation_id, status, asset_id, error, is_public, published_at, public_title, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      output.id,
+      userId,
+      generationId,
+      output.status,
+      output.asset?.id ?? null,
+      output.error ?? null,
+      isPublic ? 1 : 0,
+      publishedAt,
+      publicTitle,
+      createdAt
+    ]
+  );
+}
+
+function refundGenerationCreditsInSqliteTransaction(
+  tx: Pick<typeof db, "insert" | "select" | "update">,
+  generation: Pick<GenerationRecordRow, "id" | "count">,
+  input: CompleteGenerationRecordInput
+): void {
+  const failedCount = Math.max(0, Math.trunc(input.failedCount));
+  if (failedCount <= 0) {
+    return;
+  }
+
+  const charge = tx
+    .select()
+    .from(creditTransactions)
+    .where(
+      and(
+        eq(creditTransactions.relatedGenerationId, input.generationId),
+        eq(creditTransactions.reason, "generation_charge")
+      )
+    )
+    .get();
+  if (!charge || charge.delta >= 0 || (input.expectedUserId && charge.userId !== input.expectedUserId)) {
+    return;
+  }
+
+  const existingRefund = tx
+    .select({ id: creditTransactions.id })
+    .from(creditTransactions)
+    .where(
+      and(
+        eq(creditTransactions.relatedGenerationId, input.generationId),
+        eq(creditTransactions.reason, "generation_refund")
+      )
+    )
+    .get();
+  if (existingRefund) {
+    return;
+  }
+
+  const refundAmount = refundAmountForCharge(Math.abs(charge.delta), failedCount, generation.count ?? input.fallbackCount);
+  if (refundAmount <= 0) {
+    return;
+  }
+
+  const now = nowIso();
+  tx.update(users)
+    .set({
+      credits: sql`${users.credits} + ${refundAmount}`,
+      updatedAt: now
+    })
+    .where(eq(users.id, charge.userId))
+    .run();
+  tx.insert(creditTransactions)
+    .values({
+      id: `credit-${randomUUID()}`,
+      userId: charge.userId,
+      delta: refundAmount,
+      reason: "generation_refund",
+      relatedGenerationId: input.generationId,
+      relatedOutputId: null,
+      relatedCheckinDate: null,
+      adminNote: null,
+      createdAt: now
+    })
+    .run();
+}
+
+async function refundGenerationCreditsInMySqlTransaction(
+  connection: Pick<PoolConnection, "execute">,
+  generation: { id: string; count: number },
+  input: CompleteGenerationRecordInput
+): Promise<void> {
+  const failedCount = Math.max(0, Math.trunc(input.failedCount));
+  if (failedCount <= 0) {
+    return;
+  }
+
+  const [chargeRows] = await connection.execute<
+    Array<RowDataPacket & { userId: string; delta: number }>
+  >(
+    `SELECT user_id AS userId,
+            delta
+     FROM credit_transactions
+     WHERE related_generation_id = ? AND reason = ?
+     LIMIT 1
+     FOR UPDATE`,
+    [input.generationId, "generation_charge"]
+  );
+  const charge = chargeRows[0];
+  if (!charge || charge.delta >= 0 || (input.expectedUserId && charge.userId !== input.expectedUserId)) {
+    return;
+  }
+
+  const [refundRows] = await connection.execute<Array<RowDataPacket & { id: string }>>(
+    `SELECT id
+     FROM credit_transactions
+     WHERE related_generation_id = ? AND reason = ?
+     LIMIT 1
+     FOR UPDATE`,
+    [input.generationId, "generation_refund"]
+  );
+  if (refundRows[0]) {
+    return;
+  }
+
+  const refundAmount = refundAmountForCharge(Math.abs(charge.delta), failedCount, generation.count ?? input.fallbackCount);
+  if (refundAmount <= 0) {
+    return;
+  }
+
+  const now = nowIso();
+  await connection.execute("UPDATE users SET credits = credits + ?, updated_at = ? WHERE id = ?", [
+    refundAmount,
+    now,
+    charge.userId
+  ]);
+  await connection.execute(
+    `INSERT INTO credit_transactions
+      (id, user_id, delta, reason, related_generation_id, related_output_id, related_checkin_date, admin_note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [`credit-${randomUUID()}`, charge.userId, refundAmount, "generation_refund", input.generationId, null, null, null, now]
+  );
+}
+
+function assertExpectedGenerationUser(actualUserId: string | null, expectedUserId: string | undefined): void {
+  if (expectedUserId && actualUserId !== expectedUserId) {
+    throw new Error("Generation id already belongs to another user.");
+  }
+}
+
+function refundAmountForCharge(totalCharge: number, failedCount: number, count: number | undefined): number {
+  const chargedCount = Math.max(1, Math.trunc(count ?? failedCount));
+  const unitCost = Math.trunc(totalCharge / chargedCount);
+  return Math.min(totalCharge, unitCost * failedCount);
 }
 
 export async function markInterruptedGenerationRecordsFailed(error: string): Promise<void> {
@@ -848,6 +1124,18 @@ export async function readGenerationRecord(generationId: string, user?: CurrentU
   const referenceAssetIds = referenceRows.map((referenceRow) => referenceRow.assetId);
 
   return generationRecordFromRows(record, outputRows, assetById, referenceAssetIds);
+}
+
+export async function readGenerationRecordOwner(generationId: string): Promise<GenerationRecordOwner | undefined> {
+  const record = await findGenerationRecordRow(generationId);
+  return record
+    ? {
+        id: record.id,
+        userId: record.userId,
+        status: record.status,
+        count: record.count
+      }
+    : undefined;
 }
 
 async function getDefaultProjectRow(user: CurrentUser): Promise<ProjectRow | undefined> {

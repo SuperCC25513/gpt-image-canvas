@@ -29,7 +29,7 @@ export type GenerationPlanStatus =
   | "failed"
   | "cancelled";
 
-export type GenerationJobStatus = "queued" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";
+export type GenerationJobStatus = "queued" | "running" | "succeeded" | "partial" | "failed" | "blocked" | "cancelled";
 
 export type GenerationJobRole =
   | "final_image"

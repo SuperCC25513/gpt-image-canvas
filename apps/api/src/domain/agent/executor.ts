@@ -17,7 +17,8 @@ import {
   type OutputFormat,
   type ReferenceImageInput
 } from "../contracts.js";
-import { readStoredAsset, runReferenceImageGeneration, runTextToImageGeneration } from "../generation/image-generation.js";
+import { runReferenceImageGenerationTask, runTextToImageGenerationTask } from "../generation/generation-tasks.js";
+import { readStoredAsset } from "../generation/image-generation.js";
 import { createConfiguredImageProvider } from "../providers/image-provider-selection.js";
 import { userCanReadAsset } from "../storage/store.js";
 import type { ImageProvider, ImageProviderInput } from "../../infrastructure/providers/image-provider.js";
@@ -43,7 +44,7 @@ export interface AgentPlanExecutionInput extends StoredAgentGenerationPlan {
 }
 
 export interface AgentPlanExecutionResult {
-  status: "succeeded" | "failed" | "cancelled";
+  status: "succeeded" | "partial" | "failed" | "cancelled";
   plan: GenerationPlan;
 }
 
@@ -157,7 +158,7 @@ export async function executeGenerationPlan(input: AgentPlanExecutionInput): Pro
   emitPlanUpdated(input, plan);
 
   return {
-    status: plan.status === "succeeded" ? "succeeded" : "failed",
+    status: plan.status === "succeeded" || plan.status === "partial" ? plan.status : "failed",
     plan
   };
 }
@@ -169,7 +170,9 @@ function preparePlanForExecution(plan: GenerationPlan, mode: AgentPlanExecutionM
   nextPlan.updatedAt = now;
   nextPlan.jobs = nextPlan.jobs.map((job) => {
     const shouldKeepSuccessfulJob =
-      mode === "retry_failed" && job.status === "succeeded" && job.outputs.some((output) => output.status === "succeeded" && output.asset);
+      mode === "retry_failed" &&
+      job.status === "succeeded" &&
+      job.outputs.some((output) => output.status === "succeeded" && output.asset);
 
     if (shouldKeepSuccessfulJob) {
       return job;
@@ -206,31 +209,34 @@ async function executeGenerationJob(input: AgentPlanExecutionInput & {
     throwIfAborted(input.signal);
     const references = await resolveJobReferences(input.plan, input.job, input.selectedReferencesByKey, input.user);
     throwIfAborted(input.signal);
+    if (!input.user) {
+      throw new Error("Agent generation requires an active user session.");
+    }
 
     const request = createJobImageProviderInput(input.plan, input.job);
-    const response =
+    const record =
       references.referenceImages.length > 0
-        ? await runReferenceImageGeneration(
+        ? await runReferenceImageGenerationTask(
             {
               ...request,
               referenceImages: references.referenceImages,
               referenceAssetIds: references.referenceAssetIds,
               referenceAssetId: references.referenceAssetIds[0]
             },
+            input.user,
             input.provider,
-            input.signal,
-            input.user
+            input.signal
           )
-        : await runTextToImageGeneration(request, input.provider, input.signal, input.user);
+        : await runTextToImageGenerationTask(request, input.user, input.provider, input.signal);
     throwIfAborted(input.signal);
 
-    input.job.outputs = response.record.outputs;
-    const successfulOutputs = response.record.outputs.filter((output) => output.status === "succeeded" && output.asset);
-    const failedOutputs = response.record.outputs.filter((output) => output.status === "failed");
-    input.job.status = successfulOutputs.length > 0 && failedOutputs.length === 0 ? "succeeded" : "failed";
+    input.job.outputs = record.outputs;
+    const successfulOutputs = record.outputs.filter((output) => output.status === "succeeded" && output.asset);
+    const failedOutputs = record.outputs.filter((output) => output.status === "failed");
+    input.job.status = jobStatusFromOutputs(successfulOutputs.length, failedOutputs.length);
     input.job.error =
-      input.job.status === "failed"
-        ? response.record.error ?? failedOutputs[0]?.error ?? "Agent image generation failed."
+      input.job.status === "failed" || input.job.status === "partial"
+        ? record.error ?? failedOutputs[0]?.error ?? "Agent image generation failed."
         : undefined;
     input.plan.updatedAt = new Date().toISOString();
 
@@ -240,8 +246,8 @@ async function executeGenerationJob(input: AgentPlanExecutionInput & {
       }
     }
 
-    if (input.job.status === "succeeded") {
-      emitJobCompleted(input, input.plan, input.job.id, input.job.outputs, response.record);
+    if (input.job.status === "succeeded" || input.job.status === "partial") {
+      emitJobCompleted(input, input.plan, input.job.id, input.job.outputs, record);
     } else {
       emitJobFailed(input, input.plan, input.job.id, input.job.error ?? "Agent image generation failed.");
     }
@@ -439,7 +445,10 @@ function storedAssetIdCandidates(assetId: string): string[] {
 function dependenciesSucceeded(plan: GenerationPlan, jobId: string): boolean {
   return plan.edges
     .filter((edge) => edge.toJobId === jobId)
-    .every((edge) => plan.jobs.find((job) => job.id === edge.fromJobId)?.status === "succeeded");
+    .every((edge) => {
+      const status = plan.jobs.find((job) => job.id === edge.fromJobId)?.status;
+      return status === "succeeded" || status === "partial";
+    });
 }
 
 function dependencyFailed(plan: GenerationPlan, jobId: string): boolean {
@@ -480,11 +489,21 @@ function resolvePlanStatus(plan: GenerationPlan): GenerationPlan["status"] {
   if (statuses.every((status) => status === "succeeded")) {
     return "succeeded";
   }
-  if (statuses.some((status) => status === "succeeded")) {
+  if (statuses.some((status) => status === "succeeded" || status === "partial")) {
     return "partial";
   }
   if (statuses.some((status) => status === "cancelled")) {
     return "cancelled";
+  }
+  return "failed";
+}
+
+function jobStatusFromOutputs(successCount: number, failureCount: number): GenerationJob["status"] {
+  if (successCount > 0 && failureCount > 0) {
+    return "partial";
+  }
+  if (successCount > 0) {
+    return "succeeded";
   }
   return "failed";
 }
@@ -718,7 +737,7 @@ function isPlanStatus(value: unknown): value is GenerationPlan["status"] {
 }
 
 function isJobStatus(value: unknown): value is GenerationJob["status"] {
-  return isOneOf(value, ["queued", "running", "succeeded", "failed", "blocked", "cancelled"]);
+  return isOneOf(value, ["queued", "running", "succeeded", "partial", "failed", "blocked", "cancelled"]);
 }
 
 function isJobRole(value: unknown): value is GenerationJob["role"] {

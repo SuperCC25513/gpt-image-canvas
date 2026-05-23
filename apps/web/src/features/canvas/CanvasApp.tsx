@@ -5706,7 +5706,7 @@ export function App() {
             return;
           }
         addAgentMessage({
-          role: event.status === "succeeded" ? "system" : "error",
+          role: event.status === "failed" ? "error" : "system",
           content: t("agentRunDone", { status: event.status }),
           runId: eventRunId
         });

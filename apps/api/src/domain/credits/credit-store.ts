@@ -235,7 +235,7 @@ export async function reserveGenerationCredits(user: CurrentUser, generationId: 
   if (databaseDriver === "sqlite") {
     return db.transaction((tx) => {
       const existingCharge = tx
-        .select({ delta: creditTransactions.delta })
+        .select({ delta: creditTransactions.delta, userId: creditTransactions.userId })
         .from(creditTransactions)
         .where(
           and(
@@ -245,6 +245,9 @@ export async function reserveGenerationCredits(user: CurrentUser, generationId: 
         )
         .get();
       if (existingCharge) {
+        if (existingCharge.userId !== user.id) {
+          throw new CreditDomainError("generation_id_conflict", "同一生成 ID 已属于其他用户。", 409);
+        }
         return Math.abs(existingCharge.delta);
       }
 
@@ -282,8 +285,9 @@ export async function reserveGenerationCredits(user: CurrentUser, generationId: 
   const connection = await getMySqlPool().getConnection();
   try {
     await connection.beginTransaction();
-    const [existingRows] = await connection.execute<Array<RowDataPacket & { delta: number }>>(
-      `SELECT delta
+    const [existingRows] = await connection.execute<Array<RowDataPacket & { delta: number; userId: string }>>(
+      `SELECT delta,
+              user_id AS userId
        FROM credit_transactions
        WHERE related_generation_id = ? AND reason = ?
        LIMIT 1
@@ -291,6 +295,9 @@ export async function reserveGenerationCredits(user: CurrentUser, generationId: 
       [generationId, "generation_charge"]
     );
     if (existingRows[0]) {
+      if (existingRows[0].userId !== user.id) {
+        throw new CreditDomainError("generation_id_conflict", "同一生成 ID 已属于其他用户。", 409);
+      }
       await connection.commit();
       return Math.abs(existingRows[0].delta);
     }
@@ -333,7 +340,12 @@ export async function reserveGenerationCredits(user: CurrentUser, generationId: 
   }
 }
 
-export async function refundGenerationCreditsForFailures(generationId: string, failedCount: number, fallbackCount?: number): Promise<void> {
+export async function refundGenerationCreditsForFailures(
+  generationId: string,
+  failedCount: number,
+  fallbackCount?: number,
+  expectedUserId?: string
+): Promise<void> {
   const safeFailedCount = Math.max(0, Math.trunc(failedCount));
   if (safeFailedCount <= 0) {
     return;
@@ -352,7 +364,7 @@ export async function refundGenerationCreditsForFailures(generationId: string, f
           )
         )
         .get();
-      if (!charge || charge.delta >= 0) {
+      if (!charge || charge.delta >= 0 || (expectedUserId && charge.userId !== expectedUserId)) {
         return;
       }
 
@@ -413,7 +425,7 @@ export async function refundGenerationCreditsForFailures(generationId: string, f
       [generationId, "generation_charge"]
     );
     const charge = chargeRows[0];
-    if (!charge || charge.delta >= 0) {
+    if (!charge || charge.delta >= 0 || (expectedUserId && charge.userId !== expectedUserId)) {
       await connection.commit();
       return;
     }

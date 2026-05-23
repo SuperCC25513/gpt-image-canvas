@@ -1,8 +1,10 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { and, eq } from "drizzle-orm";
 import type { AgentSelectedCanvasReference, AgentServerEvent, CurrentUser, GenerationPlan } from "../domain/contracts.js";
 import type { EditImageProviderInput, ImageProvider, ImageProviderInput, ProviderResult } from "../infrastructure/providers/image-provider.js";
+import { creditTransactions, generationAudits, users } from "../infrastructure/schema.js";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const dataDir = resolve(repoRoot, ".codex-temp", `agent-executor-smoke-${process.pid}-${Date.now()}`);
@@ -20,20 +22,24 @@ const smokeUser: CurrentUser = {
   email: "agent-executor-smoke@example.local",
   role: "user",
   status: "active",
-  credits: 0,
+  credits: 1000,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z"
 };
 
 async function main(): Promise<void> {
   try {
-    const [{ executeGenerationPlan, isExecutableGenerationPlan }, { closeDatabase }, imageGeneration] = await Promise.all([
+    const [{ executeGenerationPlan, isExecutableGenerationPlan }, { closeDatabase, db }, imageGeneration, generationTasks] = await Promise.all([
       import("../domain/agent/executor.js"),
       import("../infrastructure/database.js"),
-      import("../domain/generation/image-generation.js")
+      import("../domain/generation/image-generation.js"),
+      import("../domain/generation/generation-tasks.js")
     ]);
 
     try {
+      seedUser(db, smokeUser);
+      await smokeAgentGenerationBusinessRules(executeGenerationPlan, generationTasks, db);
+
       const successProvider = new FakeImageProvider();
       const events: AgentServerEvent[] = [];
       const success = await executeGenerationPlan({
@@ -203,11 +209,11 @@ class FakeImageProvider implements ImageProvider {
   generateCalls = 0;
   editCalls = 0;
 
-  constructor(private readonly options: { failGenerate?: boolean } = {}) {}
+  constructor(private readonly options: { failGenerate?: boolean; failGenerateOnCalls?: Set<number> } = {}) {}
 
   async generate(input: ImageProviderInput): Promise<ProviderResult> {
     this.generateCalls += 1;
-    if (this.options.failGenerate) {
+    if (this.options.failGenerate || this.options.failGenerateOnCalls?.has(this.generateCalls)) {
       throw new Error("fake text generation failed");
     }
 
@@ -219,6 +225,111 @@ class FakeImageProvider implements ImageProvider {
     expect(input.referenceImages.length > 0, "edit generation receives references");
     return providerResult(input.sizeApiValue);
   }
+}
+
+async function smokeAgentGenerationBusinessRules(
+  executeGenerationPlan: typeof import("../domain/agent/executor.js").executeGenerationPlan,
+  generationTasks: typeof import("../domain/generation/generation-tasks.js"),
+  db: typeof import("../infrastructure/database.js").db
+): Promise<void> {
+  const billingUser = userFixture("agent-billing", 10);
+  seedUser(db, billingUser);
+  const billingProvider = new FakeImageProvider();
+  const billingRun = await executeGenerationPlan({
+    plan: singleJobPlanFixture("plan-agent-billing", 1),
+    selectedReferences: [],
+    mode: "execute",
+    user: billingUser,
+    provider: billingProvider,
+    requestId: "smoke-agent-billing",
+    runId: "run-agent-billing",
+    signal: new AbortController().signal,
+    isRunActive: () => true,
+    sendEvent: () => undefined
+  });
+  expect(billingRun.status === "succeeded", "agent generation succeeds through the business task runner");
+  expect(billingProvider.generateCalls === 1, "agent billing run calls provider once");
+  expect(readUserCredits(db, billingUser.id) === 9, "agent generation charges credits for successful output");
+  expect(countCreditTransactions(db, billingUser.id, "generation_charge") === 1, "agent generation writes a charge transaction");
+  expect(countGenerationAudits(db, billingUser.id, "succeeded") === 1, "agent generation writes a succeeded audit row");
+
+  const insufficientUser = userFixture("agent-insufficient", 0);
+  seedUser(db, insufficientUser);
+  const insufficientProvider = new FakeImageProvider();
+  const insufficientRun = await executeGenerationPlan({
+    plan: singleJobPlanFixture("plan-agent-insufficient", 1),
+    selectedReferences: [],
+    mode: "execute",
+    user: insufficientUser,
+    provider: insufficientProvider,
+    requestId: "smoke-agent-insufficient",
+    runId: "run-agent-insufficient",
+    signal: new AbortController().signal,
+    isRunActive: () => true,
+    sendEvent: () => undefined
+  });
+  expect(insufficientRun.status === "failed", "insufficient agent generation fails stably");
+  expect(insufficientProvider.generateCalls === 0, "insufficient agent generation does not call provider");
+  expect(readUserCredits(db, insufficientUser.id) === 0, "insufficient agent generation leaves credits unchanged");
+  expect(countCreditTransactions(db, insufficientUser.id) === 0, "insufficient agent generation writes no credit transaction");
+
+  const partialUser = userFixture("agent-partial", 10);
+  seedUser(db, partialUser);
+  const partialProvider = new FakeImageProvider({ failGenerateOnCalls: new Set([2]) });
+  const partialEvents: AgentServerEvent[] = [];
+  const partialRun = await executeGenerationPlan({
+    plan: singleJobPlanFixture("plan-agent-partial", 2),
+    selectedReferences: [],
+    mode: "execute",
+    user: partialUser,
+    provider: partialProvider,
+    requestId: "smoke-agent-partial",
+    runId: "run-agent-partial",
+    signal: new AbortController().signal,
+    isRunActive: () => true,
+    sendEvent: (event) => partialEvents.push(event)
+  });
+  const partialJob = partialRun.plan.jobs[0];
+  expect(partialRun.status === "partial", "partial agent generation reports partial run status");
+  expect(partialRun.plan.status === "partial", "partial agent generation reports partial plan status");
+  expect(partialJob?.status === "partial", "partial agent generation marks job partial");
+  expect(partialJob.outputs.filter((output) => output.status === "succeeded").length === 1, "partial job keeps successful output");
+  expect(partialEvents.some((event) => event.type === "job_completed"), "partial job emits job_completed with outputs");
+  expect(partialEvents.filter((event) => event.type === "asset_preview").length === 1, "partial job emits preview for the successful asset");
+  expect(readUserCredits(db, partialUser.id) === 9, "partial agent generation refunds failed output credits");
+  expect(countCreditTransactions(db, partialUser.id, "generation_charge") === 1, "partial agent generation writes one charge");
+  expect(countCreditTransactions(db, partialUser.id, "generation_refund") === 1, "partial agent generation writes one refund");
+  expect(countGenerationAudits(db, partialUser.id, "partial") === 1, "partial agent generation updates audit status");
+
+  const ownerUser = userFixture("generation-owner-a", 10);
+  const otherUser = userFixture("generation-owner-b", 10);
+  seedUser(db, ownerUser);
+  seedUser(db, otherUser);
+  const ownerProvider = new FakeImageProvider();
+  const ownerRecord = await generationTasks.runTextToImageGenerationTask(
+    imageProviderInputFixture({ clientRequestId: "shared-generation-id" }),
+    ownerUser,
+    ownerProvider,
+    new AbortController().signal
+  );
+  expect(ownerRecord.status === "succeeded", "owner fixture generation succeeds");
+  const ownerCreditsAfterGeneration = readUserCredits(db, ownerUser.id);
+  const otherProvider = new FakeImageProvider();
+  let conflictCode = "";
+  try {
+    await generationTasks.runTextToImageGenerationTask(
+      imageProviderInputFixture({ clientRequestId: "shared-generation-id" }),
+      otherUser,
+      otherProvider,
+      new AbortController().signal
+    );
+  } catch (error) {
+    conflictCode = error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : "";
+  }
+  expect(conflictCode === "generation_id_conflict", "cross-user generation id reuse returns a stable conflict");
+  expect(otherProvider.generateCalls === 0, "cross-user generation id conflict does not call provider");
+  expect(readUserCredits(db, ownerUser.id) === ownerCreditsAfterGeneration, "cross-user conflict does not refund or charge the owner");
+  expect(readUserCredits(db, otherUser.id) === 10, "cross-user conflict leaves the other user credits unchanged");
 }
 
 async function smokeManualGenerationRecords(imageGeneration: typeof import("../domain/generation/image-generation.js")): Promise<void> {
@@ -299,6 +410,67 @@ function editImageProviderInputFixture(overrides: Partial<EditImageProviderInput
   };
 }
 
+function userFixture(id: string, credits: number): CurrentUser {
+  return {
+    id: `user-${id}`,
+    name: `Smoke ${id}`,
+    email: `${id}@example.local`,
+    role: "user",
+    status: "active",
+    credits,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z"
+  };
+}
+
+function seedUser(db: typeof import("../infrastructure/database.js").db, user: CurrentUser): void {
+  db.insert(users)
+    .values({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      passwordSalt: "smoke",
+      passwordIterations: 1,
+      passwordHash: "smoke",
+      role: user.role,
+      status: user.status,
+      credits: user.credits,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    })
+    .run();
+}
+
+function readUserCredits(db: typeof import("../infrastructure/database.js").db, userId: string): number {
+  const row = db.select({ credits: users.credits }).from(users).where(eq(users.id, userId)).get();
+  return row?.credits ?? 0;
+}
+
+function countCreditTransactions(
+  db: typeof import("../infrastructure/database.js").db,
+  userId: string,
+  reason?: "generation_charge" | "generation_refund"
+): number {
+  const rows = db
+    .select({ id: creditTransactions.id, reason: creditTransactions.reason })
+    .from(creditTransactions)
+    .where(eq(creditTransactions.userId, userId))
+    .all();
+  return reason ? rows.filter((row) => row.reason === reason).length : rows.length;
+}
+
+function countGenerationAudits(
+  db: typeof import("../infrastructure/database.js").db,
+  userId: string,
+  status: "succeeded" | "partial" | "failed"
+): number {
+  return db
+    .select({ id: generationAudits.id })
+    .from(generationAudits)
+    .where(and(eq(generationAudits.userId, userId), eq(generationAudits.status, status)))
+    .all().length;
+}
+
 function providerResult(size: string): ProviderResult {
   return {
     model: "fake-image-model",
@@ -361,6 +533,41 @@ function planFixture(id = "plan-smoke"): GenerationPlan {
         toJobId: "final_scene"
       }
     ],
+    createdBy: "agent",
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function singleJobPlanFixture(id: string, count: number): GenerationPlan {
+  const now = "2026-01-01T00:00:00.000Z";
+  return {
+    schemaVersion: 1,
+    id,
+    title: "Single job smoke plan",
+    status: "awaiting_confirmation",
+    defaults: {
+      size: {
+        width: 1024,
+        height: 1024
+      },
+      quality: "auto",
+      outputFormat: "png",
+      count: 1
+    },
+    jobs: [
+      {
+        id: `${id}-job`,
+        role: "final_image",
+        prompt: "Create a single smoke image.",
+        count,
+        references: [],
+        status: "queued",
+        outputs: [],
+        visible: true
+      }
+    ],
+    edges: [],
     createdBy: "agent",
     createdAt: now,
     updatedAt: now

@@ -1,4 +1,4 @@
-import { CheckCircle2, CircleStop, ImageIcon, Loader2, Play, RotateCcw, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleStop, ImageIcon, Loader2, Play, RotateCcw, XCircle } from "lucide-react";
 import { BaseBoxShapeUtil, HTMLContainer, RecordProps, T, TLShape, useEditor } from "tldraw";
 import type {
   GenerationDependencyEdge,
@@ -63,7 +63,7 @@ const planStatuses: readonly GenerationPlanStatus[] = [
   "failed",
   "cancelled"
 ];
-const jobStatuses: readonly GenerationJobStatus[] = ["queued", "running", "succeeded", "failed", "blocked", "cancelled"];
+const jobStatuses: readonly GenerationJobStatus[] = ["queued", "running", "succeeded", "partial", "failed", "blocked", "cancelled"];
 const outputStatuses: readonly OutputStatus[] = ["succeeded", "failed"];
 const jobRoles: readonly GenerationJobRole[] = [
   "final_image",
@@ -171,6 +171,7 @@ const labels: Record<Locale, {
       queued: "排队",
       running: "生成中",
       succeeded: "完成",
+      partial: "部分完成",
       failed: "失败",
       blocked: "阻塞",
       cancelled: "取消"
@@ -239,6 +240,7 @@ const labels: Record<Locale, {
       queued: "Queued",
       running: "Generating",
       succeeded: "Done",
+      partial: "Partial",
       failed: "Failed",
       blocked: "Blocked",
       cancelled: "Cancelled"
@@ -478,6 +480,8 @@ function jobStatusIcon(status: GenerationJobStatus) {
       return <Loader2 className="agent-plan-node__status-icon animate-spin" aria-hidden="true" />;
     case "succeeded":
       return <CheckCircle2 className="agent-plan-node__status-icon" aria-hidden="true" />;
+    case "partial":
+      return <AlertTriangle className="agent-plan-node__status-icon" aria-hidden="true" />;
     case "failed":
     case "blocked":
       return <XCircle className="agent-plan-node__status-icon" aria-hidden="true" />;

@@ -498,6 +498,11 @@
   color: #facc15;
 }
 
+.app-root[data-canvas-theme="dark"] .agent-plan-node__job-row[data-job-status="partial"] {
+  border-color: rgb(245 158 11 / 0.38);
+  background: rgb(146 64 14 / 0.24);
+}
+
 .app-root[data-canvas-theme="dark"] .agent-plan-node__status[data-tone="danger"],
 .app-root[data-canvas-theme="dark"] .agent-plan-node__job-row[data-job-status="failed"],
 .app-root[data-canvas-theme="dark"] .agent-plan-node__job-row[data-job-status="blocked"],

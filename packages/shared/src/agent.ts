@@ -352,7 +352,7 @@ export interface AgentRunCancelledEvent extends AgentBaseServerEvent {
 
 export interface AgentRunDoneEvent extends AgentBaseServerEvent {
   type: "run_done";
-  status: "succeeded" | "failed" | "cancelled";
+  status: "succeeded" | "partial" | "failed" | "cancelled";
 }
 
 export type AgentServerEvent =

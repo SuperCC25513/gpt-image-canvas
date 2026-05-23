@@ -29,14 +29,14 @@ import { LocalAssetStorageAdapter } from "../../infrastructure/storage/asset-sto
 import { runtimePaths } from "../../infrastructure/runtime.js";
 import {
   assetExists,
+  completeGenerationRecordWithOutputs,
   findAssetById,
   insertAsset,
   insertGenerationOutputs,
   insertGenerationRecord,
   markInterruptedGenerationRecordsFailed as markInterruptedGenerationRecordsFailedInStore,
   readGenerationRecord,
-  replaceGenerationOutputs,
-  updateGenerationRecordCompletion,
+  readGenerationRecordOwner,
   updateGenerationRecordStatus as updateGenerationRecordStatusInStore
 } from "../storage/store.js";
 
@@ -46,6 +46,17 @@ const SUPPORTED_REFERENCE_MIME_TYPES = new Set(["image/png", "image/jpeg", "imag
 const INTERRUPTED_GENERATION_ERROR = "Generation was interrupted by an API restart. Rerun it from history.";
 const CANCELLED_GENERATION_ERROR = "This generation was cancelled.";
 const localAssetStorage = new LocalAssetStorageAdapter();
+
+export class GenerationDomainError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status = 400
+  ) {
+    super(message);
+    this.name = "GenerationDomainError";
+  }
+}
 
 export interface StoredAssetFile {
   id: string;
@@ -221,19 +232,28 @@ export async function getGenerationRecord(generationId: string, user?: CurrentUs
   return readGenerationRecord(generationId, user);
 }
 
-export async function cancelGenerationRecord(generationId: string): Promise<GenerationRecord | undefined> {
-  const record = await updateGenerationRecordStatus(generationId, "cancelled", CANCELLED_GENERATION_ERROR);
+export async function ensureGenerationIdAvailableForUser(generationId: string, user?: CurrentUser): Promise<void> {
+  const existing = await readGenerationRecordOwner(generationId);
+  if (!existing || !user || existing.userId === user.id || user.role === "admin") {
+    return;
+  }
+
+  throw new GenerationDomainError("generation_id_conflict", "同一生成 ID 已属于其他用户。", 409);
+}
+
+export async function cancelGenerationRecord(generationId: string, user?: CurrentUser): Promise<GenerationRecord | undefined> {
+  const record = await updateGenerationRecordStatus(generationId, "cancelled", CANCELLED_GENERATION_ERROR, user);
   if (record) {
-    await refundGenerationCreditsForFailures(generationId, record.count, record.count);
+    await refundGenerationCreditsForFailures(generationId, record.count, record.count, user?.id);
     await updateGenerationAuditSafely(record);
   }
   return record;
 }
 
-export async function failGenerationRecord(generationId: string, error: string): Promise<GenerationRecord | undefined> {
-  const record = await updateGenerationRecordStatus(generationId, "failed", sanitizeGenerationErrorMessage(error));
+export async function failGenerationRecord(generationId: string, error: string, user?: CurrentUser): Promise<GenerationRecord | undefined> {
+  const record = await updateGenerationRecordStatus(generationId, "failed", sanitizeGenerationErrorMessage(error), user);
   if (record) {
-    await refundGenerationCreditsForFailures(generationId, record.count, record.count);
+    await refundGenerationCreditsForFailures(generationId, record.count, record.count, user?.id);
     await updateGenerationAuditSafely(record);
   }
   return record;
@@ -523,6 +543,7 @@ async function readImageSize(bytes: Buffer): Promise<ImageSize | undefined> {
 async function createRunningGenerationRecord(input: PersistedGenerationInput, user?: CurrentUser): Promise<GenerationRecord> {
   const createdAt = new Date().toISOString();
   const generationId = input.clientRequestId || randomUUID();
+  await ensureGenerationIdAvailableForUser(generationId, user);
   const existing = await readGenerationRecord(generationId, user);
   if (existing) {
     return existing;
@@ -588,9 +609,16 @@ async function completeGenerationRecord(
   const referenceAssetIds = input.referenceAssetIds ?? (input.referenceAssetId ? [input.referenceAssetId] : []);
   const primaryReferenceAssetId = referenceAssetIds[0] ?? input.referenceAssetId;
 
-  await updateGenerationRecordCompletion(generationId, status, error ?? null, primaryReferenceAssetId ?? null);
-  await replaceGenerationOutputs(generationId, outputs.map((output) => generationOutputWithVisibility(output, input)));
-  await refundGenerationCreditsForFailures(generationId, failureCount, input.count);
+  await completeGenerationRecordWithOutputs({
+    generationId,
+    status,
+    error: error ?? null,
+    referenceAssetId: primaryReferenceAssetId ?? null,
+    outputs: outputs.map((output) => generationOutputWithVisibility(output, input)),
+    failedCount: failureCount,
+    fallbackCount: input.count,
+    expectedUserId: user?.id
+  });
 
   const completedRecord = (await readGenerationRecord(generationId, user)) ?? {
     id: generationId,
@@ -676,8 +704,13 @@ async function saveCompletedGenerationRecord(
 async function updateGenerationRecordStatus(
   generationId: string,
   status: Extract<GenerationStatus, "cancelled" | "failed">,
-  error: string
+  error: string,
+  user?: CurrentUser
 ): Promise<GenerationRecord | undefined> {
+  const owner = await readGenerationRecordOwner(generationId);
+  if (!owner || (user && owner.userId !== user.id && user.role !== "admin")) {
+    return undefined;
+  }
   const existing = await readGenerationRecord(generationId);
   if (!existing) {
     return undefined;

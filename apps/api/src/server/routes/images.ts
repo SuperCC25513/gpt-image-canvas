@@ -8,6 +8,7 @@ import {
 } from "../../domain/generation/generation-tasks.js";
 import type { GenerationAuditRequestContext } from "../../domain/admin/audit-store.js";
 import { CreditDomainError } from "../../domain/credits/credit-store.js";
+import { GenerationDomainError } from "../../domain/generation/image-generation.js";
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
 import { requireAuth } from "../http/auth.js";
 import { errorResponse, providerErrorJson } from "../http/errors.js";
@@ -42,6 +43,10 @@ export function registerImageRoutes(app: Hono): void {
         return creditErrorJson(error);
       }
 
+      if (error instanceof GenerationDomainError) {
+        return generationErrorJson(error);
+      }
+
       if (error instanceof ProviderError) {
         return providerErrorJson(c, error);
       }
@@ -71,6 +76,10 @@ export function registerImageRoutes(app: Hono): void {
     } catch (error) {
       if (error instanceof CreditDomainError) {
         return creditErrorJson(error);
+      }
+
+      if (error instanceof GenerationDomainError) {
+        return generationErrorJson(error);
       }
 
       if (error instanceof ProviderError) {
@@ -130,6 +139,15 @@ function headerSummary(value: string | null, maxLength = 191): string | undefine
 }
 
 function creditErrorJson(error: CreditDomainError): Response {
+  return new Response(JSON.stringify(errorResponse(error.code, error.message)), {
+    status: error.status,
+    headers: {
+      "Content-Type": "application/json"
+    }
+  });
+}
+
+function generationErrorJson(error: GenerationDomainError): Response {
   return new Response(JSON.stringify(errorResponse(error.code, error.message)), {
     status: error.status,
     headers: {

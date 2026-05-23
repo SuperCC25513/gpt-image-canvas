@@ -36,6 +36,60 @@
 - 读取 selected/generated reference 的存储资产前必须传入当前用户并调用 `userCanReadAsset()`；不能直接 `readStoredAsset()`。
 - Agent events 必须保持 `packages/shared` 中的类型兼容。
 
+## Scenario: Agent 图像生成业务入口
+
+### 1. Scope / Trigger
+
+- Trigger: 修改 Agent plan executor、图像生成入口、积分、生成审计、生成记录完成路径。
+- 范围：`domain/agent/executor.ts`、`domain/generation/generation-tasks.ts`、`domain/generation/image-generation.ts`、`domain/credits/credit-store.ts`、`domain/storage/store.ts`。
+
+### 2. Signatures
+
+- Agent 执行必须调用 `runTextToImageGenerationTask(input, user, provider, signal)` 或 `runReferenceImageGenerationTask(input, user, provider, signal)`。
+- 低层 `runTextToImageGeneration()` / `runReferenceImageGeneration()` 只负责 provider 调用和持久化，不是用户业务入口。
+- 完成提交用 `completeGenerationRecordWithOutputs()`，在同一事务内写 outputs、asset metadata、退款流水，最后更新 generation record 终态。
+
+### 3. Contracts
+
+- Agent 生成必须和手动生成共享：generation id owner 检查、预扣积分、running generation record、generation audit start、完成后按失败 output 退款。
+- Agent 余额不足时返回失败 job/plan 事件，不能调用图片 provider。
+- `GenerationJobStatus` 包含 `partial`；多输出 job 成功数大于 0 且失败数大于 0 时标记 `partial`，并继续发送成功 output 的 preview。
+- `clientRequestId` / generation id 已属于其他普通用户时返回 `generation_id_conflict`，不能扣费、退款、调用 provider 或改写原 owner 记录。
+
+### 4. Validation & Error Matrix
+
+- 当前用户积分不足 -> `insufficient_credits`，provider 调用次数为 0，余额和流水不变。
+- generation id 属于其他普通用户 -> `generation_id_conflict`，当前用户和原 owner 余额都不变。
+- 单个 output 写资产或 DB 失败 -> 不能先把 generation record 标成 `succeeded` / `partial`。
+- 多输出部分失败 -> generation record、Agent job、plan 均表达 `partial`，失败 output 对应积分退款一次。
+
+### 5. Good/Base/Bad Cases
+
+- Good: Agent executor 解析引用后调用 `runTextToImageGenerationTask()`，由该入口统一扣费、审计、完成提交和退款。
+- Base: 手动生成 POST 仍只创建 running record 并返回，后台任务复用同一完成提交逻辑。
+- Bad: Agent executor 直接调用低层 `runTextToImageGeneration()`，会绕过积分预扣和 generation audit。
+
+### 6. Tests Required
+
+- Agent 成功生成：断言扣除 `count * generation_credit_cost`、存在 `generation_charge` 和 `generation_audits`。
+- Agent 余额不足：断言 provider 调用次数为 0、余额和流水不变。
+- Agent 部分成功：断言 job/plan 为 `partial`、成功 asset preview 仍发出、失败 output 退款。
+- 跨用户 generation id：断言返回稳定冲突，不影响原 owner 余额和流水。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const response = await runTextToImageGeneration(request, provider, signal, user);
+```
+
+#### Correct
+
+```ts
+const record = await runTextToImageGenerationTask(request, user, provider, signal);
+```
+
 ## Scenario: 全局 OAuth 与 Agent 执行权限边界
 
 ### 1. Scope / Trigger

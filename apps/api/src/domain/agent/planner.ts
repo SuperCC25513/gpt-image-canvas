@@ -60,6 +60,7 @@ const GENERATION_JOB_STATUSES: readonly GenerationJobStatus[] = [
   "queued",
   "running",
   "succeeded",
+  "partial",
   "failed",
   "blocked",
   "cancelled"

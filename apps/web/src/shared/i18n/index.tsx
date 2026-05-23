@@ -536,8 +536,8 @@ const zhMessages = {
   agentUsingRecentOutputs: ({ count }: { count: number }) => `已使用上一轮 ${count} 张 Agent 输出作为编辑源。`,
   agentRunAlreadyCancelled: "当前没有可取消的 Agent 运行。",
   agentRunCancelled: "已取消 Agent 运行。",
-  agentRunDone: ({ status }: { status: "succeeded" | "failed" | "cancelled" }) =>
-    ({ succeeded: "Agent 运行完成。", failed: "Agent 运行失败。", cancelled: "Agent 运行已取消。" })[status],
+  agentRunDone: ({ status }: { status: "succeeded" | "partial" | "failed" | "cancelled" }) =>
+    ({ succeeded: "Agent 运行完成。", partial: "Agent 运行部分完成。", failed: "Agent 运行失败。", cancelled: "Agent 运行已取消。" })[status],
   agentRunStatus: ({ status }: { status: "idle" | "connecting" | "running" }) =>
     ({ idle: "待命", connecting: "连接中", running: "运行中" })[status],
   agentSend: "发送",
@@ -1326,7 +1326,10 @@ const enMessages: I18nMessages = {
   agentUsingRecentOutputs: ({ count }) => `Using ${count} images from the previous Agent output as edit sources.`,
   agentRunAlreadyCancelled: "No active Agent run to cancel.",
   agentRunCancelled: "Agent run cancelled.",
-  agentRunDone: ({ status }) => ({ succeeded: "Agent run complete.", failed: "Agent run failed.", cancelled: "Agent run cancelled." })[status],
+  agentRunDone: ({ status }) =>
+    ({ succeeded: "Agent run complete.", partial: "Agent run partially complete.", failed: "Agent run failed.", cancelled: "Agent run cancelled." })[
+      status
+    ],
   agentRunStatus: ({ status }) => ({ idle: "Idle", connecting: "Connecting", running: "Running" })[status],
   agentSend: "Send",
   agentSendFailed: "Agent message failed to send.",

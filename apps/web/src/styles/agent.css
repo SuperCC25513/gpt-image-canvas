@@ -200,6 +200,11 @@
   box-shadow: inset 3px 0 0 var(--accent-dark);
 }
 
+.agent-plan-node__job-row[data-job-status="partial"] {
+  border-color: #f5cc7a;
+  background: #fff5df;
+}
+
 .agent-plan-node__job-row[data-job-status="failed"],
 .agent-plan-node__job-row[data-job-status="blocked"] {
   border-color: #f2b8ad;
