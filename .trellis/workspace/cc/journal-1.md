@@ -349,3 +349,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: 简单生图模式
+
+**Date**: 2026-05-23
+**Task**: 简单生图模式
+**Branch**: `main`
+
+### Summary
+
+新增独立简单生图页、默认简单创作入口、最近结果区和主动继续画布链路，并完成类型检查、构建和内置浏览器验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f9fbcfa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
