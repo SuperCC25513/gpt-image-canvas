@@ -8,13 +8,11 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { GalleryImageItem } from "@gpt-image-canvas/shared";
-import productPreviewUrl from "../../../../../docs/assets/app-preview.png";
-import { assetPreviewUrl } from "../../shared/api/assets";
 import { isGalleryResponse } from "../../shared/api/generation";
 import { useI18n } from "../../shared/i18n";
 
 const HOME_PUBLIC_PREVIEW_LIMIT = 8;
-const HOME_PUBLIC_PREVIEW_WIDTH = 384;
+const HOME_INSPIRED_TILE_COUNT = 12;
 
 interface HomePageProps {
   authError: string;
@@ -112,6 +110,11 @@ export function HomePage({
     t("homePromptIdeaRoom")
   ];
   const hasPublicPreview = publicPreviewItems.length > 0;
+  const previewIdeas = useMemo(() => {
+    const publicIdeas = publicPreviewItems.slice(0, 3).map((item) => compactIdeaText(item.publicTitle || item.prompt));
+
+    return [...publicIdeas, ...fallbackPrompts].slice(0, 3);
+  }, [fallbackPrompts, publicPreviewItems]);
 
   return (
     <main className="home-page app-view" data-testid="home-page">
@@ -171,27 +174,26 @@ export function HomePage({
             </span>
           </span>
 
-          {hasPublicPreview ? (
-            <span className="home-public-preview-grid" aria-hidden="true">
-              {publicPreviewItems.map((item, index) => (
-                <img
-                  alt=""
-                  className={`home-public-preview home-public-preview--${(index % 5) + 1}`}
-                  key={item.outputId}
-                  src={assetPreviewUrl(item.asset.id, HOME_PUBLIC_PREVIEW_WIDTH)}
-                />
+          <span className="home-inspiration-preview" aria-hidden="true">
+            <span className="home-inspiration-preview__notes">
+              {previewIdeas.map((item, index) => (
+                <span className={`home-inspiration-note home-inspiration-note--${index + 1}`} key={`${item}-${index}`}>
+                  <span>{String(index + 1).padStart(2, "0")}</span>
+                  <strong>{item}</strong>
+                </span>
               ))}
             </span>
-          ) : (
-            <span className="home-fallback-preview" aria-hidden="true">
-              <img alt="" src={productPreviewUrl} />
-              <span className="home-fallback-prompts">
-                {fallbackPrompts.map((item) => (
-                  <span key={item}>{item}</span>
-                ))}
-              </span>
+            <span className="home-inspiration-preview__mosaic">
+              {Array.from({ length: HOME_INSPIRED_TILE_COUNT }, (_, index) => (
+                <span className={`home-inspiration-tile home-inspiration-tile--${(index % 6) + 1}`} key={index} />
+              ))}
             </span>
-          )}
+            <span className="home-inspiration-preview__tags">
+              {fallbackPrompts.map((item) => (
+                <span key={item}>{item}</span>
+              ))}
+            </span>
+          </span>
 
           <span className="home-inspiration-board__cta">
             <ImageIcon className="size-4" aria-hidden="true" />
@@ -231,4 +233,13 @@ export function HomePage({
       </section>
     </main>
   );
+}
+
+function compactIdeaText(value: string): string {
+  const normalized = value.trim().replace(/\s+/gu, " ");
+  if (normalized.length <= 18) {
+    return normalized;
+  }
+
+  return `${normalized.slice(0, 18)}...`;
 }
