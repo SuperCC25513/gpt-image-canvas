@@ -32,23 +32,34 @@
   padding: 0 1rem;
 }
 
+.top-navigation__inner > .brand-lockup {
+  flex: 1 1 auto;
+}
+
 .top-navigation__actions {
   display: inline-flex;
   min-width: 0;
-  flex: none;
+  flex: 0 1 auto;
   align-items: center;
   gap: 0.5rem;
 }
 
 .top-navigation__links {
   display: inline-flex;
-  flex: none;
+  min-width: 0;
+  flex: 0 1 auto;
   align-items: center;
   gap: 0.35rem;
   border: 1px solid #e5e5e5;
   border-radius: 8px;
   background: #f8fafc;
+  overflow-x: auto;
   padding: 0.2rem;
+  scrollbar-width: none;
+}
+
+.top-navigation__links::-webkit-scrollbar {
+  display: none;
 }
 
 .language-switcher {
@@ -99,6 +110,85 @@
   outline-offset: 2px;
 }
 
+.top-navigation__account {
+  display: inline-flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  gap: 0.24rem;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0.18rem;
+  white-space: nowrap;
+}
+
+.top-navigation__account[data-tone="warning"] {
+  border-color: rgb(180 35 24 / 0.32);
+  background: #fff7ed;
+}
+
+.top-navigation__account-name {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 12rem;
+  height: 2.15rem;
+  align-items: center;
+  gap: 0.4rem;
+  color: #171717;
+  font-size: 0.82rem;
+  font-weight: 850;
+  line-height: 1;
+  padding: 0 0.48rem;
+}
+
+.top-navigation__account-name span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-navigation__account-name svg {
+  flex: none;
+  color: #0f766e;
+}
+
+.top-navigation__account[data-tone="warning"] .top-navigation__account-name svg {
+  color: var(--danger);
+}
+
+.top-navigation__logout {
+  display: inline-flex;
+  min-width: 2.15rem;
+  height: 2.15rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.36rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #525252;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 850;
+  line-height: 1;
+  padding: 0 0.48rem;
+  transition-property: background-color, color, transform;
+  transition-duration: var(--motion-duration-control);
+  transition-timing-function: var(--motion-ease-standard);
+}
+
+.top-navigation__logout:hover {
+  background: #f8fafc;
+  color: #171717;
+}
+
+.top-navigation__logout:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
 .top-navigation__link {
   display: inline-flex;
   height: 2.15rem;
@@ -113,6 +203,7 @@
   line-height: 1;
   padding: 0 0.75rem;
   text-decoration: none;
+  white-space: nowrap;
   transition:
     background-color 150ms ease,
     color 150ms ease,

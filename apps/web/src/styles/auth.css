@@ -65,8 +65,7 @@
   gap: 8px;
 }
 
-.auth-tabs button,
-.auth-user-bar button {
+.auth-tabs button {
   min-height: 40px;
   display: inline-flex;
   align-items: center;
@@ -85,13 +84,11 @@
     transform 120ms ease;
 }
 
-.auth-tabs button:hover:not(:disabled),
-.auth-user-bar button:hover {
+.auth-tabs button:hover:not(:disabled) {
   border-color: var(--accent);
 }
 
-.auth-tabs button:active:not(:disabled),
-.auth-user-bar button:active {
+.auth-tabs button:active:not(:disabled) {
   transform: scale(0.96);
 }
 
@@ -154,40 +151,6 @@
   gap: 8px;
 }
 
-.auth-user-bar {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 80;
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  max-width: min(420px, calc(100vw - 32px));
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--paper-panel);
-  box-shadow: var(--shadow-soft);
-  color: var(--muted-ink);
-  font-size: 0.84rem;
-}
-
-.auth-user-bar span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.auth-user-bar__message[data-tone="warning"] {
-  color: var(--danger);
-}
-
-.auth-user-bar button {
-  min-height: 34px;
-  padding: 0 10px;
-  white-space: nowrap;
-}
-
 @media (max-width: 640px) {
   .auth-page {
     align-items: stretch;
@@ -197,13 +160,5 @@
   .auth-shell {
     align-self: center;
     padding: 18px;
-  }
-
-  .auth-user-bar {
-    left: 12px;
-    right: auto;
-    bottom: 12px;
-    max-width: min(15rem, calc(100vw - 10.5rem));
-    justify-content: space-between;
   }
 }

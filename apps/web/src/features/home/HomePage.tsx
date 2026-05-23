@@ -1,221 +1,233 @@
 import {
   ArrowRight,
   CheckCircle2,
+  Globe2,
   ImageIcon,
-  KeyRound,
-  Loader2,
-  ShieldCheck,
-  Sparkles
+  Sparkles,
+  Square
 } from "lucide-react";
-import type { AuthStatusResponse } from "@gpt-image-canvas/shared";
+import { useEffect, useMemo, useState } from "react";
+import type { GalleryImageItem } from "@gpt-image-canvas/shared";
 import productPreviewUrl from "../../../../../docs/assets/app-preview.png";
+import { assetPreviewUrl } from "../../shared/api/assets";
+import { isGalleryResponse } from "../../shared/api/generation";
 import { useI18n } from "../../shared/i18n";
+
+const HOME_PUBLIC_PREVIEW_LIMIT = 8;
+const HOME_PUBLIC_PREVIEW_WIDTH = 384;
 
 interface HomePageProps {
   authError: string;
-  authStatus: AuthStatusResponse | null;
-  isAuthLoading: boolean;
+  onOpenCanvas: () => void;
   onOpenGenerate: () => void;
-  onOpenGallery: () => void;
+  onOpenPublicGallery: () => void;
 }
 
 export function HomePage({
   authError,
-  authStatus,
-  isAuthLoading,
+  onOpenCanvas,
   onOpenGenerate,
-  onOpenGallery
+  onOpenPublicGallery
 }: HomePageProps) {
   const { t } = useI18n();
-  const providerLabel =
-    authStatus?.provider === "openai" ? t("homeProviderOpenAI") : authStatus?.provider === "codex" ? t("homeProviderCodex") : t("homeProviderNone");
-  const proofItems = [
-    {
-      copy: t("homeStatPromptCopy"),
-      title: t("homeStatPromptTitle"),
-      value: "01"
-    },
-    {
-      copy: t("homeStatReferenceCopy"),
-      title: t("homeStatReferenceTitle"),
-      value: "02"
-    },
-    {
-      copy: t("homeStatProviderCopy"),
-      title: t("homeStatProviderTitle"),
-      value: "03"
+  const [publicPreviewItems, setPublicPreviewItems] = useState<GalleryImageItem[]>([]);
+  const [isPublicPreviewLoading, setIsPublicPreviewLoading] = useState(true);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadPublicPreview(): Promise<void> {
+      setIsPublicPreviewLoading(true);
+
+      try {
+        const response = await fetch(`/api/gallery/public?limit=${HOME_PUBLIC_PREVIEW_LIMIT}`, {
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          throw new Error("public preview unavailable");
+        }
+
+        const body = (await response.json()) as unknown;
+        if (!isGalleryResponse(body)) {
+          throw new Error("public preview invalid");
+        }
+
+        if (!controller.signal.aborted) {
+          setPublicPreviewItems(body.items.slice(0, HOME_PUBLIC_PREVIEW_LIMIT));
+        }
+      } catch {
+        if (!controller.signal.aborted) {
+          setPublicPreviewItems([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsPublicPreviewLoading(false);
+        }
+      }
     }
+
+    void loadPublicPreview();
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
+  const startCards = useMemo(
+    () => [
+      {
+        action: onOpenGenerate,
+        button: t("homePathGenerateAction"),
+        copy: t("homePathGenerateCopy"),
+        Icon: Sparkles,
+        title: t("homePathGenerateTitle")
+      },
+      {
+        action: onOpenCanvas,
+        button: t("homePathCanvasAction"),
+        copy: t("homePathCanvasCopy"),
+        Icon: Square,
+        title: t("homePathCanvasTitle")
+      },
+      {
+        action: onOpenPublicGallery,
+        button: t("homePathPublicAction"),
+        copy: t("homePathPublicCopy"),
+        Icon: Globe2,
+        title: t("homePathPublicTitle")
+      }
+    ],
+    [onOpenCanvas, onOpenGenerate, onOpenPublicGallery, t]
+  );
+  const useCases = [
+    t("homeUseCaseAvatar"),
+    t("homeUseCaseProduct"),
+    t("homeUseCaseCover"),
+    t("homeUseCaseInterior"),
+    t("homeUseCaseWallpaper")
   ];
-  const workflowSteps = [
-    {
-      copy: t("homeFlowBriefCopy"),
-      title: t("homeFlowBriefTitle"),
-      value: "01"
-    },
-    {
-      copy: t("homeFlowReferenceCopy"),
-      title: t("homeFlowReferenceTitle"),
-      value: "02"
-    },
-    {
-      copy: t("homeFlowAgentCopy"),
-      title: t("homeFlowAgentTitle"),
-      value: "03"
-    },
-    {
-      copy: t("homeFlowArchiveCopy"),
-      title: t("homeFlowArchiveTitle"),
-      value: "04"
-    }
+  const fallbackPrompts = [
+    t("homePromptIdeaPortrait"),
+    t("homePromptIdeaPoster"),
+    t("homePromptIdeaRoom")
   ];
-  const trustItems = [
-    t("homeTrustProvider"),
-    t("homeTrustSecret"),
-    t("homeTrustRecover"),
-    t("homeTrustGallery")
-  ];
-  const plateSteps = workflowSteps.map((step) => step.title);
-  const wireItems = [t("homeWirePrompt"), t("homeWireReference"), t("homeWireProvider"), t("homeWireGallery")];
+  const hasPublicPreview = publicPreviewItems.length > 0;
 
   return (
     <main className="home-page app-view" data-testid="home-page">
-      <section className="home-hero" aria-labelledby="home-title">
-        <div className="home-hero__copy">
-          <p className="home-kicker">
+      <section className="home-consumer-hero" aria-labelledby="home-title">
+        <div className="home-consumer-hero__copy">
+          <p className="home-consumer-kicker">
             <Sparkles className="size-4" aria-hidden="true" />
-            {t("homeKicker")}
-            <span>{t("homePlateTitle")}</span>
+            {t("homeConsumerKicker")}
           </p>
-          <h1 id="home-title">{t("homeTitle")}</h1>
-          <p className="home-deck">{t("homeDeck")}</p>
+          <h1 id="home-title">{t("homeConsumerTitle")}</h1>
+          <p className="home-consumer-deck">{t("homeConsumerDeck")}</p>
 
-          <div className="home-command-strip" aria-label={t("homeEntryAria")}>
-            <div className="home-command-state" data-provider={authStatus?.provider ?? "loading"} data-testid="home-provider-state" role="status">
-              <span className="home-command-state__icon">
-                {isAuthLoading ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                ) : authStatus?.provider === "none" || !authStatus ? (
-                  <KeyRound className="size-4" aria-hidden="true" />
-                ) : (
-                  <ShieldCheck className="size-4" aria-hidden="true" />
-                )}
-              </span>
-              <span className="home-command-state__copy">{isAuthLoading ? t("homeAuthChecking") : providerLabel}</span>
-            </div>
-            <button className="home-gallery-link home-gallery-link--primary" data-testid="home-generate-link" type="button" onClick={onOpenGenerate}>
+          <div className="home-consumer-actions" aria-label={t("homeEntryAria")}>
+            <button className="home-action home-action--primary" data-testid="home-generate-link" type="button" onClick={onOpenGenerate}>
               <Sparkles className="size-4" aria-hidden="true" />
-              {t("homeGenerate")}
+              {t("homeStartGenerate")}
               <ArrowRight className="size-4" aria-hidden="true" />
+            </button>
+            <button className="home-action" data-testid="home-canvas-link" type="button" onClick={onOpenCanvas}>
+              <Square className="size-4" aria-hidden="true" />
+              {t("homeOpenCanvas")}
+            </button>
+            <button className="home-action home-action--quiet" data-testid="home-public-gallery-link" type="button" onClick={onOpenPublicGallery}>
+              <Globe2 className="size-4" aria-hidden="true" />
+              {t("homeOpenPublicGallery")}
             </button>
           </div>
 
           {authError ? (
             <p className="home-auth-error" role="alert">
-              {authError}
+              {t("homeCreationBlocked")}
             </p>
           ) : null}
 
-          <ol className="home-proof-line" aria-label={t("homeProofAria")}>
-            {proofItems.map((item) => (
-              <li className="home-proof-line__item" key={item.value}>
-                <span className="home-proof-line__num">{item.value}</span>
-                <span>
-                  <b>{item.title}</b>
-                  {item.copy}
-                </span>
-              </li>
-            ))}
-          </ol>
-        </div>
-
-        <div className="home-hero__visual" aria-hidden="true">
-          <span className="home-plate-corner home-plate-corner--tl"></span>
-          <span className="home-plate-corner home-plate-corner--tr"></span>
-          <span className="home-plate-corner home-plate-corner--bl"></span>
-          <span className="home-plate-corner home-plate-corner--br"></span>
-          <span className="home-plate-annot home-plate-annot--tl">{t("homePlateFig")}</span>
-          <span className="home-plate-annot home-plate-annot--tr">{t("homePlateTitle")}</span>
-          <img className="home-preview-image" src={productPreviewUrl} alt="" />
-          <div className="home-plate-index">
-            {plateSteps.map((step, index) => (
-              <span className={index === 2 ? "is-active" : undefined} key={step}>
-                <span className="home-plate-index__num">0{index + 1}</span>
-                {step}
-              </span>
+          <div className="home-usecase-row" aria-label={t("homeUseCaseAria")}>
+            {useCases.map((item) => (
+              <span key={item}>{item}</span>
             ))}
           </div>
         </div>
-      </section>
 
-      <section className="home-afterfold" aria-label={t("homeAfterfoldAria")}>
-        <div className="home-wire-summary">
-          <span className="home-wire-mark" aria-hidden="true">
-            <CheckCircle2 className="size-4" aria-hidden="true" />
+        <button
+          aria-label={t("homePreviewOpenPublicGallery")}
+          className="home-inspiration-board"
+          data-loading={isPublicPreviewLoading}
+          data-testid="home-inspiration-board"
+          type="button"
+          onClick={onOpenPublicGallery}
+        >
+          <span className="home-inspiration-board__header">
+            <span>
+              <span className="home-section-kicker">{t("homePreviewKicker")}</span>
+              <strong>{t("homePreviewTitle")}</strong>
+            </span>
+            <span className="home-inspiration-board__status">
+              {hasPublicPreview ? t("homePreviewLive") : t("homePreviewFallback")}
+            </span>
           </span>
-          <span>
-            <b>{t("homeWireTitle")}</b>
-            {t("homeWireMeta")}
-          </span>
-        </div>
-        <div className="home-wire-track" aria-hidden="true">
-          <div className="home-wire-track__inner">
-            {[...wireItems, ...wireItems].map((item, index) => (
-              <span className="home-wire-item" key={`${item}-${index}`}>
-                <span>/</span>
-                {item}
+
+          {hasPublicPreview ? (
+            <span className="home-public-preview-grid" aria-hidden="true">
+              {publicPreviewItems.map((item, index) => (
+                <img
+                  alt=""
+                  className={`home-public-preview home-public-preview--${(index % 5) + 1}`}
+                  key={item.outputId}
+                  src={assetPreviewUrl(item.asset.id, HOME_PUBLIC_PREVIEW_WIDTH)}
+                />
+              ))}
+            </span>
+          ) : (
+            <span className="home-fallback-preview" aria-hidden="true">
+              <img alt="" src={productPreviewUrl} />
+              <span className="home-fallback-prompts">
+                {fallbackPrompts.map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
               </span>
-            ))}
-          </div>
-        </div>
-        <button className="home-gallery-link" data-testid="home-gallery-link" type="button" onClick={onOpenGallery}>
-          <ImageIcon className="size-4" aria-hidden="true" />
-          {t("homeGallery")}
-          <ArrowRight className="size-4" aria-hidden="true" />
+            </span>
+          )}
+
+          <span className="home-inspiration-board__cta">
+            <ImageIcon className="size-4" aria-hidden="true" />
+            {t("homePreviewOpen")}
+            <ArrowRight className="size-4" aria-hidden="true" />
+          </span>
         </button>
       </section>
 
-      <section className="home-method" aria-labelledby="home-method-title">
+      <section className="home-start-section" aria-labelledby="home-start-title">
         <div className="home-section-heading">
-          <p className="home-section-kicker">{t("homeMethodKicker")}</p>
-          <h2 id="home-method-title">{t("homeMethodTitle")}</h2>
-          <p>{t("homeMethodDeck")}</p>
+          <p className="home-section-kicker">{t("homePathKicker")}</p>
+          <h2 id="home-start-title">{t("homePathTitle")}</h2>
+          <p>{t("homePathDeck")}</p>
         </div>
-        <div className="home-method-grid">
-          {workflowSteps.map((step) => (
-            <article className="home-method-step" key={step.value}>
-              <span className="home-method-step__num">{step.value}</span>
-              <h3>{step.title}</h3>
-              <p>{step.copy}</p>
+
+        <div className="home-start-grid">
+          {startCards.map(({ action, button, copy, Icon, title }) => (
+            <article className="home-start-card" key={title}>
+              <span className="home-start-card__icon" aria-hidden="true">
+                <Icon className="size-5" />
+              </span>
+              <h3>{title}</h3>
+              <p>{copy}</p>
+              <button className="home-start-card__button" type="button" onClick={action}>
+                {button}
+                <ArrowRight className="size-4" aria-hidden="true" />
+              </button>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="home-ops" aria-labelledby="home-ops-title">
-        <div className="home-ops__copy">
-          <p className="home-section-kicker">{t("homeOpsKicker")}</p>
-          <h2 id="home-ops-title">{t("homeOpsTitle")}</h2>
-          <p>{t("homeOpsDeck")}</p>
-        </div>
-        <div className="home-ops__panel">
-          <div className="home-ops__panel-header">
-            <ShieldCheck className="size-5" aria-hidden="true" />
-            <span>{t("homeOpsPanelTitle")}</span>
-          </div>
-          <ul className="home-trust-list">
-            {trustItems.map((item) => (
-              <li key={item}>
-                <CheckCircle2 className="size-4" aria-hidden="true" />
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
-          <button className="home-gallery-link home-gallery-link--wide" type="button" onClick={onOpenGallery}>
-            <ImageIcon className="size-4" aria-hidden="true" />
-            {t("homeGalleryReview")}
-            <ArrowRight className="size-4" aria-hidden="true" />
-          </button>
-        </div>
+      <section className="home-inspire-strip" aria-label={t("homeInspireAria")}>
+        <CheckCircle2 className="size-4" aria-hidden="true" />
+        <span>{t("homeInspireLine")}</span>
       </section>
     </main>
   );

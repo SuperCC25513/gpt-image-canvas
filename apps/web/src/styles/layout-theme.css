@@ -19,6 +19,25 @@
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.72);
 }
 
+.top-navigation__account {
+  border-color: var(--line);
+  background: var(--paper-panel);
+  box-shadow: 0 8px 18px rgb(92 63 35 / 0.08);
+}
+
+.top-navigation__account-name {
+  color: var(--ink);
+}
+
+.top-navigation__logout {
+  color: var(--muted-ink);
+}
+
+.top-navigation__logout:hover {
+  background: #f9f1e5;
+  color: var(--ink);
+}
+
 .top-navigation__link {
   min-width: 5.25rem;
   border-radius: 6px;

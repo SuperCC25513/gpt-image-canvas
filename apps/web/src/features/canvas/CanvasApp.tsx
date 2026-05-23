@@ -31,6 +31,7 @@ import {
   Sparkles,
   Square,
   Trash2,
+  User,
   X,
   XCircle
 } from "lucide-react";
@@ -106,6 +107,7 @@ import {
   type CodexDevicePollResponse,
   type CodexDeviceStartResponse,
   type CodexLogoutResponse,
+  type CurrentUser,
   type GalleryImageItem,
   type GenerationCount,
   type GenerationJob,
@@ -2577,6 +2579,9 @@ function BrandName() {
 }
 
 function TopNavigation({
+  currentUser,
+  sessionError,
+  onLogout,
   route,
   onNavigate,
   onPreloadGallery,
@@ -2584,6 +2589,9 @@ function TopNavigation({
   onPreloadAdmin,
   isAdmin
 }: {
+  currentUser?: CurrentUser | null;
+  sessionError?: string;
+  onLogout?: () => void;
   route: AppRoute;
   onNavigate: (route: AppRoute) => void;
   onPreloadGallery: () => void;
@@ -2715,6 +2723,28 @@ function TopNavigation({
             ) : null}
           </nav>
           <LanguageSwitcher />
+          {currentUser ? (
+            <div className="top-navigation__account" data-tone={sessionError ? "warning" : "neutral"} data-testid="top-account">
+              <span className="top-navigation__account-name" title={sessionError || currentUser.name}>
+                <User className="size-4" aria-hidden="true" />
+                <span>{currentUser.name}</span>
+              </span>
+              {sessionError ? <span className="sr-only" role="status">{sessionError}</span> : null}
+              {onLogout ? (
+                <button
+                  aria-label={t("authLogout")}
+                  className="top-navigation__logout"
+                  data-testid="top-account-logout"
+                  title={t("authLogout")}
+                  type="button"
+                  onClick={onLogout}
+                >
+                  <LogOut className="size-4" aria-hidden="true" />
+                  <span>{t("authLogout")}</span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </header>
@@ -3060,7 +3090,13 @@ function PromptFavoritesFloatingPanel({
   );
 }
 
-export function App() {
+interface CanvasAppProps {
+  currentUser?: CurrentUser | null;
+  sessionError?: string;
+  onLogout?: () => void;
+}
+
+export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps) {
   const { formatDateTime, locale, setLocale, t } = useI18n();
   const tldrawLocale = tldrawLocaleForLocale(locale);
   const [tldrawUserPreferences, setTldrawUserPreferences] = useState<TLUserPreferences>(() => ({
@@ -3095,7 +3131,6 @@ export function App() {
   });
   const [route, setRoute] = useState<AppRoute>(() => routeFromLocation());
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTab>(() => adminTabFromLocation());
-  const shouldAutoOpenCanvasRef = useRef(route !== "gallery");
   const [pendingCanvasImport, setPendingCanvasImport] = useState<PendingCanvasImport | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab>("manual");
   const [generationMode, setGenerationMode] = useState<GenerationMode>("text");
@@ -3299,10 +3334,6 @@ export function App() {
   );
 
   const navigateToRoute = useCallback((nextRoute: AppRoute, options: { replace?: boolean } = {}): void => {
-    if (!options.replace) {
-      shouldAutoOpenCanvasRef.current = false;
-    }
-
     const nextPath = pathForRoute(nextRoute);
     if (window.location.pathname !== nextPath) {
       if (options.replace) {
@@ -3318,10 +3349,6 @@ export function App() {
   }, []);
 
   const navigateToAdminTab = useCallback((nextTab: AdminTab, options: { replace?: boolean } = {}): void => {
-    if (!options.replace) {
-      shouldAutoOpenCanvasRef.current = false;
-    }
-
     const nextPath = pathForAdminTab(nextTab);
     if (window.location.pathname !== nextPath) {
       if (options.replace) {
@@ -3730,19 +3757,6 @@ export function App() {
       setCount(fallbackGenerationCount);
     }
   }, [count, fallbackGenerationCount, generationCountOptions]);
-
-  useEffect(() => {
-    if (isAuthLoading || !authStatus || route === "gallery" || route === "pool" || route === "publicGallery" || route === "admin") {
-      return;
-    }
-
-    if (route === "home" && hasGenerationProvider && shouldAutoOpenCanvasRef.current) {
-      shouldAutoOpenCanvasRef.current = false;
-      navigateToRoute("canvas", { replace: true });
-      return;
-    }
-
-  }, [authStatus, hasGenerationProvider, isAuthLoading, navigateToRoute, route]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(MOBILE_DRAWER_MEDIA_QUERY);
@@ -6144,9 +6158,12 @@ export function App() {
   return (
     <div className="app-root" data-canvas-theme={route === "canvas" && isCanvasDarkMode ? "dark" : "light"}>
       <TopNavigation
+        currentUser={currentUser}
         isAdmin={isCurrentUserAdmin}
+        sessionError={sessionError}
         route={route}
         onNavigate={navigateToRoute}
+        onLogout={onLogout}
         onPreloadAdmin={preloadAdminPage}
         onPreloadGallery={preloadGalleryPage}
         onPreloadPool={preloadPromptPoolPage}
@@ -6154,10 +6171,9 @@ export function App() {
       {route === "home" ? (
         <HomePage
           authError={authError}
-          authStatus={authStatus}
-          isAuthLoading={isAuthLoading}
+          onOpenCanvas={() => navigateToRoute("canvas")}
           onOpenGenerate={() => navigateToRoute("generate")}
-          onOpenGallery={() => navigateToRoute("gallery")}
+          onOpenPublicGallery={() => navigateToRoute("publicGallery")}
         />
       ) : null}
       {route === "generate" ? (

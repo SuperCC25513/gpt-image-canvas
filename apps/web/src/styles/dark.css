@@ -31,6 +31,12 @@
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
 }
 
+.app-root[data-canvas-theme="dark"] .top-navigation__account {
+  border-color: rgb(255 255 255 / 0.1);
+  background: #211c18;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+
 .app-root[data-canvas-theme="dark"] .top-navigation__link {
   color: #c9bbae;
 }
@@ -39,11 +45,21 @@
   color: #c9bbae;
 }
 
+.app-root[data-canvas-theme="dark"] .top-navigation__account-name,
+.app-root[data-canvas-theme="dark"] .top-navigation__logout {
+  color: #c9bbae;
+}
+
 .app-root[data-canvas-theme="dark"] .top-navigation__link:hover {
   color: #fff7ed;
 }
 
 .app-root[data-canvas-theme="dark"] .language-switcher__button:hover {
+  color: #fff7ed;
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__logout:hover {
+  background: rgb(255 247 237 / 0.08);
   color: #fff7ed;
 }
 

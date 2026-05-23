@@ -1,4 +1,4 @@
-import { LogIn, LogOut, Loader2, UserPlus } from "lucide-react";
+import { LogIn, Loader2, UserPlus } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { AuthMeResponse, AuthRegisterResponse, AuthSessionResponse, CurrentUser } from "@gpt-image-canvas/shared";
 import { App as CanvasApp } from "./features/canvas/CanvasApp";
@@ -152,20 +152,7 @@ export function App() {
   }
 
   if (currentUser) {
-    return (
-      <>
-        <CanvasApp />
-        <div className="auth-user-bar" data-testid="auth-user-bar">
-          <span className="auth-user-bar__message" data-tone={error ? "warning" : "neutral"} role={error ? "status" : undefined}>
-            {error || t("authSignedInAs", { name: currentUser.name })}
-          </span>
-          <button type="button" onClick={() => void logout()}>
-            <LogOut className="size-4" aria-hidden="true" />
-            {t("authLogout")}
-          </button>
-        </div>
-      </>
-    );
+    return <CanvasApp currentUser={currentUser} sessionError={error} onLogout={() => void logout()} />;
   }
 
   if (window.location.pathname === "/public-gallery") {
