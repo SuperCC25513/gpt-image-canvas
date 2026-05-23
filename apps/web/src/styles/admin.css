@@ -192,6 +192,13 @@
   padding: 0 0.55rem;
 }
 
+.admin-table select,
+.admin-credit-form input,
+.admin-credit-form select,
+.admin-credit-form button {
+  height: 2.5rem;
+}
+
 .admin-search input {
   border: 0;
   outline: 0;
@@ -203,6 +210,11 @@
   background: var(--accent);
   color: #fffdf8;
   padding: 0 0.75rem;
+}
+
+.admin-credit-form button {
+  min-width: 4.75rem;
+  white-space: nowrap;
 }
 
 .admin-table-wrap {
@@ -221,7 +233,7 @@
   border-bottom: 1px solid rgb(203 183 154 / 0.52);
   padding: 0.65rem;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .admin-table th {
@@ -229,6 +241,12 @@
   font-size: 0.72rem;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+
+.admin-table tbody td:nth-child(3),
+.admin-table tbody td:nth-child(4),
+.admin-table tbody td:nth-child(5) {
+  white-space: nowrap;
 }
 
 .admin-user-cell {
@@ -247,6 +265,15 @@
   font-size: 0.76rem;
 }
 
+.admin-table small {
+  display: inline-flex;
+  min-height: 2.5rem;
+  align-items: center;
+  margin-left: 0.45rem;
+  line-height: 1.35;
+  vertical-align: middle;
+}
+
 .admin-user-cell code,
 .admin-credit-pill,
 .admin-audit-row__meta,
@@ -257,18 +284,22 @@
 
 .admin-credit-pill {
   display: inline-flex;
+  min-height: 2.5rem;
   align-items: center;
   gap: 0.35rem;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--paper-soft);
-  padding: 0.32rem 0.55rem;
+  padding: 0 0.65rem;
   font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .admin-credit-form {
   display: grid;
   grid-template-columns: 6.5rem 5rem minmax(8rem, 1fr) auto;
+  align-items: center;
   gap: 0.4rem;
 }
 
