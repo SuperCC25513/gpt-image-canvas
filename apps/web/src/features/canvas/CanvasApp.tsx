@@ -3256,6 +3256,8 @@ export function App() {
   const isReferenceMode = generationMode === "reference";
   const isReferenceReady = isReferenceMode && referenceSelection.status === "ready";
   const referenceValidationMessage = isReferenceMode && !isReferenceReady ? referenceSelection.hint : "";
+  const providerValidationMessage =
+    isAuthLoading || hasGenerationProvider ? "" : authError || t("providerStatusNoneCopy");
   const accountUser = accountStatus?.authenticated ? accountStatus.user : undefined;
   const isCurrentUserAdmin = accountUser?.role === "admin";
   const creditSettings = accountStatus?.settings;
@@ -3272,7 +3274,13 @@ export function App() {
         : "";
   };
   const creditValidationMessage = creditValidationMessageForCount(count);
-  const validationMessage = promptValidationMessage || dimensionValidationMessage || referenceValidationMessage || accountValidationMessage || creditValidationMessage;
+  const validationMessage =
+    promptValidationMessage ||
+    dimensionValidationMessage ||
+    referenceValidationMessage ||
+    providerValidationMessage ||
+    accountValidationMessage ||
+    creditValidationMessage;
   const shouldShowValidation = Boolean(validationMessage);
   const canGenerate = !validationMessage;
   const tldrawComponents = useMemo(
@@ -4609,6 +4617,7 @@ export function App() {
     setOutputFormat(item.outputFormat);
     setCount(1);
     setGenerationMode("text");
+    setPanelTab("manual");
     setGenerationError("");
     setGenerationWarning("");
     setGenerationMessage(t("generationGalleryReused"));
@@ -4755,6 +4764,7 @@ export function App() {
     setOutputFormat("png");
     setCount(1);
     setGenerationMode("text");
+    setPanelTab("manual");
     setGenerationError("");
     setGenerationWarning("");
     setGenerationMessage(t("generationPoolReused"));
