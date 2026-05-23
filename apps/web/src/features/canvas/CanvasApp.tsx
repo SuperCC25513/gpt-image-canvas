@@ -129,6 +129,7 @@ import {
 } from "@gpt-image-canvas/shared";
 import { LOCALES, localizedApiErrorMessage, useI18n, type Locale, type Translate } from "../../shared/i18n";
 import { assetDownloadUrl, assetPreviewUrl } from "../../shared/api/assets";
+import { generationCountsWithinLimit } from "../../shared/generationCounts";
 import { sizeValidationMessage } from "../../shared/imageValidation";
 import {
   deletePromptFavorite,
@@ -3348,7 +3349,17 @@ export function App() {
   );
   const hiddenHistoryCount = Math.max(0, generationHistory.length - HISTORY_COLLAPSED_LIMIT);
   const hasAdditionalHistory = hiddenHistoryCount > 0;
-  const isExtendedCountSelected = EXTENDED_GENERATION_COUNTS.includes(count);
+  const generationCountOptions = useMemo(() => generationCountsWithinLimit(maxImagesPerRequest), [maxImagesPerRequest]);
+  const primaryGenerationCountOptions = useMemo(
+    () => generationCountOptions.filter((item) => PRIMARY_GENERATION_COUNTS.includes(item)),
+    [generationCountOptions]
+  );
+  const extendedGenerationCountOptions = useMemo(
+    () => generationCountOptions.filter((item) => EXTENDED_GENERATION_COUNTS.includes(item)),
+    [generationCountOptions]
+  );
+  const fallbackGenerationCount = generationCountOptions[generationCountOptions.length - 1] ?? 1;
+  const isExtendedCountSelected = extendedGenerationCountOptions.includes(count);
   const deferredFavoritePanelQuery = useDeferredValue(favoritePanelQuery);
   const promptFavoriteGroupCounts = useMemo(
     () => countPromptFavoritesByGroup(promptFavoriteItems),
@@ -3705,6 +3716,12 @@ export function App() {
       agentHistorySaveTimerRef.current = undefined;
     };
   }, [agentMessages, currentAgentConversationId]);
+
+  useEffect(() => {
+    if (!generationCountOptions.includes(count)) {
+      setCount(fallbackGenerationCount);
+    }
+  }, [count, fallbackGenerationCount, generationCountOptions]);
 
   useEffect(() => {
     if (isAuthLoading || !authStatus || route === "gallery" || route === "pool" || route === "publicGallery" || route === "admin") {
@@ -6546,7 +6563,7 @@ export function App() {
           <div>
             <span className="control-label">{t("generationCountLabel")}</span>
             <div className="mt-2 grid grid-cols-3 gap-2">
-              {PRIMARY_GENERATION_COUNTS.map((item) => (
+              {primaryGenerationCountOptions.map((item) => (
                 <button
                   className={item === count ? "segmented-control is-active" : "segmented-control"}
                   key={item}
@@ -6558,24 +6575,32 @@ export function App() {
               ))}
             </div>
 
-            <details className="group mt-2 rounded-md border border-neutral-200 bg-neutral-50">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm font-medium text-neutral-800">
-                <span>{isExtendedCountSelected ? t("generationMoreCountSelected", { count }) : t("generationMoreCount")}</span>
-                <ChevronDown className="size-4 shrink-0 text-neutral-500 transition group-open:rotate-180" aria-hidden="true" />
-              </summary>
-              <div className="grid grid-cols-2 gap-2 border-t border-neutral-200 px-3 py-3">
-                {EXTENDED_GENERATION_COUNTS.map((item) => (
-                  <button
-                    className={item === count ? "segmented-control is-active" : "segmented-control"}
-                    key={item}
-                    type="button"
-                    onClick={() => setCount(item)}
-                  >
-                    {item}
-                  </button>
-                ))}
-              </div>
-            </details>
+            {extendedGenerationCountOptions.length > 0 ? (
+              <details className="group mt-2 rounded-md border border-neutral-200 bg-neutral-50">
+                <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-sm font-medium text-neutral-800">
+                  <span>{isExtendedCountSelected ? t("generationMoreCountSelected", { count }) : t("generationMoreCount")}</span>
+                  <ChevronDown className="size-4 shrink-0 text-neutral-500 transition group-open:rotate-180" aria-hidden="true" />
+                </summary>
+                <div
+                  className={
+                    extendedGenerationCountOptions.length === 1
+                      ? "grid grid-cols-1 gap-2 border-t border-neutral-200 px-3 py-3"
+                      : "grid grid-cols-2 gap-2 border-t border-neutral-200 px-3 py-3"
+                  }
+                >
+                  {extendedGenerationCountOptions.map((item) => (
+                    <button
+                      className={item === count ? "segmented-control is-active" : "segmented-control"}
+                      key={item}
+                      type="button"
+                      onClick={() => setCount(item)}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </details>
+            ) : null}
           </div>
 
           <section
