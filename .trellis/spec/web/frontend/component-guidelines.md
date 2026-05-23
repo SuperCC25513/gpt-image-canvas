@@ -37,6 +37,12 @@
 - 微交互用 CSS transition；当前项目不引入 motion/framer-motion。
 - 触摸/图标按钮至少有实际点击热区，参考 `base.css` 的 `::after` 扩展 hit area。
 
+## 配置面板复用
+
+- 同一套配置逻辑需要同时出现在页面和弹窗时，拆成业务面板组件和外壳组件。业务面板负责加载、保存、刷新、掩码、错误反馈；弹窗只负责 backdrop、dialog 语义和关闭。
+- 用显式 `variant` 控制页面 / 弹窗布局差异，不复制 API 请求或表单状态。例：`ProviderConfigPanel variant="page"` 和 `ProviderConfigDialog` 复用同一配置主体。
+- 后台主路径应直接挂载业务面板；不要只放一个“打开配置”按钮再跳二级弹窗，除非 PRD 明确要求弹窗体验。
+
 ## 首页和公开作品预览
 
 - 首页是创作入口，不承载 Provider、密钥、fallback 顺序、运行命令等配置说明；这些状态进入具体生成流程后再展示。
