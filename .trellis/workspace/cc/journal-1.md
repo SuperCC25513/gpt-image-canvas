@@ -617,3 +617,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 修正简单生图新建创作状态
+
+**Date**: 2026-05-24
+**Task**: 修正简单生图新建创作状态
+**Branch**: `main`
+
+### Summary
+
+让 /generate 左侧任务和中央结果区绑定：默认选中最近任务，点击任务只显示对应结果；点击新建创作清空输入并回到空创作提示/预设入口；移动端空状态从顶部排布。已用内置 Browser 验证桌面交互和移动布局，pnpm typecheck/build 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `30bc1d0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
