@@ -549,3 +549,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: 简单生图工作台改造
+
+**Date**: 2026-05-24
+**Task**: 简单生图工作台改造
+**Package**: web
+**Branch**: `main`
+
+### Summary
+
+将简单生图页改为底部输入工作台，增加参考图编辑入口，并完成类型检查、构建和浏览器验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5fda48a` | (see git log) |
+| `3d00ec7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
