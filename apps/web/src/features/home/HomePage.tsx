@@ -2,10 +2,8 @@ import {
   ArrowRight,
   CheckCircle2,
   Globe2,
-  ImageIcon,
   Sparkles,
   Square,
-  Video,
   WandSparkles
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -13,13 +11,14 @@ import type { PromptPoolItem, PromptPoolResponse } from "@gpt-image-canvas/share
 import { useI18n } from "../../shared/i18n";
 import {
   filterPromptPoolItems,
-  readPromptPoolFilterState,
-  type PromptPoolFilterState,
   type PromptPoolMediaFilter,
   type PromptPoolSortMode
 } from "../pool/promptPoolFilters";
 
-const HOME_PREVIEW_ITEMS = 3;
+const HOME_PREVIEW_ITEMS = 2;
+const HOME_PROMPT_PREVIEW_MODEL = "GPT Image";
+const HOME_PROMPT_PREVIEW_MEDIA: PromptPoolMediaFilter = "image";
+const HOME_PROMPT_PREVIEW_SORT: PromptPoolSortMode = "popular";
 
 interface HomePageProps {
   authError: string;
@@ -38,7 +37,6 @@ export function HomePage({
 }: HomePageProps) {
   const { t } = useI18n();
   const [promptPoolItems, setPromptPoolItems] = useState<PromptPoolItem[]>([]);
-  const [promptPoolFilters] = useState<PromptPoolFilterState>(readPromptPoolFilterState);
   const [isPromptPoolLoading, setIsPromptPoolLoading] = useState(true);
 
   useEffect(() => {
@@ -117,31 +115,22 @@ export function HomePage({
     ],
     [t]
   );
-  const poolSortLabel = promptPoolSortLabel(promptPoolFilters.sortMode, t);
-  const poolModelLabel = promptPoolFilters.modelFilter === "all" ? t("poolAllModels") : promptPoolFilters.modelFilter;
-  const poolMediaLabel = promptPoolMediaLabel(promptPoolFilters.mediaFilter, t);
   const promptPreviewItems = useMemo<PromptPoolItem[]>(() => {
     const filteredItems = filterPromptPoolItems(
       promptPoolItems,
       "",
-      promptPoolFilters.mediaFilter,
-      promptPoolFilters.modelFilter,
-      promptPoolFilters.sortMode
+      HOME_PROMPT_PREVIEW_MEDIA,
+      HOME_PROMPT_PREVIEW_MODEL,
+      HOME_PROMPT_PREVIEW_SORT
     );
     const sourceItems =
       filteredItems.length > 0
         ? filteredItems
-        : filterPromptPoolItems(promptPoolItems, "", "all", "all", promptPoolFilters.sortMode);
+        : filterPromptPoolItems(promptPoolItems, "", HOME_PROMPT_PREVIEW_MEDIA, "all", HOME_PROMPT_PREVIEW_SORT);
 
-    return sourceItems.filter((item) => item.assetUrl.trim()).slice(0, HOME_PREVIEW_ITEMS);
-  }, [promptPoolFilters.mediaFilter, promptPoolFilters.modelFilter, promptPoolFilters.sortMode, promptPoolItems]);
+    return pickRandomPromptPreviewItems(sourceItems.filter((item) => item.assetUrl.trim()), HOME_PREVIEW_ITEMS);
+  }, [promptPoolItems]);
   const hasPromptPoolPreview = promptPreviewItems.length > 0;
-  const promptPoolPreviewStatus = isPromptPoolLoading
-    ? t("poolLoading")
-    : hasPromptPoolPreview
-      ? t("homePromptPoolPreviewFilter", { model: poolModelLabel, sort: poolSortLabel })
-      : t("homePromptPoolPreviewFallback");
-  const promptPoolFilterChips = [poolModelLabel, poolSortLabel, poolMediaLabel];
 
   return (
     <main className="home-page app-view" data-testid="home-page">
@@ -196,13 +185,9 @@ export function HomePage({
               <span className="home-section-kicker">{t("homePromptPoolPreviewKicker")}</span>
               <strong>{t("homePromptPoolPreviewTitle")}</strong>
             </span>
-            <span className="home-inspiration-board__status">
-              {promptPoolPreviewStatus}
-            </span>
           </span>
 
           <span className="home-inspiration-preview" aria-hidden="true">
-            <span className="home-inspiration-preview__copy">{t("homePromptPoolPreviewCopy")}</span>
             <span className="home-prompt-preview-grid">
               {hasPromptPoolPreview ? (
                 promptPreviewItems.map((item, index) => (
@@ -217,34 +202,11 @@ export function HomePage({
                       src={item.assetUrl}
                       width={item.imageWidth}
                     />
-                    <span className="home-prompt-preview-card__shade" />
-                    <span className="home-prompt-preview-card__badges">
-                      <span className="home-prompt-preview-card__badge">
-                        {item.mediaType === "video" ? (
-                          <Video className="size-3.5" aria-hidden="true" />
-                        ) : (
-                          <ImageIcon className="size-3.5" aria-hidden="true" />
-                        )}
-                        {promptPoolMediaLabel(item.mediaType, t)}
-                      </span>
-                      {item.imageCount > 1 ? <span className="home-prompt-preview-card__badge">+{item.imageCount - 1}</span> : null}
-                    </span>
-                    <span className="home-prompt-preview-card__copy">
-                      <strong>{compactIdeaText(item.title || item.prompt, 42)}</strong>
-                      <span>
-                        {item.model} · {item.promptReady ? t("poolPromptReady") : t("poolPromptDraft")}
-                      </span>
-                    </span>
                   </span>
                 ))
               ) : (
                 <span className="home-inspiration-empty">{t("poolEmptyHint")}</span>
               )}
-            </span>
-            <span className="home-inspiration-preview__tags">
-              {promptPoolFilterChips.map((item) => (
-                <span key={item}>{item}</span>
-              ))}
             </span>
           </span>
 
@@ -292,35 +254,17 @@ function isPromptPoolResponse(value: unknown): value is PromptPoolResponse {
   return typeof value === "object" && value !== null && Array.isArray((value as { items?: unknown }).items);
 }
 
-function promptPoolSortLabel(sortMode: PromptPoolSortMode, t: ReturnType<typeof useI18n>["t"]): string {
-  if (sortMode === "popular") {
-    return t("poolSortPopular");
+function pickRandomPromptPreviewItems(items: PromptPoolItem[], count: number): PromptPoolItem[] {
+  if (items.length <= count) {
+    return items;
   }
 
-  if (sortMode === "ready") {
-    return t("poolSortReady");
+  const selectedIndexes = new Set<number>();
+  while (selectedIndexes.size < count) {
+    selectedIndexes.add(Math.floor(Math.random() * items.length));
   }
 
-  return t("poolSortLatest");
-}
-
-function promptPoolMediaLabel(mediaFilter: PromptPoolMediaFilter, t: ReturnType<typeof useI18n>["t"]): string {
-  if (mediaFilter === "image") {
-    return t("poolMediaImage");
-  }
-
-  if (mediaFilter === "video") {
-    return t("poolMediaVideo");
-  }
-
-  return t("poolAllMedia");
-}
-
-function compactIdeaText(value: string, maxLength: number): string {
-  const normalized = value.trim().replace(/\s+/gu, " ");
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  return `${normalized.slice(0, maxLength)}...`;
+  return Array.from(selectedIndexes)
+    .sort((left, right) => left - right)
+    .map((index) => items[index]);
 }
