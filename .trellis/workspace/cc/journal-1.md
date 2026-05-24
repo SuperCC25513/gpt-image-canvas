@@ -650,3 +650,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: 优化简单生图按钮交互
+
+**Date**: 2026-05-25
+**Task**: 优化简单生图按钮交互
+**Branch**: `main`
+
+### Summary
+
+定位 /generate 按钮不灵敏主因：工具条内容溢出导致参数按钮被裁切，生成按钮校验失败时 disabled 导致点击无反馈。扩大工具按钮命中区，隐藏紧凑视口非操作状态 chip，将积分信息挪到元信息行，并让生成按钮在校验失败时可点击显示原因。已用内置 Browser 验证 8787 桌面和 390x844 移动布局，pnpm typecheck/build 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f82adb4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
