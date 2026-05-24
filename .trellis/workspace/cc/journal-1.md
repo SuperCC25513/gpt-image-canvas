@@ -482,3 +482,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 简单生成展示与积分中心
+
+**Date**: 2026-05-24
+**Task**: 简单生成展示与积分中心
+**Branch**: `main`
+
+### Summary
+
+优化简单生成作品图片展示，新增积分流水查询接口、用户名菜单和独立积分中心页面。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5988ec6` | (see git log) |
+| `dca060d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
