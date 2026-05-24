@@ -8,11 +8,9 @@ import {
   Download,
   Globe2,
   ImageIcon,
-  KeyRound,
   Loader2,
   LockKeyhole,
   Palette,
-  ShieldCheck,
   Sparkles,
   Square
 } from "lucide-react";
@@ -374,7 +372,6 @@ export function SimpleGenerationPage({
                 {t("simpleGenerationModeCanvas")}
               </button>
             </div>
-            <ProviderStatusCard details={providerDetails} authError={authError} />
           </div>
         </header>
 
@@ -705,32 +702,6 @@ const promptStarters = [
     promptKey: "promptStarterCityPrompt"
   }
 ] as const;
-
-function ProviderStatusCard({
-  authError,
-  details
-}: {
-  authError: string;
-  details: ReturnType<typeof simpleProviderDetails>;
-}) {
-  return (
-    <section className="simple-provider-card" data-provider={details.provider} role="status">
-      <span className="simple-provider-card__icon">
-        {details.provider === "loading" ? (
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        ) : details.provider === "openai" || details.provider === "codex" ? (
-          <ShieldCheck className="size-4" aria-hidden="true" />
-        ) : (
-          <KeyRound className="size-4" aria-hidden="true" />
-        )}
-      </span>
-      <span>
-        <b>{details.title}</b>
-        <small>{authError || details.copy}</small>
-      </span>
-    </section>
-  );
-}
 
 function CreditSummary({
   accountCredits,
