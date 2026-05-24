@@ -1,6 +1,9 @@
 import {
+  CREDIT_TRANSACTION_REASONS,
   IMAGE_QUALITIES,
   OUTPUT_FORMATS,
+  type CreditTransaction,
+  type CreditTransactionListResponse,
   type GalleryImageItem,
   type GalleryResponse,
   type GeneratedAsset,
@@ -62,6 +65,10 @@ export function isGalleryResponse(value: unknown): value is GalleryResponse | Pu
   return isRecord(value) && Array.isArray(value.items) && value.items.every(isGalleryImageItem);
 }
 
+export function isCreditTransactionListResponse(value: unknown): value is CreditTransactionListResponse {
+  return isRecord(value) && Array.isArray(value.items) && value.items.every(isCreditTransaction);
+}
+
 export function isGalleryImageItem(value: unknown): value is GalleryImageItem {
   return (
     isRecord(value) &&
@@ -96,6 +103,22 @@ export function isTerminalGenerationRecord(record: GenerationRecord): boolean {
 
 export function generatedAssetsForRecord(record: GenerationRecord): GeneratedAsset[] {
   return record.outputs.flatMap((output) => (output.status === "succeeded" && output.asset ? [output.asset] : []));
+}
+
+function isCreditTransaction(value: unknown): value is CreditTransaction {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.userId === "string" &&
+    isFiniteNumber(value.delta) &&
+    typeof value.reason === "string" &&
+    (CREDIT_TRANSACTION_REASONS as readonly string[]).includes(value.reason) &&
+    (value.relatedGenerationId === undefined || typeof value.relatedGenerationId === "string") &&
+    (value.relatedOutputId === undefined || typeof value.relatedOutputId === "string") &&
+    (value.relatedCheckinDate === undefined || typeof value.relatedCheckinDate === "string") &&
+    (value.adminNote === undefined || typeof value.adminNote === "string") &&
+    typeof value.createdAt === "string"
+  );
 }
 
 function isGenerationOutput(value: unknown): value is GenerationOutput {

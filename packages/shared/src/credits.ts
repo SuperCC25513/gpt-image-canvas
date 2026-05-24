@@ -27,6 +27,11 @@ export interface CreditTransaction {
   createdAt: string;
 }
 
+export interface CreditTransactionListResponse {
+  items: CreditTransaction[];
+  nextCursor?: string;
+}
+
 export interface CheckinStatus {
   checkedInToday: boolean;
   checkinDate: string;

@@ -45,9 +45,55 @@
   color: #c9bbae;
 }
 
-.app-root[data-canvas-theme="dark"] .top-navigation__account-name,
-.app-root[data-canvas-theme="dark"] .top-navigation__logout {
+.app-root[data-canvas-theme="dark"] .top-navigation__account-button {
   color: #c9bbae;
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__account-button:hover {
+  background: rgb(255 247 237 / 0.08);
+  color: #fff7ed;
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu {
+  border-color: rgb(255 255 255 / 0.12);
+  background: #211c18;
+  box-shadow: 0 22px 48px rgb(0 0 0 / 0.38);
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu-head {
+  border-bottom-color: rgb(255 255 255 / 0.1);
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu-head strong,
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu-item {
+  color: #fff7ed;
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu-head span,
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu-head small {
+  color: #b8aa9b;
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu-credits {
+  background: #2d211c;
+  color: #fff7ed;
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu-credits svg {
+  color: #f7b267;
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu-error {
+  background: rgb(180 35 24 / 0.14);
+  color: #fecaca;
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu-item:hover {
+  background: rgb(255 247 237 / 0.08);
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__account-menu-item--danger {
+  color: #fecaca;
 }
 
 .app-root[data-canvas-theme="dark"] .top-navigation__link:hover {
@@ -55,11 +101,6 @@
 }
 
 .app-root[data-canvas-theme="dark"] .language-switcher__button:hover {
-  color: #fff7ed;
-}
-
-.app-root[data-canvas-theme="dark"] .top-navigation__logout:hover {
-  background: rgb(255 247 237 / 0.08);
   color: #fff7ed;
 }
 

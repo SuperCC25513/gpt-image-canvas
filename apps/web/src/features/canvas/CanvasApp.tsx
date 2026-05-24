@@ -314,6 +314,20 @@ function preloadPromptPoolPage(): void {
   void loadPromptPoolPageModule();
 }
 
+type CreditCenterPageModule = { default: typeof import("../credits/CreditCenterPage").CreditCenterPage };
+let creditCenterPageModulePromise: Promise<CreditCenterPageModule> | undefined;
+
+function loadCreditCenterPageModule(): Promise<CreditCenterPageModule> {
+  creditCenterPageModulePromise ??= import("../credits/CreditCenterPage").then((module) => ({ default: module.CreditCenterPage }));
+  return creditCenterPageModulePromise;
+}
+
+const LazyCreditCenterPage = lazy(loadCreditCenterPageModule);
+
+function preloadCreditCenterPage(): void {
+  void loadCreditCenterPageModule();
+}
+
 type AdminPageModule = { default: typeof import("../admin/AdminPage").AdminPage };
 let adminPageModulePromise: Promise<AdminPageModule> | undefined;
 
@@ -329,7 +343,7 @@ function preloadAdminPage(): void {
 }
 
 type PersistedSnapshot = TLEditorSnapshot | TLStoreSnapshot;
-type AppRoute = "home" | "generate" | "canvas" | "pool" | "gallery" | "publicGallery" | "admin";
+type AppRoute = "home" | "generate" | "canvas" | "pool" | "gallery" | "publicGallery" | "credits" | "admin";
 const DEFAULT_ADMIN_TAB: AdminTab = "users";
 const ADMIN_TAB_PATHS = {
   users: "/admin/users",
@@ -622,6 +636,10 @@ function routeFromLocation(): AppRoute {
     return "publicGallery";
   }
 
+  if (window.location.pathname === "/credits") {
+    return "credits";
+  }
+
   if (isAdminPath(window.location.pathname)) {
     return "admin";
   }
@@ -644,6 +662,10 @@ function pathForRoute(route: AppRoute): string {
 
   if (route === "publicGallery") {
     return "/public-gallery";
+  }
+
+  if (route === "credits") {
+    return "/credits";
   }
 
   if (route === "admin") {
@@ -2579,27 +2601,69 @@ function BrandName() {
 }
 
 function TopNavigation({
+  accountError,
+  accountStatus,
   currentUser,
+  isAccountLoading,
   sessionError,
   onLogout,
   route,
   onNavigate,
   onPreloadGallery,
   onPreloadPool,
+  onPreloadCredits,
   onPreloadAdmin,
   isAdmin
 }: {
+  accountError: string;
+  accountStatus: AuthMeResponse | null;
   currentUser?: CurrentUser | null;
+  isAccountLoading: boolean;
   sessionError?: string;
   onLogout?: () => void;
   route: AppRoute;
   onNavigate: (route: AppRoute) => void;
   onPreloadGallery: () => void;
   onPreloadPool: () => void;
+  onPreloadCredits: () => void;
   onPreloadAdmin: () => void;
   isAdmin: boolean;
 }) {
   const { t } = useI18n();
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const accountUser = accountStatus?.authenticated ? accountStatus.user : undefined;
+  const displayUser = currentUser ?? accountUser;
+  const accountCredits = accountUser?.credits ?? displayUser?.credits;
+
+  useEffect(() => {
+    if (!isAccountMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent): void => {
+      const target = event.target;
+      if (target instanceof Node && accountMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsAccountMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsAccountMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isAccountMenuOpen]);
 
   return (
     <header className="top-navigation">
@@ -2723,25 +2787,78 @@ function TopNavigation({
             ) : null}
           </nav>
           <LanguageSwitcher />
-          {currentUser ? (
-            <div className="top-navigation__account" data-tone={sessionError ? "warning" : "neutral"} data-testid="top-account">
-              <span className="top-navigation__account-name" title={sessionError || currentUser.name}>
+          {displayUser ? (
+            <div
+              className="top-navigation__account"
+              data-open={isAccountMenuOpen}
+              data-tone={sessionError || accountError ? "warning" : "neutral"}
+              data-testid="top-account"
+              ref={accountMenuRef}
+            >
+              <button
+                aria-expanded={isAccountMenuOpen}
+                aria-haspopup="menu"
+                aria-label={t("accountMenuOpen", { name: displayUser.name })}
+                className="top-navigation__account-button"
+                data-testid="top-account-menu-button"
+                title={sessionError || accountError || displayUser.name}
+                type="button"
+                onClick={() => setIsAccountMenuOpen((current) => !current)}
+              >
                 <User className="size-4" aria-hidden="true" />
-                <span>{currentUser.name}</span>
-              </span>
-              {sessionError ? <span className="sr-only" role="status">{sessionError}</span> : null}
-              {onLogout ? (
-                <button
-                  aria-label={t("authLogout")}
-                  className="top-navigation__logout"
-                  data-testid="top-account-logout"
-                  title={t("authLogout")}
-                  type="button"
-                  onClick={onLogout}
-                >
-                  <LogOut className="size-4" aria-hidden="true" />
-                  <span>{t("authLogout")}</span>
-                </button>
+                <span>{displayUser.name}</span>
+                <ChevronDown className="size-4 top-navigation__account-chevron" aria-hidden="true" />
+              </button>
+
+              {isAccountMenuOpen ? (
+                <div className="top-navigation__account-menu" data-testid="top-account-menu" role="menu">
+                  <div className="top-navigation__account-menu-head">
+                    <span>{t("accountMenuSignedInAs")}</span>
+                    <strong>{displayUser.name}</strong>
+                    <small>{displayUser.email}</small>
+                  </div>
+                  <div className="top-navigation__account-menu-credits">
+                    <Coins className="size-4" aria-hidden="true" />
+                    <span>{t("creditsTitle")}</span>
+                    <strong>{isAccountLoading && accountCredits === undefined ? t("commonNotSet") : accountCredits ?? 0}</strong>
+                  </div>
+                  {(accountError || sessionError) ? (
+                    <p className="top-navigation__account-menu-error" role="status">
+                      <AlertTriangle className="size-4" aria-hidden="true" />
+                      <span>{accountError || sessionError}</span>
+                    </p>
+                  ) : null}
+                  <button
+                    className="top-navigation__account-menu-item"
+                    data-testid="top-account-credits-center"
+                    role="menuitem"
+                    type="button"
+                    onFocus={onPreloadCredits}
+                    onMouseEnter={onPreloadCredits}
+                    onClick={() => {
+                      setIsAccountMenuOpen(false);
+                      onNavigate("credits");
+                    }}
+                  >
+                    <Coins className="size-4" aria-hidden="true" />
+                    <span>{t("accountMenuCreditsCenter")}</span>
+                  </button>
+                  {onLogout ? (
+                    <button
+                      className="top-navigation__account-menu-item top-navigation__account-menu-item--danger"
+                      data-testid="top-account-logout"
+                      role="menuitem"
+                      type="button"
+                      onClick={() => {
+                        setIsAccountMenuOpen(false);
+                        onLogout();
+                      }}
+                    >
+                      <LogOut className="size-4" aria-hidden="true" />
+                      <span>{t("authLogout")}</span>
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           ) : null}
@@ -4469,6 +4586,15 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   }
 
   async function submitCheckin(): Promise<void> {
+    if (isCheckingIn || isAccountLoading || accountStatus?.checkin?.checkedInToday === true) {
+      return;
+    }
+
+    if (!accountUser) {
+      setAccountError(t("creditsAccountUnavailable"));
+      return;
+    }
+
     setAccountError("");
     setGenerationMessage("");
     setGenerationWarning("");
@@ -6158,13 +6284,17 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   return (
     <div className="app-root" data-canvas-theme={route === "canvas" && isCanvasDarkMode ? "dark" : "light"}>
       <TopNavigation
+        accountError={accountError}
+        accountStatus={accountStatus}
         currentUser={currentUser}
+        isAccountLoading={isAccountLoading}
         isAdmin={isCurrentUserAdmin}
         sessionError={sessionError}
         route={route}
         onNavigate={navigateToRoute}
         onLogout={onLogout}
         onPreloadAdmin={preloadAdminPage}
+        onPreloadCredits={preloadCreditCenterPage}
         onPreloadGallery={preloadGalleryPage}
         onPreloadPool={preloadPromptPoolPage}
       />
@@ -6190,6 +6320,28 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
           onOpenGallery={() => navigateToRoute("gallery")}
           onRefreshAccountStatus={() => void loadAccountStatus()}
         />
+      ) : null}
+      {route === "credits" ? (
+        <Suspense
+          fallback={
+            <main className="credits-page app-view" data-testid="credits-loading-page">
+              <div className="credits-ledger__state" role="status">
+                <Loader2 className="size-5 animate-spin" aria-hidden="true" />
+                <p>{t("creditsCenterLoading")}</p>
+              </div>
+            </main>
+          }
+        >
+          <LazyCreditCenterPage
+            accountError={accountError}
+            accountStatus={accountStatus}
+            isAccountLoading={isAccountLoading}
+            isCheckingIn={isCheckingIn}
+            onCheckin={submitCheckin}
+            onOpenGenerate={() => navigateToRoute("generate")}
+            onRefreshAccountStatus={loadAccountStatus}
+          />
+        </Suspense>
       ) : null}
       {route === "admin" ? (
         <Suspense
@@ -6670,7 +6822,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
               <button
                 className="secondary-action h-9 shrink-0 px-2.5 text-xs"
                 data-testid="checkin-button"
-                disabled={isCheckingIn || isAccountLoading || Boolean(accountError) || !accountUser || accountStatus?.checkin?.checkedInToday === true}
+                disabled={isCheckingIn || isAccountLoading || !accountUser || accountStatus?.checkin?.checkedInToday === true}
                 type="button"
                 onClick={() => void submitCheckin()}
               >

@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import type {
   CheckinResponse,
   CheckinStatus,
   CreditTransaction,
+  CreditTransactionListResponse,
   CreditTransactionReason,
   CurrentUser
 } from "../contracts.js";
@@ -18,6 +19,8 @@ import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.
 import { appSettings, creditTransactions, generationRecords, userCheckins, users } from "../../infrastructure/schema.js";
 
 const APP_SETTINGS_ID = "default";
+const DEFAULT_CREDIT_TRANSACTION_LIMIT = 30;
+const MAX_CREDIT_TRANSACTION_LIMIT = 100;
 
 interface CreditSettings {
   defaultCredits: number;
@@ -81,6 +84,38 @@ export async function getCheckinStatus(userId: string): Promise<CheckinStatus> {
     checkedInToday: Boolean(existing),
     checkinDate,
     creditAward: existing?.creditsAwarded ?? settings.checkinCredit
+  };
+}
+
+export async function listCreditTransactionsForUser(
+  userId: string,
+  options: { limit?: number } = {}
+): Promise<CreditTransactionListResponse> {
+  const limit = creditTransactionLimit(options.limit);
+  if (databaseDriver === "sqlite") {
+    const rows = db
+      .select()
+      .from(creditTransactions)
+      .where(eq(creditTransactions.userId, userId))
+      .orderBy(desc(creditTransactions.createdAt), desc(creditTransactions.id))
+      .limit(limit)
+      .all();
+
+    return {
+      items: rows.map(storedCreditTransactionResponse)
+    };
+  }
+
+  const [rows] = await getMySqlPool().execute<CreditTransactionRow[]>(
+    `${creditTransactionSelectSql()}
+     WHERE user_id = ?
+     ORDER BY created_at DESC, id DESC
+     LIMIT ?`,
+    [userId, limit]
+  );
+
+  return {
+    items: rows.map(storedCreditTransactionResponse)
   };
 }
 
@@ -643,6 +678,10 @@ async function insertMySqlCreditTransaction(
 }
 
 function creditTransactionResponse(transaction: CreditTransactionInsert): CreditTransaction {
+  return storedCreditTransactionResponse(transaction);
+}
+
+function storedCreditTransactionResponse(transaction: CreditTransactionInsert | CreditTransactionRow | typeof creditTransactions.$inferSelect): CreditTransaction {
   return {
     id: transaction.id,
     userId: transaction.userId,
@@ -681,6 +720,10 @@ function positiveOrDefault(value: number | undefined, fallback: number): number 
 
 function nonNegativeOrDefault(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
+function creditTransactionLimit(value: number | undefined): number {
+  return Math.min(positiveOrDefault(value, DEFAULT_CREDIT_TRANSACTION_LIMIT), MAX_CREDIT_TRANSACTION_LIMIT);
 }
 
 function localDateKey(date = new Date()): string {

@@ -65,12 +65,8 @@
     padding: 0 0.36rem;
   }
 
-  .top-navigation__account-name {
-    max-width: 7rem;
-    padding: 0 0.42rem;
-  }
-
-  .top-navigation__logout {
+  .top-navigation__account-button {
+    max-width: 8.5rem;
     padding: 0 0.42rem;
   }
 
@@ -393,7 +389,7 @@
   }
 
   .top-navigation__links {
-    max-width: 44vw;
+    max-width: 38vw;
   }
 
   .top-navigation__account {
@@ -401,23 +397,21 @@
     padding: 0.16rem;
   }
 
-  .top-navigation__account-name {
-    max-width: 5.4rem;
-    height: 2rem;
-    gap: 0.3rem;
-    font-size: 0.74rem;
-    padding: 0 0.34rem;
-  }
-
-  .top-navigation__logout {
+  .top-navigation__account-button {
     width: 2rem;
     min-width: 2rem;
     height: 2rem;
     padding: 0;
   }
 
-  .top-navigation__logout span {
+  .top-navigation__account-button span,
+  .top-navigation__account-chevron {
     display: none;
+  }
+
+  .top-navigation__account-menu {
+    right: -0.2rem;
+    width: min(18rem, calc(100vw - 0.75rem));
   }
 
   .top-navigation__settings {

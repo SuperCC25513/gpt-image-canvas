@@ -25,17 +25,52 @@
   box-shadow: 0 8px 18px rgb(92 63 35 / 0.08);
 }
 
-.top-navigation__account-name {
+.top-navigation__account-button {
   color: var(--ink);
 }
 
-.top-navigation__logout {
+.top-navigation__account-button:hover {
+  background: #f9f1e5;
+}
+
+.top-navigation__account-menu {
+  border-color: var(--line);
+  background: var(--paper-panel);
+  box-shadow: 0 22px 48px rgb(92 63 35 / 0.18);
+}
+
+.top-navigation__account-menu-head {
+  border-bottom-color: var(--line);
+}
+
+.top-navigation__account-menu-head strong {
+  color: var(--ink);
+}
+
+.top-navigation__account-menu-head span,
+.top-navigation__account-menu-head small {
   color: var(--muted-ink);
 }
 
-.top-navigation__logout:hover {
-  background: #f9f1e5;
+.top-navigation__account-menu-credits {
+  background: #fbf4ea;
   color: var(--ink);
+}
+
+.top-navigation__account-menu-credits svg {
+  color: var(--accent);
+}
+
+.top-navigation__account-menu-item {
+  color: var(--ink);
+}
+
+.top-navigation__account-menu-item:hover {
+  background: #f9f1e5;
+}
+
+.top-navigation__account-menu-item--danger {
+  color: var(--danger);
 }
 
 .top-navigation__link {

@@ -101,6 +101,62 @@ Agent plan 是 schema 化契约：
 - `apps/web/src/features/agent/AgentPlanNodeShape.tsx`
 - `apps/web/src/features/canvas/CanvasApp.tsx`
 
+## Scenario: 当前用户积分流水查询
+
+### 1. Scope / Trigger
+
+- Trigger: 新增或修改用户侧积分流水页面、接口、shared response 类型。
+- 这是 API、shared、Web 的跨层契约，必须由 `packages/shared/src/credits.ts` 表达响应 shape。
+
+### 2. Signatures
+
+- API: `GET /api/credits/transactions?limit=<positive-int>`
+- Domain: `listCreditTransactionsForUser(userId, { limit? })`
+- Response: `CreditTransactionListResponse { items: CreditTransaction[]; nextCursor?: string }`
+
+### 3. Contracts
+
+- 接口必须 `requireAuth()`，只读取当前 session 的 `auth.user.id`，不得接收客户端传入的 `userId`。
+- `limit` 非正数或缺失时使用默认值，超过上限时在 domain 层 clamp。
+- 排序固定为 `createdAt DESC, id DESC`，避免同一时间多条流水时顺序抖动。
+- `CreditTransaction.reason` 必须来自 `CREDIT_TRANSACTION_REASONS`，Web label 以该 union 为准。
+
+### 4. Validation & Error Matrix
+
+- 未登录 -> `401 unauthorized`。
+- `limit` 缺失、非整数、非正数 -> 使用默认 limit。
+- `limit` 超过上限 -> 使用最大 limit。
+- 返回体缺少 `items` 或 `items` 不是数组 -> Web 显示积分流水数据异常。
+
+### 5. Good/Base/Bad Cases
+
+- Good: route 只传 `auth.user.id` 给 domain，Web 用 runtime guard 校验 `items` 后再渲染。
+- Base: SQLite 与 MySQL 查询都复用同一 `CreditTransaction` response 映射。
+- Bad: 前端拼接 `userId` 查询参数，或 Web 直接 `as CreditTransactionListResponse` 后渲染深层字段。
+
+### 6. Tests Required
+
+- API smoke: 匿名请求返回 `401`。
+- API smoke: 登录用户只返回自己的流水，按最新时间排序。
+- Web check: 积分流水空、加载失败、非法数据都有稳定状态。
+- Typecheck/build: shared、API、Web 全部通过。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+await listCreditTransactionsForUser(c.req.query("userId") ?? "");
+```
+
+#### Correct
+
+```ts
+const auth = await requireAuth(c);
+if (!auth.ok) return auth.response;
+return c.json(await listCreditTransactionsForUser(auth.user.id, { limit }));
+```
+
 ## 向后兼容
 
 - 旧字段需要保留读兼容时，API/Web 都要接受 legacy 形态。例：edit request 同时支持 `referenceImage` 和 `referenceImages`、`referenceAssetId` 和 `referenceAssetIds`。

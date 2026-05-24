@@ -13,6 +13,7 @@ import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAssetRoutes } from "./routes/assets.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerCoreRoutes } from "./routes/core.js";
+import { registerCreditRoutes } from "./routes/credits.js";
 import { registerGalleryRoutes } from "./routes/gallery.js";
 import { registerImageRoutes } from "./routes/images.js";
 import { registerProjectRoutes } from "./routes/project.js";
@@ -35,6 +36,7 @@ export async function createApp(): Promise<Hono> {
 
   registerCoreRoutes(app);
   registerAuthRoutes(app);
+  registerCreditRoutes(app);
   registerAdminRoutes(app);
   registerProviderConfigRoutes(app);
   registerAgentConfigRoutes(app);

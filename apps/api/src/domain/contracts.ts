@@ -52,6 +52,7 @@ export type {
   CheckinResponse,
   CheckinStatus,
   CreditTransaction,
+  CreditTransactionListResponse,
   CreditTransactionReason,
   EditImageRequest,
   GenerateImageRequest,
