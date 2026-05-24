@@ -964,7 +964,7 @@
     min-height: 0;
     overflow-y: auto;
     padding: 0.25rem 0.15rem 0.75rem;
-    place-items: center;
+    place-items: start center;
     scrollbar-width: thin;
   }
 

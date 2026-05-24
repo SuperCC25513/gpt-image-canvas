@@ -112,6 +112,7 @@ export function SimpleGenerationPage({
   const [galleryItems, setGalleryItems] = useState<GalleryImageItem[]>([]);
   const [sessionItems, setSessionItems] = useState<GalleryImageItem[]>([]);
   const [latestRecord, setLatestRecord] = useState<GenerationRecord | null>(null);
+  const [selectedOutputId, setSelectedOutputId] = useState<string | null | undefined>(undefined);
   const [isGalleryLoading, setIsGalleryLoading] = useState(true);
   const [galleryError, setGalleryError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -122,6 +123,7 @@ export function SimpleGenerationPage({
   const copiedTimerRef = useRef<number | undefined>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const generationControllerRef = useRef<AbortController | null>(null);
+  const stageRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -165,9 +167,37 @@ export function SimpleGenerationPage({
   const validationMessage = missingPromptMessage || passiveValidationMessage;
   const canGenerate = !validationMessage && !isGenerating;
   const visibleResults = useMemo(() => combineRecentResults(sessionItems, galleryItems), [galleryItems, sessionItems]);
+  const selectedResult = useMemo(
+    () => (selectedOutputId ? visibleResults.find((item) => item.outputId === selectedOutputId) ?? null : null),
+    [selectedOutputId, visibleResults]
+  );
+  const stageResults = selectedResult ? [selectedResult] : [];
   const latestAssets = latestRecord ? generatedAssetsForRecord(latestRecord) : [];
+  const selectedRecordAssets = selectedResult?.generationId === latestRecord?.id ? latestAssets : [];
   const isReferenceMode = referenceImages.length > 0;
   const submitLabel = isReferenceMode ? t("simpleGenerationSubmitEdit") : t("simpleGenerationSubmit");
+
+  useEffect(() => {
+    if (selectedOutputId === null || visibleResults.length === 0) {
+      return;
+    }
+
+    const currentSelection = selectedOutputId
+      ? visibleResults.find((item) => item.outputId === selectedOutputId)
+      : undefined;
+    if (currentSelection) {
+      return;
+    }
+
+    if (selectedOutputId === undefined && trimmedPrompt) {
+      setSelectedOutputId(null);
+      return;
+    }
+
+    const [firstResult] = visibleResults;
+    setSelectedOutputId(firstResult.outputId);
+    setPrompt((current) => (current.trim() ? current : firstResult.prompt));
+  }, [selectedOutputId, trimmedPrompt, visibleResults]);
 
   useEffect(() => {
     if (!generationCountOptions.includes(count)) {
@@ -204,6 +234,10 @@ export function SimpleGenerationPage({
     }
   }
 
+  function scrollStageToTop(): void {
+    stageRef.current?.scrollTo({ top: 0 });
+  }
+
   function selectSizePreset(nextPresetId: string): void {
     if (nextPresetId === CUSTOM_SIZE_PRESET_ID) {
       setSizePresetId(CUSTOM_SIZE_PRESET_ID);
@@ -222,12 +256,14 @@ export function SimpleGenerationPage({
 
   function applyPromptStarter(starter: string): void {
     setPrompt(starter);
+    setSelectedOutputId(null);
     setGenerationError("");
     setGenerationWarning("");
     setGenerationMessage("");
   }
 
   function resetComposer(): void {
+    setSelectedOutputId(null);
     setPrompt("");
     setReferenceImages([]);
     setGenerationError("");
@@ -236,6 +272,16 @@ export function SimpleGenerationPage({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+    scrollStageToTop();
+  }
+
+  function selectResultTask(item: GalleryImageItem): void {
+    setSelectedOutputId(item.outputId);
+    setPrompt(item.prompt);
+    setGenerationError("");
+    setGenerationWarning("");
+    setGenerationMessage("");
+    scrollStageToTop();
   }
 
   async function appendReferenceFiles(files: File[]): Promise<void> {
@@ -387,6 +433,8 @@ export function SimpleGenerationPage({
     const successfulItems = generationRecordToGalleryItems(record, publishGeneration);
     if (successfulItems.length > 0) {
       setSessionItems((current) => combineRecentResults(successfulItems, current));
+      setSelectedOutputId(successfulItems[0].outputId);
+      scrollStageToTop();
     }
 
     const failedCount = record.outputs.filter((output) => output.status === "failed").length;
@@ -421,14 +469,14 @@ export function SimpleGenerationPage({
   }
 
   function continueLatestOnCanvas(): void {
-    if (latestAssets.length === 0) {
+    if (selectedRecordAssets.length === 0) {
       setGenerationWarning(t("simpleGenerationNoCanvasAssets"));
       return;
     }
 
     onContinueOnCanvas({
-      assets: latestAssets,
-      prompt: latestRecord?.prompt ?? prompt
+      assets: selectedRecordAssets,
+      prompt: selectedResult?.prompt ?? latestRecord?.prompt ?? prompt
     });
   }
 
@@ -454,12 +502,12 @@ export function SimpleGenerationPage({
             ) : visibleResults.length > 0 ? (
               visibleResults.map((item) => (
                 <button
-                  aria-pressed={trimmedPrompt === item.prompt.trim()}
+                  aria-pressed={selectedOutputId === item.outputId}
                   className="simple-sidebar-item"
-                  data-active={trimmedPrompt === item.prompt.trim()}
+                  data-active={selectedOutputId === item.outputId}
                   key={item.outputId}
                   type="button"
-                  onClick={() => setPrompt(item.prompt)}
+                  onClick={() => selectResultTask(item)}
                 >
                   <span>{item.prompt}</span>
                   <small>{item.size.width} x {item.size.height}</small>
@@ -472,12 +520,12 @@ export function SimpleGenerationPage({
         </aside>
 
         <div className="simple-workbench-main">
-          <section className="simple-workbench-stage" aria-labelledby="simple-generation-title">
-            {visibleResults.length > 0 ? (
+          <section ref={stageRef} className="simple-workbench-stage" aria-labelledby="simple-generation-title">
+            {stageResults.length > 0 ? (
               <div className="simple-results-stage" data-testid="simple-results-panel">
                 <div className="simple-results-stage__header">
                   <div>
-                    <p className="control-label">{t("simpleGenerationResultsKicker")}</p>
+                    <p className="control-label">{t("simpleGenerationSelectedTaskKicker")}</p>
                     <h1 id="simple-generation-title">{t("simpleGenerationResultsTitle")}</h1>
                   </div>
                   <button className="secondary-action simple-results-stage__more" type="button" onClick={onOpenGallery}>
@@ -486,10 +534,10 @@ export function SimpleGenerationPage({
                   </button>
                 </div>
 
-                {latestAssets.length > 0 ? (
+                {selectedRecordAssets.length > 0 ? (
                   <div className="simple-canvas-prompt" role="status">
                     <CheckCircle2 className="size-4" aria-hidden="true" />
-                    <span>{t("simpleGenerationCanvasHint", { count: latestAssets.length })}</span>
+                    <span>{t("simpleGenerationCanvasHint", { count: selectedRecordAssets.length })}</span>
                     <button className="secondary-action" type="button" onClick={continueLatestOnCanvas}>
                       <Square className="size-4" aria-hidden="true" />
                       {t("simpleGenerationContinueCanvas")}
@@ -497,8 +545,8 @@ export function SimpleGenerationPage({
                   </div>
                 ) : null}
 
-                <div className="simple-results-grid" data-count={visibleResults.length} data-testid="simple-results-grid">
-                  {visibleResults.map((item) => (
+                <div className="simple-results-grid" data-count={stageResults.length} data-testid="simple-results-grid">
+                  {stageResults.map((item) => (
                     <article className="simple-result-card" key={item.outputId}>
                       <button className="simple-result-card__image-button" type="button" onClick={() => onContinueOnCanvas({ assets: [item.asset], prompt: item.prompt })}>
                         <img alt={item.prompt} src={assetPreviewUrl(item.asset.id, SIMPLE_RESULT_PREVIEW_WIDTH)} />
