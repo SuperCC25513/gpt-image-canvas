@@ -17,6 +17,12 @@
 - 动态列表的 action handler 可组合成对象传给子组件，参考 `GalleryActionHandlers` / `GallerySelectionHandlers`。
 - 大型可选页面用 `lazy` + `Suspense`，并提供 preload，参考 `LazyGalleryPage`、`LazyPromptPoolPage`。
 
+## 顶部导航顺序
+
+- `TopNavigation` 的主导航顺序固定为：首页、广场、简单生成、画布、提示池、Gallery、后台（后台仅管理员可见）。
+- 新增或调整入口时不要把广场后移；广场是公开作品发现入口，必须保持第二位，方便用户从首页后直接进入浏览。
+- 对应 `data-testid` 顺序应保持 `nav-home`、`nav-public-gallery`、`nav-generate`、`nav-canvas`、`nav-pool`、`nav-gallery`、`nav-admin`，浏览器验收需检查桌面导航可见顺序。
+
 ## tldraw shape
 
 - 自定义 shape 用 `BaseBoxShapeUtil`、`RecordProps`、`declare module "@tldraw/tlschema"` 扩展 props。

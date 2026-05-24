@@ -26,10 +26,17 @@ import type {
   PromptFavoriteGroup,
   PromptFavoriteItem,
   PromptPoolItem,
-  PromptPoolMediaType,
   PromptPoolResponse
 } from "@gpt-image-canvas/shared";
 import { useI18n } from "../../shared/i18n";
+import {
+  filterPromptPoolItems,
+  modelFilterOptions,
+  readPromptPoolFilterState,
+  type PromptPoolMediaFilter,
+  type PromptPoolSortMode,
+  writePromptPoolFilterState
+} from "./promptPoolFilters";
 import {
   createPromptFavorite,
   createPromptFavoriteGroup,
@@ -44,8 +51,6 @@ interface PromptPoolPageProps {
   onUsePrompt: (item: PromptPoolItem) => void;
 }
 
-type PromptPoolMediaFilter = "all" | PromptPoolMediaType;
-type PromptPoolSortMode = "latest" | "popular" | "ready";
 type PromptPoolColumnItem = {
   item: PromptPoolItem;
   priority: boolean;
@@ -57,12 +62,13 @@ const PRIORITY_IMAGE_COUNT = 24;
 
 export function PromptPoolPage({ onUsePrompt }: PromptPoolPageProps) {
   const { locale, t } = useI18n();
+  const [initialFilters] = useState(readPromptPoolFilterState);
   const [items, setItems] = useState<PromptPoolItem[]>([]);
   const [summary, setSummary] = useState<PromptPoolResponse["summary"] | null>(null);
-  const [query, setQuery] = useState("");
-  const [mediaFilter, setMediaFilter] = useState<PromptPoolMediaFilter>("all");
-  const [modelFilter, setModelFilter] = useState("all");
-  const [sortMode, setSortMode] = useState<PromptPoolSortMode>("latest");
+  const [query, setQuery] = useState(initialFilters.query);
+  const [mediaFilter, setMediaFilter] = useState<PromptPoolMediaFilter>(initialFilters.mediaFilter);
+  const [modelFilter, setModelFilter] = useState(initialFilters.modelFilter);
+  const [sortMode, setSortMode] = useState<PromptPoolSortMode>(initialFilters.sortMode);
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -145,6 +151,15 @@ export function PromptPoolPage({ onUsePrompt }: PromptPoolPageProps) {
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE_COUNT);
   }, [deferredQuery, mediaFilter, modelFilter, sortMode]);
+
+  useEffect(() => {
+    writePromptPoolFilterState({
+      mediaFilter,
+      modelFilter,
+      query,
+      sortMode
+    });
+  }, [mediaFilter, modelFilter, query, sortMode]);
 
   useEffect(() => {
     if (!selectedItem) {
@@ -844,45 +859,6 @@ function PromptFavoritePopover({
   );
 }
 
-function filterPromptPoolItems(
-  items: PromptPoolItem[],
-  query: string,
-  mediaFilter: PromptPoolMediaFilter,
-  modelFilter: string,
-  sortMode: PromptPoolSortMode
-): PromptPoolItem[] {
-  const normalizedQuery = normalizeSearchText(query);
-  const filtered = items.filter((item) => {
-    if (mediaFilter !== "all" && item.mediaType !== mediaFilter) {
-      return false;
-    }
-
-    if (modelFilter !== "all" && item.model !== modelFilter) {
-      return false;
-    }
-
-    if (!normalizedQuery) {
-      return true;
-    }
-
-    return normalizeSearchText(`${item.title} ${item.prompt} ${item.model} ${item.author?.name ?? ""} ${item.author?.username ?? ""}`).includes(
-      normalizedQuery
-    );
-  });
-
-  if (sortMode === "latest") {
-    return filtered;
-  }
-
-  return [...filtered].sort((a, b) => {
-    if (sortMode === "ready") {
-      return Number(b.promptReady) - Number(a.promptReady) || popularityScore(b) - popularityScore(a);
-    }
-
-    return popularityScore(b) - popularityScore(a);
-  });
-}
-
 function usePromptPoolColumnCount(): number {
   const [columnCount, setColumnCount] = useState(() =>
     typeof window === "undefined" ? 4 : promptPoolColumnCountForWidth(window.innerWidth)
@@ -963,18 +939,6 @@ function promptPoolImageRatioStyle(item: PromptPoolItem): CSSProperties | undefi
   } as CSSProperties;
 }
 
-function modelFilterOptions(items: PromptPoolItem[]): { count: number; model: string }[] {
-  const counts = new Map<string, number>();
-  items.forEach((item) => {
-    counts.set(item.model, (counts.get(item.model) ?? 0) + 1);
-  });
-  return Array.from(counts, ([model, count]) => ({ count, model })).sort((a, b) => b.count - a.count || a.model.localeCompare(b.model));
-}
-
-function popularityScore(item: PromptPoolItem): number {
-  return item.stats.views + item.stats.likes * 24 + item.stats.retweets * 40;
-}
-
 function mediaFilterLabel(value: PromptPoolMediaFilter, t: ReturnType<typeof useI18n>["t"]): string {
   if (value === "image") {
     return t("poolMediaImage");
@@ -994,10 +958,6 @@ function favoriteGroupName(groupId: string, groups: PromptFavoriteGroup[], t: Re
 function promptExcerpt(promptValue: string): string {
   const compact = promptValue.replace(/\s+/gu, " ").trim();
   return compact.length > 48 ? `${compact.slice(0, 48)}...` : compact;
-}
-
-function normalizeSearchText(value: string): string {
-  return value.replace(/\s+/gu, " ").trim().toLocaleLowerCase();
 }
 
 async function writeClipboardText(text: string): Promise<void> {

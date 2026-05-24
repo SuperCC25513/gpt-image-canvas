@@ -2628,20 +2628,6 @@ function TopNavigation({
               {t("navHome")}
             </a>
             <a
-              aria-current={route === "generate" ? "page" : undefined}
-              className="top-navigation__link"
-              data-active={route === "generate"}
-              data-testid="nav-generate"
-              href="/generate"
-              onClick={(event) => {
-                event.preventDefault();
-                onNavigate("generate");
-              }}
-            >
-              <Sparkles className="size-4" aria-hidden="true" />
-              {t("navGenerate")}
-            </a>
-            <a
               aria-current={route === "publicGallery" ? "page" : undefined}
               className="top-navigation__link"
               data-active={route === "publicGallery"}
@@ -2656,6 +2642,20 @@ function TopNavigation({
             >
               <Globe2 className="size-4" aria-hidden="true" />
               {t("navPublicGallery")}
+            </a>
+            <a
+              aria-current={route === "generate" ? "page" : undefined}
+              className="top-navigation__link"
+              data-active={route === "generate"}
+              data-testid="nav-generate"
+              href="/generate"
+              onClick={(event) => {
+                event.preventDefault();
+                onNavigate("generate");
+              }}
+            >
+              <Sparkles className="size-4" aria-hidden="true" />
+              {t("navGenerate")}
             </a>
             <a
               aria-current={route === "canvas" ? "page" : undefined}
@@ -6173,6 +6173,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
           authError={authError}
           onOpenCanvas={() => navigateToRoute("canvas")}
           onOpenGenerate={() => navigateToRoute("generate")}
+          onOpenPool={() => navigateToRoute("pool")}
           onOpenPublicGallery={() => navigateToRoute("publicGallery")}
         />
       ) : null}
