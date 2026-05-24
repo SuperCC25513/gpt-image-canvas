@@ -833,7 +833,15 @@ export function SimpleGenerationPage({
                   </span>
                 </div>
 
-                <button className="simple-submit-button" disabled={!canGenerate} type="submit" title={validationMessage || submitLabel} data-testid="simple-generate-button" aria-label={submitLabel}>
+                <button
+                  aria-label={submitLabel}
+                  className="simple-submit-button"
+                  data-invalid={Boolean(validationMessage)}
+                  data-testid="simple-generate-button"
+                  disabled={isGenerating}
+                  title={validationMessage || submitLabel}
+                  type="submit"
+                >
                   {isGenerating ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ArrowUp className="size-4" aria-hidden="true" />}
                 </button>
               </div>
@@ -842,6 +850,8 @@ export function SimpleGenerationPage({
             <div className="simple-composer__meta">
               <span>{isReferenceMode ? t("simpleGenerationReferenceMode") : t("simpleGenerationTextMode")}</span>
               <span>{width} x {height}</span>
+              <span>{estimatedCreditCost > 0 ? t("creditsEstimatedCost", { cost: estimatedCreditCost }) : t("creditsEstimatedFree")}</span>
+              <span>{t("creditsBalance", { credits: accountUser?.credits ?? 0 })}</span>
               <span>{t("simpleGenerationPromptCount", { count: prompt.length })}</span>
               {referenceImages.length > 0 ? <span>{t("simpleGenerationReferenceCount", { count: referenceImages.length, max: MAX_REFERENCE_IMAGES })}</span> : null}
             </div>
