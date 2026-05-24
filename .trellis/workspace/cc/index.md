@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-05-24
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~586 | Active |
+| `journal-1.md` | ~619 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-05-24 | 优化简单生图工作台布局 | `679f7c1` | `main` |
 | 16 | 2026-05-24 | 简单生图工作台改造 | `5fda48a`, `3d00ec7` | `main` |
 | 15 | 2026-05-24 | 简单生成展示与积分中心 | `5988ec6`, `dca060d` | `main` |
 | 14 | 2026-05-23 | 管理后台生成服务配置平铺 | `f4ec2c5`, `db0079f` | `main` |

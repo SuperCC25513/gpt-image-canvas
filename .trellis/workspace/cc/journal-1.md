@@ -584,3 +584,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: 优化简单生图工作台布局
+
+**Date**: 2026-05-24
+**Task**: 优化简单生图工作台布局
+**Branch**: `main`
+
+### Summary
+
+继续参考 chatgpt2api 生图页打磨 /generate：保留暖色背景，强化居中创作台、预设卡、结果区、底部输入器，并把左侧历史任务改成更明显的块状卡片。已用内置 Browser 验证桌面、移动和 8787 生产服务样式，pnpm typecheck/build 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `679f7c1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
