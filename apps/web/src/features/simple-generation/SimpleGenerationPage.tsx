@@ -453,7 +453,14 @@ export function SimpleGenerationPage({
               </p>
             ) : visibleResults.length > 0 ? (
               visibleResults.map((item) => (
-                <button className="simple-sidebar-item" key={item.outputId} type="button" onClick={() => setPrompt(item.prompt)}>
+                <button
+                  aria-pressed={trimmedPrompt === item.prompt.trim()}
+                  className="simple-sidebar-item"
+                  data-active={trimmedPrompt === item.prompt.trim()}
+                  key={item.outputId}
+                  type="button"
+                  onClick={() => setPrompt(item.prompt)}
+                >
                   <span>{item.prompt}</span>
                   <small>{item.size.width} x {item.size.height}</small>
                 </button>
@@ -490,7 +497,7 @@ export function SimpleGenerationPage({
                   </div>
                 ) : null}
 
-                <div className="simple-results-grid" data-testid="simple-results-grid">
+                <div className="simple-results-grid" data-count={visibleResults.length} data-testid="simple-results-grid">
                   {visibleResults.map((item) => (
                     <article className="simple-result-card" key={item.outputId}>
                       <button className="simple-result-card__image-button" type="button" onClick={() => onContinueOnCanvas({ assets: [item.asset], prompt: item.prompt })}>
@@ -532,9 +539,23 @@ export function SimpleGenerationPage({
                 <p>{galleryError || t("simpleGenerationEmptyDeck")}</p>
                 <div className="simple-empty-presets" data-testid="simple-prompt-starters">
                   {promptStarters.map((starter) => (
-                    <button className="simple-preset-card" key={starter.labelKey} type="button" onClick={() => applyPromptStarter(t(starter.promptKey))}>
-                      <span>{t(starter.labelKey)}</span>
+                    <button
+                      className="simple-preset-card"
+                      data-preview={starter.preview}
+                      key={starter.labelKey}
+                      type="button"
+                      onClick={() => applyPromptStarter(t(starter.promptKey))}
+                    >
+                      <span className="simple-preset-card__preview" aria-hidden="true">
+                        <span className="simple-preset-card__scene" />
+                        <span className="simple-preset-card__meta">
+                          <span>{starter.ratio}</span>
+                          <span>1</span>
+                        </span>
+                      </span>
+                      <span className="simple-preset-card__title">{t(starter.labelKey)}</span>
                       <small>{t(starter.promptKey)}</small>
+                      <strong>{t("simpleGenerationApplyPreset")}</strong>
                     </button>
                   ))}
                 </div>
@@ -793,19 +814,27 @@ export function SimpleGenerationPage({
 const promptStarters = [
   {
     labelKey: "promptStarterProductLabel",
-    promptKey: "promptStarterProductPrompt"
+    preview: "product",
+    promptKey: "promptStarterProductPrompt",
+    ratio: "1:1"
   },
   {
     labelKey: "promptStarterInteriorLabel",
-    promptKey: "promptStarterInteriorPrompt"
+    preview: "interior",
+    promptKey: "promptStarterInteriorPrompt",
+    ratio: "4:3"
   },
   {
     labelKey: "promptStarterAvatarLabel",
-    promptKey: "promptStarterAvatarPrompt"
+    preview: "avatar",
+    promptKey: "promptStarterAvatarPrompt",
+    ratio: "1:1"
   },
   {
     labelKey: "promptStarterCityLabel",
-    promptKey: "promptStarterCityPrompt"
+    preview: "city",
+    promptKey: "promptStarterCityPrompt",
+    ratio: "16:9"
   }
 ] as const;
 
