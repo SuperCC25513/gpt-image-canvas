@@ -42,6 +42,39 @@
 - None - task complete
 
 
+## Session 16: 简单生图工作台改造
+
+**Date**: 2026-05-24
+**Task**: 简化简单生图工作台
+**Branch**: `main`
+
+### Summary
+
+把 `/generate` 从首屏表单式配置页改为低干扰生图工作台：左侧最近记录，中间空状态/结果区，底部输入工作台优先；参考图上传或粘贴后进入编辑模式。
+
+### Main Changes
+
+- 重构 `SimpleGenerationPage.tsx` 的页面结构，保留现有 Gallery、积分、轮询、结果发送到画布流程。
+- 新增参考图本地读取、缩略图、移除和 `/api/images/edit` 提交分支。
+- 重写 `simple-generation.css` 工作台布局，优化桌面结果区居中和移动端底部输入器可见性。
+- 补齐简单生图工作台相关中英文 i18n 文案，并修复中文空状态标题。
+
+### Testing
+
+- [OK] `source ~/.nvm/nvm.sh && nvm use 24.15.0 && pnpm --filter @gpt-image-canvas/web typecheck`
+- [OK] `source ~/.nvm/nvm.sh && nvm use 24.15.0 && pnpm typecheck`
+- [OK] `source ~/.nvm/nvm.sh && nvm use 24.15.0 && pnpm build`
+- [OK] 独立 `trellis-check` 子代理浏览器验证桌面和移动视口，截图保存在 `.codex-temp/validation/`。
+
+### Status
+
+[OK] **Implementation verified**
+
+### Next Steps
+
+- 等用户确认后再按 Trellis 提交计划执行 git commit。
+
+
 ## Session 2: 完成 MySQL 存储底座
 
 **Date**: 2026-05-22
