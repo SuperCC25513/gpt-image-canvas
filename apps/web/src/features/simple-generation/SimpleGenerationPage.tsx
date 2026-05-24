@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  ArrowUp,
   ArrowRight,
   Check,
   CheckCircle2,
@@ -7,19 +8,23 @@ import {
   Copy,
   Download,
   Globe2,
-  ImageIcon,
+  History,
+  ImagePlus,
   Loader2,
   LockKeyhole,
-  Palette,
+  MessageSquarePlus,
+  Settings2,
   Sparkles,
-  Square
+  Square,
+  X
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import {
   CUSTOM_SIZE_PRESET_ID,
   DEFAULT_GENERATION_CREDIT_COST,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
   IMAGE_QUALITIES,
+  MAX_REFERENCE_IMAGES,
   MAX_IMAGE_DIMENSION,
   MIN_IMAGE_DIMENSION,
   OUTPUT_FORMATS,
@@ -33,6 +38,7 @@ import {
   type GeneratedAsset,
   type ImageQuality,
   type OutputFormat,
+  type ReferenceImageInput,
   type SizePreset,
   type StylePresetId
 } from "@gpt-image-canvas/shared";
@@ -56,6 +62,8 @@ const SIMPLE_RESULT_PREVIEW_WIDTH = 512;
 const GENERATION_POLL_INTERVAL_MS = 1500;
 const SIMPLE_QUICK_SIZE_IDS = ["square-1k", "poster-portrait", "poster-landscape", "story-9-16", "video-16-9"] as const;
 const simpleQuickSizePresets = SIZE_PRESETS.filter((preset) => SIMPLE_QUICK_SIZE_IDS.includes(preset.id as (typeof SIMPLE_QUICK_SIZE_IDS)[number]));
+const MAX_REFERENCE_IMAGE_BYTES = 50 * 1024 * 1024;
+const SUPPORTED_REFERENCE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"]);
 
 interface SimpleGenerationPageProps {
   accountError: string;
@@ -68,6 +76,14 @@ interface SimpleGenerationPageProps {
   onOpenCanvas: () => void;
   onOpenGallery: () => void;
   onRefreshAccountStatus: () => void;
+}
+
+interface SimpleReferenceImage {
+  dataUrl: string;
+  fileName: string;
+  id: string;
+  mimeType: string;
+  sizeBytes: number;
 }
 
 export function SimpleGenerationPage({
@@ -92,6 +108,7 @@ export function SimpleGenerationPage({
   const [quality, setQuality] = useState<ImageQuality>("auto");
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("png");
   const [publishGeneration, setPublishGeneration] = useState(false);
+  const [referenceImages, setReferenceImages] = useState<SimpleReferenceImage[]>([]);
   const [galleryItems, setGalleryItems] = useState<GalleryImageItem[]>([]);
   const [sessionItems, setSessionItems] = useState<GalleryImageItem[]>([]);
   const [latestRecord, setLatestRecord] = useState<GenerationRecord | null>(null);
@@ -103,6 +120,7 @@ export function SimpleGenerationPage({
   const [generationWarning, setGenerationWarning] = useState("");
   const [copiedOutputId, setCopiedOutputId] = useState<string | null>(null);
   const copiedTimerRef = useRef<number | undefined>();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const generationControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -141,16 +159,15 @@ export function SimpleGenerationPage({
     maxImagesPerRequest,
     t
   });
-  const validationMessage =
-    (trimmedPrompt ? "" : t("promptRequired")) ||
-    dimensionValidationMessage ||
-    authError ||
-    providerValidationMessage ||
-    accountValidationMessage ||
-    creditValidationMessage;
+  const missingPromptMessage = trimmedPrompt ? "" : t("promptRequired");
+  const passiveValidationMessage =
+    dimensionValidationMessage || authError || providerValidationMessage || accountValidationMessage || creditValidationMessage;
+  const validationMessage = missingPromptMessage || passiveValidationMessage;
   const canGenerate = !validationMessage && !isGenerating;
   const visibleResults = useMemo(() => combineRecentResults(sessionItems, galleryItems), [galleryItems, sessionItems]);
   const latestAssets = latestRecord ? generatedAssetsForRecord(latestRecord) : [];
+  const isReferenceMode = referenceImages.length > 0;
+  const submitLabel = isReferenceMode ? t("simpleGenerationSubmitEdit") : t("simpleGenerationSubmit");
 
   useEffect(() => {
     if (!generationCountOptions.includes(count)) {
@@ -210,6 +227,66 @@ export function SimpleGenerationPage({
     setGenerationMessage("");
   }
 
+  function resetComposer(): void {
+    setPrompt("");
+    setReferenceImages([]);
+    setGenerationError("");
+    setGenerationWarning("");
+    setGenerationMessage("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  async function appendReferenceFiles(files: File[]): Promise<void> {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) {
+      setGenerationWarning(t("referenceInvalidType"));
+      return;
+    }
+
+    const availableSlots = MAX_REFERENCE_IMAGES - referenceImages.length;
+    if (availableSlots <= 0) {
+      setGenerationWarning(t("simpleGenerationReferenceLimit", { max: MAX_REFERENCE_IMAGES }));
+      return;
+    }
+
+    const selectedFiles = imageFiles.slice(0, availableSlots);
+    try {
+      const nextReferences = await Promise.all(selectedFiles.map((file) => readLocalReferenceImage(file, t)));
+      setReferenceImages((current) => [...current, ...nextReferences]);
+      setGenerationError("");
+      setGenerationWarning(
+        imageFiles.length > availableSlots ? t("simpleGenerationReferenceLimit", { max: MAX_REFERENCE_IMAGES }) : ""
+      );
+      setGenerationMessage("");
+    } catch (error) {
+      setGenerationWarning(error instanceof Error ? error.message : t("readReferenceDataFailed"));
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  }
+
+  function handlePromptPaste(event: ClipboardEvent<HTMLTextAreaElement>): void {
+    const imageFiles = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith("image/"));
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    void appendReferenceFiles(imageFiles);
+  }
+
+  function removeReferenceImage(referenceId: string): void {
+    setReferenceImages((current) => current.filter((reference) => reference.id !== referenceId));
+    setGenerationWarning("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
   async function submitGeneration(): Promise<void> {
     if (!canGenerate) {
       setGenerationWarning(validationMessage);
@@ -226,25 +303,31 @@ export function SimpleGenerationPage({
 
     try {
       const clientRequestId = crypto.randomUUID();
-      const response = await fetch("/api/images/generate", {
+      const requestBody: Record<string, unknown> = {
+        clientRequestId,
+        prompt: trimmedPrompt,
+        presetId: stylePreset,
+        sizePresetId,
+        size: {
+          width,
+          height
+        },
+        quality,
+        outputFormat,
+        count,
+        isPublic: publishGeneration
+      };
+
+      if (isReferenceMode) {
+        requestBody.referenceImages = referenceImages.map(referenceImageToInput);
+      }
+
+      const response = await fetch(isReferenceMode ? "/api/images/edit" : "/api/images/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          clientRequestId,
-          prompt: trimmedPrompt,
-          presetId: stylePreset,
-          sizePresetId,
-          size: {
-            width,
-            height
-          },
-          quality,
-          outputFormat,
-          count,
-          isPublic: publishGeneration
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal
       });
 
@@ -351,333 +434,356 @@ export function SimpleGenerationPage({
 
   return (
     <main className="simple-generation-page app-view" data-testid="simple-generation-page">
-      <section className="simple-generation-shell" aria-labelledby="simple-generation-title">
-        <header className="simple-generation-header">
-          <div className="simple-generation-header__copy">
-            <p className="simple-generation-kicker">
-              <Sparkles className="size-4" aria-hidden="true" />
-              {t("simpleGenerationKicker")}
-            </p>
-            <h1 id="simple-generation-title">{t("simpleGenerationTitle")}</h1>
-            <p>{t("simpleGenerationDeck")}</p>
+      <section className="simple-workbench-shell" aria-labelledby="simple-generation-title">
+        <aside className="simple-workbench-sidebar" aria-label={t("simpleGenerationRecentTitle")}>
+          <div className="simple-sidebar-actions">
+            <button className="simple-new-button" type="button" onClick={resetComposer}>
+              <MessageSquarePlus className="size-4" aria-hidden="true" />
+              {t("simpleGenerationNewDraft")}
+            </button>
+            <button className="simple-sidebar-icon" type="button" title={t("simpleGenerationViewMore")} onClick={onOpenGallery}>
+              <History className="size-4" aria-hidden="true" />
+            </button>
           </div>
-          <div className="simple-generation-header__side">
-            <div className="simple-mode-switch" role="group" aria-label={t("simpleGenerationModeSwitchAria")}>
-              <button className="simple-mode-switch__button is-active" type="button" aria-pressed="true">
-                <Sparkles className="size-4" aria-hidden="true" />
-                {t("simpleGenerationModeSimple")}
-              </button>
-              <button className="simple-mode-switch__button" type="button" aria-pressed="false" onClick={onOpenCanvas}>
-                <Square className="size-4" aria-hidden="true" />
-                {t("simpleGenerationModeCanvas")}
-              </button>
-            </div>
+          <div className="simple-sidebar-list">
+            {isGalleryLoading && visibleResults.length === 0 ? (
+              <p className="simple-sidebar-empty" role="status">
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                {t("simpleGenerationResultsLoading")}
+              </p>
+            ) : visibleResults.length > 0 ? (
+              visibleResults.map((item) => (
+                <button className="simple-sidebar-item" key={item.outputId} type="button" onClick={() => setPrompt(item.prompt)}>
+                  <span>{item.prompt}</span>
+                  <small>{item.size.width} x {item.size.height}</small>
+                </button>
+              ))
+            ) : (
+              <p className="simple-sidebar-empty">{t("simpleGenerationHistoryEmpty")}</p>
+            )}
           </div>
-        </header>
+        </aside>
 
-        <div className="simple-generation-grid">
+        <div className="simple-workbench-main">
+          <section className="simple-workbench-stage" aria-labelledby="simple-generation-title">
+            {visibleResults.length > 0 ? (
+              <div className="simple-results-stage" data-testid="simple-results-panel">
+                <div className="simple-results-stage__header">
+                  <div>
+                    <p className="control-label">{t("simpleGenerationResultsKicker")}</p>
+                    <h1 id="simple-generation-title">{t("simpleGenerationResultsTitle")}</h1>
+                  </div>
+                  <button className="secondary-action simple-results-stage__more" type="button" onClick={onOpenGallery}>
+                    {t("simpleGenerationViewMore")}
+                    <ArrowRight className="size-4" aria-hidden="true" />
+                  </button>
+                </div>
+
+                {latestAssets.length > 0 ? (
+                  <div className="simple-canvas-prompt" role="status">
+                    <CheckCircle2 className="size-4" aria-hidden="true" />
+                    <span>{t("simpleGenerationCanvasHint", { count: latestAssets.length })}</span>
+                    <button className="secondary-action" type="button" onClick={continueLatestOnCanvas}>
+                      <Square className="size-4" aria-hidden="true" />
+                      {t("simpleGenerationContinueCanvas")}
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="simple-results-grid" data-testid="simple-results-grid">
+                  {visibleResults.map((item) => (
+                    <article className="simple-result-card" key={item.outputId}>
+                      <button className="simple-result-card__image-button" type="button" onClick={() => onContinueOnCanvas({ assets: [item.asset], prompt: item.prompt })}>
+                        <img alt={item.prompt} src={assetPreviewUrl(item.asset.id, SIMPLE_RESULT_PREVIEW_WIDTH)} />
+                      </button>
+                      <div className="simple-result-card__body">
+                        <p title={item.prompt}>{item.prompt}</p>
+                        <span>{item.size.width} x {item.size.height}</span>
+                      </div>
+                      <div className="simple-result-card__actions">
+                        <button className="history-icon-action" type="button" title={t("simpleGenerationCopyPrompt")} onClick={() => void copyPrompt(item)}>
+                          {copiedOutputId === item.outputId ? <Check className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+                        </button>
+                        <button className="history-icon-action" type="button" title={t("simpleGenerationDownload")} onClick={() => downloadItem(item)}>
+                          <Download className="size-4" aria-hidden="true" />
+                        </button>
+                        <button className="history-icon-action" type="button" title={t("simpleGenerationSendToCanvas")} onClick={() => onContinueOnCanvas({ assets: [item.asset], prompt: item.prompt })}>
+                          <Square className="size-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                {galleryError ? (
+                  <p className="simple-results-warning" role="alert">
+                    <AlertTriangle className="size-4" aria-hidden="true" />
+                    {galleryError}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="simple-empty-state">
+                <p className="simple-generation-kicker">
+                  <Sparkles className="size-4" aria-hidden="true" />
+                  {isReferenceMode ? t("simpleGenerationReferenceMode") : t("simpleGenerationTextMode")}
+                </p>
+                <h1 id="simple-generation-title">{t("simpleGenerationEmptyTitle")}</h1>
+                <p>{galleryError || t("simpleGenerationEmptyDeck")}</p>
+                <div className="simple-empty-presets" data-testid="simple-prompt-starters">
+                  {promptStarters.map((starter) => (
+                    <button className="simple-preset-card" key={starter.labelKey} type="button" onClick={() => applyPromptStarter(t(starter.promptKey))}>
+                      <span>{t(starter.labelKey)}</span>
+                      <small>{t(starter.promptKey)}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
           <form
-            className="simple-generation-form"
+            className="simple-composer"
             data-testid="simple-generation-form"
             onSubmit={(event) => {
               event.preventDefault();
               void submitGeneration();
             }}
           >
-            <section className="simple-prompt-panel" aria-labelledby="simple-prompt-title">
-              <div className="simple-prompt-panel__header">
-                <div>
-                  <label className="control-label" id="simple-prompt-title" htmlFor="simple-generation-prompt-input">
-                    {t("generationPromptLabel")}
-                  </label>
-                  <p id="simple-prompt-hint">{t("simpleGenerationPromptHint")}</p>
-                </div>
-                <span className="simple-prompt-panel__count">{t("simpleGenerationPromptCount", { count: prompt.length })}</span>
-              </div>
-              <textarea
-                id="simple-generation-prompt-input"
-                aria-invalid={Boolean(!trimmedPrompt && generationWarning)}
-                aria-describedby="simple-prompt-hint"
-                className="prompt-textarea simple-generation-prompt"
-                placeholder={t("simpleGenerationPromptPlaceholder")}
-                value={prompt}
-                data-testid="simple-generation-prompt"
-                onChange={(event) => setPrompt(event.target.value)}
-              />
-            </section>
+            <input
+              ref={fileInputRef}
+              accept="image/png,image/jpeg,image/jpg,image/webp"
+              className="sr-only"
+              multiple
+              type="file"
+              onChange={(event) => {
+                void appendReferenceFiles(Array.from(event.target.files ?? []));
+              }}
+            />
 
-            {!trimmedPrompt ? (
-              <div className="simple-prompt-starters" data-testid="simple-prompt-starters">
-                <span>{t("simpleGenerationPromptExamples")}</span>
-                {promptStarters.map((starter) => (
-                  <button
-                    className="prompt-chip"
-                    key={starter.labelKey}
-                    type="button"
-                    title={t(starter.promptKey)}
-                    onClick={() => applyPromptStarter(t(starter.promptKey))}
-                  >
-                    {t(starter.labelKey)}
-                  </button>
+            {referenceImages.length > 0 ? (
+              <div className="simple-reference-strip" aria-label={t("simpleGenerationReferenceList")} role="list">
+                {referenceImages.map((reference) => (
+                  <figure className="simple-reference-thumb" key={reference.id} role="listitem">
+                    <img alt={reference.fileName} src={reference.dataUrl} />
+                    <figcaption>{reference.fileName}</figcaption>
+                    <button type="button" title={t("simpleGenerationRemoveReference", { name: reference.fileName })} onClick={() => removeReferenceImage(reference.id)}>
+                      <X className="size-3.5" aria-hidden="true" />
+                    </button>
+                  </figure>
                 ))}
               </div>
             ) : null}
 
-            <section className="simple-generation-section" aria-labelledby="simple-size-title">
-              <div className="simple-section-heading">
-                <span className="control-label" id="simple-size-title">
-                  {t("generationSizeLabel")}
-                </span>
-                <span>{width} x {height}</span>
-              </div>
-              <div className="simple-size-grid" data-testid="simple-size-presets">
-                {simpleQuickSizePresets.map((preset) => (
+            <div className="simple-composer__surface">
+              <textarea
+                id="simple-generation-prompt-input"
+                aria-invalid={Boolean(generationError || generationWarning || passiveValidationMessage)}
+                aria-describedby="simple-prompt-hint"
+                className="prompt-textarea simple-generation-prompt"
+                placeholder={isReferenceMode ? t("simpleGenerationEditPlaceholder") : t("simpleGenerationPromptPlaceholder")}
+                value={prompt}
+                data-testid="simple-generation-prompt"
+                onChange={(event) => setPrompt(event.target.value)}
+                onPaste={handlePromptPaste}
+              />
+              <p id="simple-prompt-hint" className="sr-only">
+                {t("simpleGenerationPromptHint")}
+              </p>
+
+              <div className="simple-composer__footer">
+                <div className="simple-composer__tools">
                   <button
-                    aria-pressed={sizePresetId === preset.id}
-                    className={sizePresetId === preset.id ? "simple-size-button is-active" : "simple-size-button"}
-                    key={preset.id}
+                    className="simple-tool-chip"
                     type="button"
-                    onClick={() => selectSizePreset(preset.id)}
+                    onClick={() => fileInputRef.current?.click()}
                   >
-                    <span>{sizePresetLabel(preset, t)}</span>
-                    <small>{preset.width} x {preset.height}</small>
+                    <ImagePlus className="size-4" aria-hidden="true" />
+                    {referenceImages.length > 0 ? t("simpleGenerationAddReference") : t("simpleGenerationUploadReference")}
                   </button>
-                ))}
-              </div>
-              <label className="simple-generation-field">
-                <span className="sr-only">{t("generationAllSizes")}</span>
-                <select
-                  className="field-control"
-                  value={sizePresetId}
-                  data-testid="simple-size-preset-select"
-                  onChange={(event) => selectSizePreset(event.target.value)}
-                >
-                  {SIZE_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {sizePresetOptionLabel(preset, t)}
-                    </option>
-                  ))}
-                  <option value={CUSTOM_SIZE_PRESET_ID}>{t("customSizeOption")}</option>
-                </select>
-              </label>
-            </section>
 
-            <div className="simple-generation-two-col">
-              <label className="simple-generation-field">
-                <span className="control-label">{t("generationStyleLabel")}</span>
-                <select
-                  className="field-control"
-                  value={stylePreset}
-                  data-testid="simple-style-preset"
-                  onChange={(event) => setStylePreset(event.target.value as StylePresetId)}
-                >
-                  {STYLE_PRESETS.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {t("stylePresetLabel", { presetId: preset.id, fallback: preset.label })}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <CreditSummary
+                    accountCredits={accountUser?.credits}
+                    cost={estimatedCreditCost}
+                    error={accountError || accountValidationMessage || creditValidationMessage}
+                    isLoading={isAccountLoading}
+                    maxImages={maxImagesPerRequest}
+                    perImageCost={generationCreditCost}
+                  />
 
-              <div className="simple-generation-field">
-                <span className="control-label">{t("generationCountLabel")}</span>
-                <div className="simple-count-grid" data-testid="simple-count-grid">
-                  {generationCountOptions.map((item) => (
-                    <button
-                      className={item === count ? "segmented-control is-active" : "segmented-control"}
-                      key={item}
-                      type="button"
-                      onClick={() => setCount(item)}
+                  <div className="simple-count-chip" data-testid="simple-count-grid">
+                    <span>{t("simpleGenerationCountChip")}</span>
+                    {generationCountOptions.map((item) => (
+                      <button
+                        aria-pressed={item === count}
+                        className={item === count ? "is-active" : ""}
+                        key={item}
+                        type="button"
+                        onClick={() => setCount(item)}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+
+                  <label className="simple-select-chip">
+                    <span>{t("simpleGenerationSizeChip")}</span>
+                    <select
+                      value={sizePresetId}
+                      data-testid="simple-size-preset-select"
+                      onChange={(event) => selectSizePreset(event.target.value)}
                     >
-                      {item}
-                    </button>
-                  ))}
+                      {SIZE_PRESETS.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {sizePresetLabel(preset, t)}
+                        </option>
+                      ))}
+                      <option value={CUSTOM_SIZE_PRESET_ID}>{t("customSizeOption")}</option>
+                    </select>
+                  </label>
+
+                  <label className="simple-select-chip">
+                    <span>{t("simpleGenerationStyleChip")}</span>
+                    <select
+                      value={stylePreset}
+                      data-testid="simple-style-preset"
+                      onChange={(event) => setStylePreset(event.target.value as StylePresetId)}
+                    >
+                      {STYLE_PRESETS.map((preset) => (
+                        <option key={preset.id} value={preset.id}>
+                          {t("stylePresetLabel", { presetId: preset.id, fallback: preset.label })}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="simple-publish-chip" data-enabled={publishGeneration}>
+                    <input
+                      checked={publishGeneration}
+                      data-testid="simple-generation-public-toggle"
+                      type="checkbox"
+                      onChange={(event) => setPublishGeneration(event.target.checked)}
+                    />
+                    {publishGeneration ? <Globe2 className="size-4" aria-hidden="true" /> : <LockKeyhole className="size-4" aria-hidden="true" />}
+                    <span>{publishGeneration ? t("simpleGenerationPublicShort") : t("simpleGenerationPrivateShort")}</span>
+                  </label>
+
+                  <details className="simple-composer-settings">
+                    <summary>
+                      <Settings2 className="size-4" aria-hidden="true" />
+                      {t("simpleGenerationParameters")}
+                      <ChevronDown className="simple-composer-settings__icon size-4" aria-hidden="true" />
+                    </summary>
+                    <div className="simple-composer-settings__panel">
+                      <div className="simple-size-grid" data-testid="simple-size-presets">
+                        {simpleQuickSizePresets.map((preset) => (
+                          <button
+                            aria-pressed={sizePresetId === preset.id}
+                            className={sizePresetId === preset.id ? "simple-size-button is-active" : "simple-size-button"}
+                            key={preset.id}
+                            type="button"
+                            onClick={() => selectSizePreset(preset.id)}
+                          >
+                            <span>{sizePresetLabel(preset, t)}</span>
+                            <small>{preset.width} x {preset.height}</small>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="simple-generation-two-col">
+                        <label className="simple-generation-field">
+                          <span className="control-label">{t("generationWidthLabel")}</span>
+                          <input
+                            className="field-control"
+                            max={MAX_IMAGE_DIMENSION}
+                            min={MIN_IMAGE_DIMENSION}
+                            type="number"
+                            value={Number.isNaN(width) ? "" : width}
+                            data-testid="simple-custom-width"
+                            onChange={(event) => {
+                              setWidth(normalizeDimension(event.target.value));
+                              setSizePresetId(CUSTOM_SIZE_PRESET_ID);
+                            }}
+                          />
+                        </label>
+                        <label className="simple-generation-field">
+                          <span className="control-label">{t("generationHeightLabel")}</span>
+                          <input
+                            className="field-control"
+                            max={MAX_IMAGE_DIMENSION}
+                            min={MIN_IMAGE_DIMENSION}
+                            type="number"
+                            value={Number.isNaN(height) ? "" : height}
+                            data-testid="simple-custom-height"
+                            onChange={(event) => {
+                              setHeight(normalizeDimension(event.target.value));
+                              setSizePresetId(CUSTOM_SIZE_PRESET_ID);
+                            }}
+                          />
+                        </label>
+                      </div>
+
+                      <div className="simple-generation-two-col">
+                        <label className="simple-generation-field">
+                          <span className="control-label">{t("generationQualityLabel")}</span>
+                          <select
+                            className="field-control"
+                            value={quality}
+                            data-testid="simple-quality"
+                            onChange={(event) => setQuality(event.target.value as ImageQuality)}
+                          >
+                            {IMAGE_QUALITIES.map((item) => (
+                              <option key={item} value={item}>
+                                {t("qualityLabel", { quality: item })}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="simple-generation-field">
+                          <span className="control-label">{t("generationOutputFormatLabel")}</span>
+                          <select
+                            className="field-control"
+                            value={outputFormat}
+                            data-testid="simple-output-format"
+                            onChange={(event) => setOutputFormat(event.target.value as OutputFormat)}
+                          >
+                            {OUTPUT_FORMATS.map((item) => (
+                              <option key={item} value={item}>
+                                {t("outputFormatLabel", { format: item })}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  </details>
+
+                  <span className="simple-provider-chip" title={providerDetails.copy}>
+                    <Sparkles className="size-4" aria-hidden="true" />
+                    {providerDetails.title}
+                  </span>
                 </div>
+
+                <button className="simple-submit-button" disabled={!canGenerate} type="submit" title={validationMessage || submitLabel} data-testid="simple-generate-button" aria-label={submitLabel}>
+                  {isGenerating ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <ArrowUp className="size-4" aria-hidden="true" />}
+                </button>
               </div>
             </div>
 
-            <label className="publish-toggle" data-enabled={publishGeneration}>
-              <input
-                checked={publishGeneration}
-                className="publish-toggle__input"
-                data-testid="simple-generation-public-toggle"
-                type="checkbox"
-                onChange={(event) => setPublishGeneration(event.target.checked)}
-              />
-              <span className="publish-toggle__icon" aria-hidden="true">
-                {publishGeneration ? <Globe2 className="size-4" /> : <LockKeyhole className="size-4" />}
-              </span>
-              <span className="publish-toggle__copy">
-                <span>{t("generationPublishLabel")}</span>
-                <small>{t("generationPublishHint")}</small>
-              </span>
-            </label>
-
-            <details className="simple-advanced">
-              <summary>
-                <span>
-                  <Palette className="size-4" aria-hidden="true" />
-                  {t("generationAdvanced")}
-                </span>
-                <ChevronDown className="simple-advanced__icon size-4" aria-hidden="true" />
-              </summary>
-              <div className="simple-advanced__body">
-                <div className="simple-generation-two-col">
-                  <label className="simple-generation-field">
-                    <span className="control-label">{t("generationWidthLabel")}</span>
-                    <input
-                      className="field-control"
-                      max={MAX_IMAGE_DIMENSION}
-                      min={MIN_IMAGE_DIMENSION}
-                      type="number"
-                      value={Number.isNaN(width) ? "" : width}
-                      data-testid="simple-custom-width"
-                      onChange={(event) => {
-                        setWidth(normalizeDimension(event.target.value));
-                        setSizePresetId(CUSTOM_SIZE_PRESET_ID);
-                      }}
-                    />
-                  </label>
-                  <label className="simple-generation-field">
-                    <span className="control-label">{t("generationHeightLabel")}</span>
-                    <input
-                      className="field-control"
-                      max={MAX_IMAGE_DIMENSION}
-                      min={MIN_IMAGE_DIMENSION}
-                      type="number"
-                      value={Number.isNaN(height) ? "" : height}
-                      data-testid="simple-custom-height"
-                      onChange={(event) => {
-                        setHeight(normalizeDimension(event.target.value));
-                        setSizePresetId(CUSTOM_SIZE_PRESET_ID);
-                      }}
-                    />
-                  </label>
-                </div>
-                <div className="simple-generation-two-col">
-                  <label className="simple-generation-field">
-                    <span className="control-label">{t("generationQualityLabel")}</span>
-                    <select
-                      className="field-control"
-                      value={quality}
-                      data-testid="simple-quality"
-                      onChange={(event) => setQuality(event.target.value as ImageQuality)}
-                    >
-                      {IMAGE_QUALITIES.map((item) => (
-                        <option key={item} value={item}>
-                          {t("qualityLabel", { quality: item })}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="simple-generation-field">
-                    <span className="control-label">{t("generationOutputFormatLabel")}</span>
-                    <select
-                      className="field-control"
-                      value={outputFormat}
-                      data-testid="simple-output-format"
-                      onChange={(event) => setOutputFormat(event.target.value as OutputFormat)}
-                    >
-                      {OUTPUT_FORMATS.map((item) => (
-                        <option key={item} value={item}>
-                          {t("outputFormatLabel", { format: item })}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              </div>
-            </details>
-
-            <CreditSummary
-              accountCredits={accountUser?.credits}
-              cost={estimatedCreditCost}
-              error={accountError || accountValidationMessage || creditValidationMessage}
-              isLoading={isAccountLoading}
-              maxImages={maxImagesPerRequest}
-              perImageCost={generationCreditCost}
-            />
+            <div className="simple-composer__meta">
+              <span>{isReferenceMode ? t("simpleGenerationReferenceMode") : t("simpleGenerationTextMode")}</span>
+              <span>{width} x {height}</span>
+              <span>{t("simpleGenerationPromptCount", { count: prompt.length })}</span>
+              {referenceImages.length > 0 ? <span>{t("simpleGenerationReferenceCount", { count: referenceImages.length, max: MAX_REFERENCE_IMAGES })}</span> : null}
+            </div>
 
             <StatusMessage
               error={generationError}
               isGenerating={isGenerating}
               message={generationMessage}
-              warning={generationWarning || validationMessage}
+              warning={generationWarning || passiveValidationMessage}
             />
-
-            <button className="primary-action simple-generate-button" disabled={!canGenerate} type="submit" data-testid="simple-generate-button">
-              {isGenerating ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
-              {isGenerating ? t("simpleGenerationRunningButton") : t("simpleGenerationSubmit")}
-            </button>
           </form>
-
-          <section className="simple-results-panel" aria-labelledby="simple-results-title" data-testid="simple-results-panel">
-            <div className="simple-results-panel__header">
-              <div>
-                <p className="control-label">{t("simpleGenerationResultsKicker")}</p>
-                <h2 id="simple-results-title">{t("simpleGenerationResultsTitle")}</h2>
-              </div>
-              <button className="secondary-action simple-results-panel__more" type="button" onClick={onOpenGallery}>
-                {t("simpleGenerationViewMore")}
-                <ArrowRight className="size-4" aria-hidden="true" />
-              </button>
-            </div>
-
-            {latestAssets.length > 0 ? (
-              <div className="simple-canvas-prompt" role="status">
-                <CheckCircle2 className="size-4" aria-hidden="true" />
-                <span>{t("simpleGenerationCanvasHint", { count: latestAssets.length })}</span>
-                <button className="secondary-action" type="button" onClick={continueLatestOnCanvas}>
-                  <Square className="size-4" aria-hidden="true" />
-                  {t("simpleGenerationContinueCanvas")}
-                </button>
-              </div>
-            ) : null}
-
-            {isGalleryLoading && visibleResults.length === 0 ? (
-              <div className="simple-results-empty" role="status">
-                <Loader2 className="size-5 animate-spin" aria-hidden="true" />
-                <p>{t("simpleGenerationResultsLoading")}</p>
-              </div>
-            ) : visibleResults.length > 0 ? (
-              <div className="simple-results-grid" data-testid="simple-results-grid">
-                {visibleResults.map((item) => (
-                  <article className="simple-result-card" key={item.outputId}>
-                    <button className="simple-result-card__image-button" type="button" onClick={() => onContinueOnCanvas({ assets: [item.asset], prompt: item.prompt })}>
-                      <img alt={item.prompt} src={assetPreviewUrl(item.asset.id, SIMPLE_RESULT_PREVIEW_WIDTH)} />
-                    </button>
-                    <div className="simple-result-card__body">
-                      <p title={item.prompt}>{item.prompt}</p>
-                      <span>{item.size.width} x {item.size.height}</span>
-                    </div>
-                    <div className="simple-result-card__actions">
-                      <button className="history-icon-action" type="button" title={t("simpleGenerationCopyPrompt")} onClick={() => void copyPrompt(item)}>
-                        {copiedOutputId === item.outputId ? <Check className="size-4" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
-                      </button>
-                      <button className="history-icon-action" type="button" title={t("simpleGenerationDownload")} onClick={() => downloadItem(item)}>
-                        <Download className="size-4" aria-hidden="true" />
-                      </button>
-                      <button className="history-icon-action" type="button" title={t("simpleGenerationSendToCanvas")} onClick={() => onContinueOnCanvas({ assets: [item.asset], prompt: item.prompt })}>
-                        <Square className="size-4" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="simple-results-empty">
-                <ImageIcon className="size-5" aria-hidden="true" />
-                <p>{galleryError || t("simpleGenerationResultsEmpty")}</p>
-              </div>
-            )}
-
-            {galleryError && visibleResults.length > 0 ? (
-              <p className="simple-results-warning" role="alert">
-                <AlertTriangle className="size-4" aria-hidden="true" />
-                {galleryError}
-              </p>
-            ) : null}
-          </section>
         </div>
       </section>
     </main>
@@ -703,6 +809,67 @@ const promptStarters = [
   }
 ] as const;
 
+async function readLocalReferenceImage(file: File, t: ReturnType<typeof useI18n>["t"]): Promise<SimpleReferenceImage> {
+  if (!isSupportedReferenceImageType(file.type)) {
+    throw new Error(t("referenceInvalidType"));
+  }
+  if (file.size > MAX_REFERENCE_IMAGE_BYTES) {
+    throw new Error(t("referenceFileTooLarge"));
+  }
+
+  return {
+    dataUrl: await fileToDataUrl(file, t),
+    fileName: fileNameWithImageExtension(file.name || "reference", file.type),
+    id: createReferenceId(),
+    mimeType: file.type,
+    sizeBytes: file.size
+  };
+}
+
+function referenceImageToInput(reference: SimpleReferenceImage): ReferenceImageInput {
+  return {
+    dataUrl: reference.dataUrl,
+    fileName: reference.fileName
+  };
+}
+
+function createReferenceId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function fileNameWithImageExtension(name: string, mimeType: string): string {
+  if (/\.(png|jpe?g|webp)$/iu.test(name)) {
+    return name;
+  }
+
+  const extension = mimeType.split("/")[1]?.replace("jpeg", "jpg") || "png";
+  return `${name}.${extension}`;
+}
+
+function isSupportedReferenceImageType(mimeType: string): boolean {
+  return SUPPORTED_REFERENCE_MIME_TYPES.has(mimeType.toLowerCase());
+}
+
+async function fileToDataUrl(file: File, t: ReturnType<typeof useI18n>["t"]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(t("readReferenceDataFailed")));
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error(t("readReferenceDataFailed")));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function CreditSummary({
   accountCredits,
   cost,
@@ -719,20 +886,14 @@ function CreditSummary({
   perImageCost: number;
 }) {
   const { t } = useI18n();
+  const title = `${cost > 0 ? t("creditsEstimatedCost", { cost }) : t("creditsEstimatedFree")} · ${t("creditsPerImage", { cost: perImageCost })} · ${t("creditsMaxImages", { max: maxImages })}`;
 
   return (
-    <section className="simple-credit-summary" data-warning={Boolean(error)}>
-      <div>
-        <span className="control-label">{t("creditsTitle")}</span>
-        <strong>{isLoading ? t("commonNotSet") : t("creditsBalance", { credits: accountCredits ?? 0 })}</strong>
-      </div>
-      <div>
-        <span>{cost > 0 ? t("creditsEstimatedCost", { cost }) : t("creditsEstimatedFree")}</span>
-        <span>{t("creditsPerImage", { cost: perImageCost })}</span>
-        <span>{t("creditsMaxImages", { max: maxImages })}</span>
-      </div>
-      {error ? <p role="alert">{error}</p> : null}
-    </section>
+    <div className="simple-credit-summary" data-warning={Boolean(error)} title={error || title}>
+      <span>{cost > 0 ? t("creditsEstimatedCost", { cost }) : t("creditsEstimatedFree")}</span>
+      <strong>{isLoading ? t("commonNotSet") : t("creditsBalance", { credits: accountCredits ?? 0 })}</strong>
+      {error ? <small role="alert">{error}</small> : null}
+    </div>
   );
 }
 
@@ -883,10 +1044,6 @@ function combineRecentResults(primary: GalleryImageItem[], secondary: GalleryIma
 
 function sizePresetLabel(preset: SizePreset, t: ReturnType<typeof useI18n>["t"]): string {
   return t("sizePresetLabel", { presetId: preset.id, fallback: preset.label });
-}
-
-function sizePresetOptionLabel(preset: SizePreset, t: ReturnType<typeof useI18n>["t"]): string {
-  return `${sizePresetLabel(preset, t)} - ${preset.width} x ${preset.height}`;
 }
 
 function normalizeDimension(value: string): number {
