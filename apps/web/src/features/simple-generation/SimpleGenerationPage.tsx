@@ -11,7 +11,6 @@ import {
   History,
   ImagePlus,
   Loader2,
-  LockKeyhole,
   MessageSquarePlus,
   Settings2,
   Sparkles,
@@ -86,6 +85,18 @@ interface SimpleReferenceImage {
   sizeBytes: number;
 }
 
+interface SimplePresetCardItem {
+  count: number;
+  description: string;
+  imageHeight?: number;
+  imageUrl?: string;
+  imageWidth?: number;
+  key: string;
+  prompt: string;
+  ratio: string;
+  title: string;
+}
+
 export function SimpleGenerationPage({
   accountError,
   accountStatus,
@@ -107,12 +118,12 @@ export function SimpleGenerationPage({
   const [count, setCount] = useState<GenerationCount>(1);
   const [quality, setQuality] = useState<ImageQuality>("auto");
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("png");
-  const [publishGeneration, setPublishGeneration] = useState(false);
+  const publishGeneration = true;
   const [referenceImages, setReferenceImages] = useState<SimpleReferenceImage[]>([]);
   const [galleryItems, setGalleryItems] = useState<GalleryImageItem[]>([]);
   const [sessionItems, setSessionItems] = useState<GalleryImageItem[]>([]);
   const [latestRecord, setLatestRecord] = useState<GenerationRecord | null>(null);
-  const [selectedOutputId, setSelectedOutputId] = useState<string | null | undefined>(undefined);
+  const [selectedOutputId, setSelectedOutputId] = useState<string | null>(null);
   const [isGalleryLoading, setIsGalleryLoading] = useState(true);
   const [galleryError, setGalleryError] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -120,9 +131,12 @@ export function SimpleGenerationPage({
   const [generationMessage, setGenerationMessage] = useState("");
   const [generationWarning, setGenerationWarning] = useState("");
   const [copiedOutputId, setCopiedOutputId] = useState<string | null>(null);
+  const [privacyNoticeVisible, setPrivacyNoticeVisible] = useState(false);
   const copiedTimerRef = useRef<number | undefined>();
+  const privacyNoticeTimerRef = useRef<number | undefined>();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const generationControllerRef = useRef<AbortController | null>(null);
+  const presetApplyTokenRef = useRef(0);
   const stageRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -137,6 +151,7 @@ export function SimpleGenerationPage({
   useEffect(() => {
     return () => {
       window.clearTimeout(copiedTimerRef.current);
+      window.clearTimeout(privacyNoticeTimerRef.current);
       generationControllerRef.current?.abort();
     };
   }, []);
@@ -167,6 +182,7 @@ export function SimpleGenerationPage({
   const validationMessage = missingPromptMessage || passiveValidationMessage;
   const canGenerate = !validationMessage && !isGenerating;
   const visibleResults = useMemo(() => combineRecentResults(sessionItems, galleryItems), [galleryItems, sessionItems]);
+  const presetCards = simplePresetCards;
   const selectedResult = useMemo(
     () => (selectedOutputId ? visibleResults.find((item) => item.outputId === selectedOutputId) ?? null : null),
     [selectedOutputId, visibleResults]
@@ -178,26 +194,15 @@ export function SimpleGenerationPage({
   const submitLabel = isReferenceMode ? t("simpleGenerationSubmitEdit") : t("simpleGenerationSubmit");
 
   useEffect(() => {
-    if (selectedOutputId === null || visibleResults.length === 0) {
+    if (selectedOutputId === null) {
       return;
     }
 
-    const currentSelection = selectedOutputId
-      ? visibleResults.find((item) => item.outputId === selectedOutputId)
-      : undefined;
-    if (currentSelection) {
-      return;
-    }
-
-    if (selectedOutputId === undefined && trimmedPrompt) {
+    const currentSelection = visibleResults.find((item) => item.outputId === selectedOutputId);
+    if (!currentSelection) {
       setSelectedOutputId(null);
-      return;
     }
-
-    const [firstResult] = visibleResults;
-    setSelectedOutputId(firstResult.outputId);
-    setPrompt((current) => (current.trim() ? current : firstResult.prompt));
-  }, [selectedOutputId, trimmedPrompt, visibleResults]);
+  }, [selectedOutputId, visibleResults]);
 
   useEffect(() => {
     if (!generationCountOptions.includes(count)) {
@@ -254,12 +259,39 @@ export function SimpleGenerationPage({
     setHeight(preset.height);
   }
 
-  function applyPromptStarter(starter: string): void {
-    setPrompt(starter);
+  async function applyPresetCard(starter: SimplePresetCardItem): Promise<void> {
+    const applyToken = presetApplyTokenRef.current + 1;
+    presetApplyTokenRef.current = applyToken;
+    setPrompt(starter.prompt);
     setSelectedOutputId(null);
     setGenerationError("");
     setGenerationWarning("");
     setGenerationMessage("");
+    if (generationCountOptions.includes(starter.count as GenerationCount)) {
+      setCount(starter.count as GenerationCount);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+
+    if (!starter.imageUrl) {
+      setReferenceImages([]);
+      return;
+    }
+
+    try {
+      const presetReference = await readPresetReferenceImage(starter, t);
+      if (presetApplyTokenRef.current !== applyToken) {
+        return;
+      }
+      setReferenceImages([presetReference]);
+    } catch (error) {
+      if (presetApplyTokenRef.current !== applyToken) {
+        return;
+      }
+      setReferenceImages([]);
+      setGenerationWarning(error instanceof Error ? error.message : t("readReferenceDataFailed"));
+    }
   }
 
   function resetComposer(): void {
@@ -273,6 +305,12 @@ export function SimpleGenerationPage({
       fileInputRef.current.value = "";
     }
     scrollStageToTop();
+  }
+
+  function showPrivacyLockedNotice(): void {
+    window.clearTimeout(privacyNoticeTimerRef.current);
+    setPrivacyNoticeVisible(true);
+    privacyNoticeTimerRef.current = window.setTimeout(() => setPrivacyNoticeVisible(false), 2200);
   }
 
   function selectResultTask(item: GalleryImageItem): void {
@@ -586,23 +624,37 @@ export function SimpleGenerationPage({
                 <h1 id="simple-generation-title">{t("simpleGenerationEmptyTitle")}</h1>
                 <p>{galleryError || t("simpleGenerationEmptyDeck")}</p>
                 <div className="simple-empty-presets" data-testid="simple-prompt-starters">
-                  {promptStarters.map((starter) => (
+                  {presetCards.map((starter, index) => (
                     <button
                       className="simple-preset-card"
-                      data-preview={starter.preview}
-                      key={starter.labelKey}
+                      data-media={starter.imageUrl ? "image" : "text"}
+                      key={starter.key}
+                      title={starter.description}
                       type="button"
-                      onClick={() => applyPromptStarter(t(starter.promptKey))}
+                      onClick={() => void applyPresetCard(starter)}
                     >
                       <span className="simple-preset-card__preview" aria-hidden="true">
-                        <span className="simple-preset-card__scene" />
+                        {starter.imageUrl ? (
+                          <img
+                            alt=""
+                            className="simple-preset-card__image"
+                            decoding={index === 0 ? "sync" : "async"}
+                            height={starter.imageHeight}
+                            loading={index === 0 ? "eager" : "lazy"}
+                            referrerPolicy="no-referrer"
+                            src={starter.imageUrl}
+                            width={starter.imageWidth}
+                          />
+                        ) : (
+                          <span className="simple-preset-card__text-preview">{starter.prompt}</span>
+                        )}
                         <span className="simple-preset-card__meta">
                           <span>{starter.ratio}</span>
-                          <span>1</span>
+                          <span>{starter.count}</span>
                         </span>
                       </span>
-                      <span className="simple-preset-card__title">{t(starter.labelKey)}</span>
-                      <small>{t(starter.promptKey)}</small>
+                      <span className="simple-preset-card__title">{starter.title}</span>
+                      <small>{starter.description}</small>
                       <strong>{t("simpleGenerationApplyPreset")}</strong>
                     </button>
                   ))}
@@ -726,16 +778,24 @@ export function SimpleGenerationPage({
                     </select>
                   </label>
 
-                  <label className="simple-publish-chip" data-enabled={publishGeneration}>
-                    <input
-                      checked={publishGeneration}
+                  <div className="simple-publish-control">
+                    <button
+                      aria-label={t("simpleGenerationPublicOnlyNotice")}
+                      className="simple-publish-chip"
+                      data-enabled="true"
                       data-testid="simple-generation-public-toggle"
-                      type="checkbox"
-                      onChange={(event) => setPublishGeneration(event.target.checked)}
-                    />
-                    {publishGeneration ? <Globe2 className="size-4" aria-hidden="true" /> : <LockKeyhole className="size-4" aria-hidden="true" />}
-                    <span>{publishGeneration ? t("simpleGenerationPublicShort") : t("simpleGenerationPrivateShort")}</span>
-                  </label>
+                      type="button"
+                      onClick={showPrivacyLockedNotice}
+                    >
+                      <Globe2 className="size-4" aria-hidden="true" />
+                      <span>{t("simpleGenerationPublicShort")}</span>
+                    </button>
+                    {privacyNoticeVisible ? (
+                      <span className="simple-publish-popover" role="alert">
+                        {t("simpleGenerationPublicOnlyNotice")}
+                      </span>
+                    ) : null}
+                  </div>
 
                   <details className="simple-composer-settings">
                     <summary>
@@ -869,32 +929,82 @@ export function SimpleGenerationPage({
   );
 }
 
-const promptStarters = [
+const simplePresetCards: SimplePresetCardItem[] = [
   {
-    labelKey: "promptStarterProductLabel",
-    preview: "product",
-    promptKey: "promptStarterProductPrompt",
-    ratio: "1:1"
+    count: 1,
+    description: "高审美叙事海报、角色宇宙主题视觉、收藏版概念海报。",
+    imageHeight: 720,
+    imageUrl: "/simple-presets/stellar-poster.webp",
+    imageWidth: 405,
+    key: "reference-stellar-poster",
+    prompt: [
+      "请根据【主题：崩坏星穹铁道，角色卡芙卡】自动生成一张高审美的“轮廓宇宙 / 收藏版叙事海报”风格作品。",
+      "不要将画面局限于固定器物或常见容器，不要优先默认瓶子、沙漏、玻璃罩、怀表之类的常规载体，而是由 AI 根据主题自行判断并选择一个最契合、最有象征意义、轮廓最强、最适合承载完整叙事世界的主轮廓载体。",
+      "这个主轮廓可以是器物、建筑、门、塔、拱门、穹顶、楼梯井、长廊、雕像、侧脸、眼睛、手掌、头骨、羽翼、面具、镜面、王座、圆环、裂缝、光幕、阴影、几何结构、空间切面、舞台框景、抽象符号或其他更有创意与主题代表性的视觉轮廓，要求合理布局。",
+      "优先选择最能放大主题气质、最能形成强烈视觉记忆点、最能体现史诗感、神秘感、诗意感或设计感的轮廓，而不是最安全、最普通、最常见的容器。",
+      "画面的核心不是简单把世界装进某个物体里，而是让完整的主题世界自然生长在这个主轮廓之中、之内、之上、之边界里或与其结构融为一体，形成一种“主题宇宙依附于一个象征性轮廓展开”的高级叙事效果。",
+      "主轮廓必须清晰、优雅、有辨识度，并在整体构图中占据核心地位。",
+      "轮廓内部或边界中需要自动生成与主题强绑定的完整叙事世界，内容应当丰富、饱满、层次清晰，包括最能代表主题的标志性场景、核心建筑或空间结构、象征符号与隐喻元素、角色关系或文明痕迹、远景中景近景的空间递进、具有命运感和情绪张力的氛围层次，以及门、台阶、桥梁、水面、烟雾、路径、光源、遗迹、机械结构、自然景观、抽象形态、生物或道具等叙事细节。",
+      "所有元素必须统一、自然、有主次、有层级地融合，像一个完整世界真实孕育在这个轮廓结构之中，而不是简单拼贴、裁切填充、素材堆叠或模板化背景。",
+      "整体构图需要具有强烈的收藏版海报气质与高级设计感，大结构稳定，主轮廓强烈明确，内部世界具有纵深、秩序和呼吸感，细节丰富但不拥挤，内容丰满但不杂乱，可以适度加入小比例人物剪影、远处建筑、光柱、门洞、桥、阶梯、回廊、倒影、天光或远景结构来增强尺度感、故事感与史诗感。",
+      "整体画面要安静、宏大、凝练、富有余味，不要平均铺满，不要廉价热闹，不要无重点堆砌。",
+      "风格融合收藏版电影海报构图、高级叙事型视觉设计、梦幻水彩质感与纸张印刷品气质，强调纸张颗粒感、边缘飞白、水彩刷痕、轻微晕染、空气透视、柔和雾化、局部体积光、光雾穿透、大面积留白与克制版式，让画面看起来像设计师完成的高端收藏版视觉作品，而不是普通 AI 跑图。",
+      "整体气质要高级、诗意、宏大、神圣、怀旧、安静、具有传说感和叙事感。",
+      "色彩由 AI 根据主题自动判断并匹配最合适的高级配色方案，但必须保持统一、克制、耐看、低饱和、高级，不要杂乱高饱和，不要廉价霓虹感，不要塑料数码感。",
+      "配色可以围绕黑金灰、冷蓝灰、雾白灰、褐红米白、暗铜、旧纸色、深海蓝、暮色紫、银灰等体系自由变化，但必须始终服务主题，并保持海报级审美与整体和谐。",
+      "最终要求：第一眼有强烈的主题识别度和轮廓记忆点，第二眼有完整丰富的叙事世界，第三眼仍有细节和余味。",
+      "轮廓选择必须具有创意和主题匹配度，尽量避免重复、保守、常见的容器套路，优先选择更有象征性、更有空间感、更有设计潜力的轮廓形式。",
+      "不要普通背景拼接，不要生硬裁切，不要模板化奇幻素材，不要游戏宣传图感，不要过度卡通化，不要过度写实导致失去艺术感，不要形式大于内容。",
+      "如果合适，可以自然加入低调克制的标题、编号、签名或落款，让它更像收藏版海报设计的一部分，但不要喧宾夺主。"
+    ].join(""),
+    ratio: "9:16",
+    title: "轮廓宇宙海报"
   },
   {
-    labelKey: "promptStarterInteriorLabel",
-    preview: "interior",
-    promptKey: "promptStarterInteriorPrompt",
-    ratio: "4:3"
+    count: 1,
+    description: "文博专题、器物拆解、中文信息图和展板式视觉。",
+    imageHeight: 576,
+    imageUrl: "/simple-presets/qinghua-museum-infographic.webp",
+    imageWidth: 720,
+    key: "reference-qinghua-museum-infographic",
+    prompt: [
+      "请根据“青花瓷”自动生成一张“博物馆图鉴式中文拆解信息图”。",
+      "要求整张图兼具真实写实主视觉、结构拆解、中文标注、材质说明、纹样寓意、色彩含义和核心特征总结。",
+      "你需要根据主题自动判断最合适的主体对象、服饰体系、器物结构、时代风格、关键部件、材质工艺、颜色方案与版式结构，用户无需再提供其他信息。",
+      "整体风格应为：国家博物馆展板、历史服饰图鉴、文博专题信息图，而不是普通海报、古风写真、电商详情页或动漫插画。",
+      "背景采用米白、绢纸白、浅茶色等纸张质感，整体高级、克制、专业、可收藏。",
+      "版式固定为：顶部：中文主标题 + 副标题 + 导语；左侧：结构拆解区，中文引线标注关键部件，并配局部特写；右上：材质 / 工艺 / 质感区，展示真实纹理小样并附说明；右中：纹样 / 色彩 / 寓意区，展示主色板、纹样样本和文化解释；底部：穿着顺序 / 构成流程图 + 核心特征总结。",
+      "若主题适合人物展示，则以真实人物全身站姿为中央主体；若更适合器物或单体结构，则改为中心主体拆解图，但整体仍保持完整中文信息图形式。",
+      "所有文字必须为简体中文，清晰、规整、可读，不要乱码、错字、英文或拼音。",
+      "重点突出真实结构、材质差异、文化说明与图鉴气质。",
+      "避免：海报感、影楼感、电商感、动漫感、cosplay感、乱标注、错结构、糊字、假材质、过度装饰。"
+    ].join(""),
+    ratio: "4:3",
+    title: "青花瓷博物馆图鉴"
   },
   {
-    labelKey: "promptStarterAvatarLabel",
-    preview: "avatar",
-    promptKey: "promptStarterAvatarPrompt",
-    ratio: "1:1"
+    count: 1,
+    description: "古风角色联动、游戏活动主视觉、电影感人物宣传图。",
+    imageHeight: 720,
+    imageUrl: "/simple-presets/editorial-fashion.webp",
+    imageWidth: 405,
+    key: "reference-editorial-fashion",
+    prompt: "《倚天屠龙记》周芷若的维秘联动活动宣传图，人物占画面 80% 以上，周芷若在古风古城城墙上，优雅侧身回眸姿态，突出古典美人身姿曲线，穿着维秘联动款：融合古风元素的蕾丝吊带裙，搭配精致吊带丝袜（黑色或淡青色，带有轻微古风刺绣），丝袜包裹修长双腿，整体造型唯美古典。高品质真人级 3D 古风游戏截图风格，电影级光影，周芷若清丽绝俗、长发微散，眼神柔美回眸，轻纱飘逸。背景为夜晚古城墙，青砖城垛、灯笼照明、月光洒落，古建筑灯火点点，氛围梦幻唯美。高细节，8K 品质，精致渲染，真实丝袜质感，电影级构图，光影细腻，古典武侠风。",
+    ratio: "9:16",
+    title: "古风联动宣传图"
   },
   {
-    labelKey: "promptStarterCityLabel",
-    preview: "city",
-    promptKey: "promptStarterCityPrompt",
-    ratio: "16:9"
+    count: 1,
+    description: "游戏主视觉、次世代赛车截图、城市宣传感概念图。",
+    imageHeight: 405,
+    imageUrl: "/simple-presets/forza-horizon-shenzhen.webp",
+    imageWidth: 720,
+    key: "reference-forza-horizon-shenzhen",
+    prompt: "创作一张图片为《极限竞速 地平线 8》的游戏实机截图，游戏背景设为中国，背景城市为深圳，时间设定为 2028 年。画面需要体现真实次世代开放世界赛车游戏的实机演出效果，包含具有深圳辨识度的城市天际线、现代高楼、道路环境、灯光氛围与速度感。构图中在合适位置放置《极限竞速 地平线 8》的 logo 及宣传文案，整体像官方概念宣传截图而不是普通海报。要求 8K 超高清，电影级光影，真实车辆材质、反射、路面细节与空气透视，画面高级、震撼、写实。",
+    ratio: "16:9",
+    title: "地平线深圳实机图"
   }
-] as const;
+];
 
 async function readLocalReferenceImage(file: File, t: ReturnType<typeof useI18n>["t"]): Promise<SimpleReferenceImage> {
   if (!isSupportedReferenceImageType(file.type)) {
@@ -905,11 +1015,39 @@ async function readLocalReferenceImage(file: File, t: ReturnType<typeof useI18n>
   }
 
   return {
-    dataUrl: await fileToDataUrl(file, t),
+    dataUrl: await blobToDataUrl(file, t),
     fileName: fileNameWithImageExtension(file.name || "reference", file.type),
     id: createReferenceId(),
     mimeType: file.type,
     sizeBytes: file.size
+  };
+}
+
+async function readPresetReferenceImage(starter: SimplePresetCardItem, t: ReturnType<typeof useI18n>["t"]): Promise<SimpleReferenceImage> {
+  if (!starter.imageUrl) {
+    throw new Error(t("readReferenceDataFailed"));
+  }
+
+  const response = await fetch(starter.imageUrl);
+  if (!response.ok) {
+    throw new Error(t("readReferenceDataFailed"));
+  }
+
+  const blob = await response.blob();
+  const mimeType = normalizeImageMimeType(blob.type || imageMimeTypeFromUrl(starter.imageUrl));
+  if (!isSupportedReferenceImageType(mimeType)) {
+    throw new Error(t("referenceInvalidType"));
+  }
+  if (blob.size > MAX_REFERENCE_IMAGE_BYTES) {
+    throw new Error(t("referenceFileTooLarge"));
+  }
+
+  return {
+    dataUrl: await blobToDataUrl(blob, t),
+    fileName: fileNameWithImageExtension(starter.title || starter.key, mimeType),
+    id: createReferenceId(),
+    mimeType,
+    sizeBytes: blob.size
   };
 }
 
@@ -941,7 +1079,25 @@ function isSupportedReferenceImageType(mimeType: string): boolean {
   return SUPPORTED_REFERENCE_MIME_TYPES.has(mimeType.toLowerCase());
 }
 
-async function fileToDataUrl(file: File, t: ReturnType<typeof useI18n>["t"]): Promise<string> {
+function imageMimeTypeFromUrl(url: string): string {
+  const path = url.split("?")[0]?.toLowerCase() ?? "";
+  if (path.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) {
+    return "image/jpeg";
+  }
+  if (path.endsWith(".png")) {
+    return "image/png";
+  }
+  return "";
+}
+
+function normalizeImageMimeType(mimeType: string): string {
+  return mimeType.toLowerCase() === "image/jpg" ? "image/jpeg" : mimeType.toLowerCase();
+}
+
+async function blobToDataUrl(blob: Blob, t: ReturnType<typeof useI18n>["t"]): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error(t("readReferenceDataFailed")));
@@ -953,7 +1109,7 @@ async function fileToDataUrl(file: File, t: ReturnType<typeof useI18n>["t"]): Pr
 
       reject(new Error(t("readReferenceDataFailed")));
     };
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
 }
 
