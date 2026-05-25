@@ -18,7 +18,6 @@ import {
   History,
   ImageIcon,
   KeyRound,
-  LockKeyhole,
   Loader2,
   LogOut,
   MapPin,
@@ -793,12 +792,6 @@ function coerceStylePresetId(value: string): StylePresetId {
 
 function coerceGenerationCount(value: number): GenerationCount {
   return GENERATION_COUNTS.includes(value as GenerationCount) ? (value as GenerationCount) : 1;
-}
-
-function sizePresetIdForSize(widthValue: number, heightValue: number): string {
-  return (
-    SIZE_PRESETS.find((preset) => preset.width === widthValue && preset.height === heightValue)?.id ?? CUSTOM_SIZE_PRESET_ID
-  );
 }
 
 function promptLikeSizePreset(item: {
@@ -3253,13 +3246,14 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   const [generationMode, setGenerationMode] = useState<GenerationMode>("text");
   const [prompt, setPrompt] = useState("");
   const [stylePreset, setStylePreset] = useState<StylePresetId>("none");
-  const [sizePresetId, setSizePresetId] = useState(DEFAULT_SIZE_PRESET.id);
+  const [sizePresetId, setSizePresetId] = useState(CUSTOM_SIZE_PRESET_ID);
   const [width, setWidth] = useState(DEFAULT_SIZE_PRESET.width);
   const [height, setHeight] = useState(DEFAULT_SIZE_PRESET.height);
   const [count, setCount] = useState<GenerationCount>(1);
   const [quality, setQuality] = useState<ImageQuality>(DEFAULT_IMAGE_QUALITY);
   const [outputFormat, setOutputFormat] = useState<OutputFormat>("png");
-  const [publishGeneration, setPublishGeneration] = useState(false);
+  const publishGeneration = true;
+  const [privacyNoticeVisible, setPrivacyNoticeVisible] = useState(false);
   const [activeGenerationCount, setActiveGenerationCount] = useState(0);
   const [isProjectLoaded, setIsProjectLoaded] = useState(false);
   const [projectSnapshot, setProjectSnapshot] = useState<PersistedSnapshot | undefined>();
@@ -3349,6 +3343,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   const saveTimerRef = useRef<number | undefined>();
   const codexPollTimerRef = useRef<number | undefined>();
   const favoriteCopyTimerRef = useRef<number | undefined>();
+  const privacyNoticeTimerRef = useRef<number | undefined>();
   const saveRequestRef = useRef(0);
   const isGenerating = activeGenerationCount > 0;
   const hasGenerationProvider = authStatus?.provider === "openai" || authStatus?.provider === "codex";
@@ -3741,6 +3736,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
       window.clearTimeout(agentCopyResetTimerRef.current);
       window.clearTimeout(codexPollTimerRef.current);
       window.clearTimeout(favoriteCopyTimerRef.current);
+      window.clearTimeout(privacyNoticeTimerRef.current);
     };
   }, []);
 
@@ -4146,22 +4142,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
     };
   }, [saveProjectSnapshot, t]);
 
-  function selectScenePreset(nextPresetId: string): void {
-    if (nextPresetId === CUSTOM_SIZE_PRESET_ID) {
-      setSizePresetId(CUSTOM_SIZE_PRESET_ID);
-      return;
-    }
-
-    const preset = SIZE_PRESETS.find((item) => item.id === nextPresetId);
-    if (!preset) {
-      return;
-    }
-
-    setSizePresetId(preset.id);
-    setWidth(preset.width);
-    setHeight(preset.height);
-  }
-
   function updateWidth(value: string): void {
     setWidth(normalizeDimension(value));
     setSizePresetId(CUSTOM_SIZE_PRESET_ID);
@@ -4170,6 +4150,15 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   function updateHeight(value: string): void {
     setHeight(normalizeDimension(value));
     setSizePresetId(CUSTOM_SIZE_PRESET_ID);
+  }
+
+  function showPrivacyLockedNotice(): void {
+    window.clearTimeout(privacyNoticeTimerRef.current);
+    setPrivacyNoticeVisible(true);
+    privacyNoticeTimerRef.current = window.setTimeout(() => {
+      setPrivacyNoticeVisible(false);
+      privacyNoticeTimerRef.current = undefined;
+    }, 2200);
   }
 
   function applyPromptStarter(starter: string): void {
@@ -4553,7 +4542,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
     const input: GenerationSubmitInput = {
       prompt: trimmedPrompt,
       presetId: stylePreset,
-      sizePresetId,
+      sizePresetId: CUSTOM_SIZE_PRESET_ID,
       size: {
         width,
         height
@@ -4694,12 +4683,11 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
 
   async function rerunHistoryRecord(record: GenerationRecord): Promise<void> {
     const nextPresetId = coerceStylePresetId(record.presetId);
-    const nextSizePresetId = sizePresetIdForSize(record.size.width, record.size.height);
     const nextCount = coerceGenerationCount(record.count);
 
     setPrompt(record.prompt);
     setStylePreset(nextPresetId);
-    setSizePresetId(nextSizePresetId);
+    setSizePresetId(CUSTOM_SIZE_PRESET_ID);
     setWidth(record.size.width);
     setHeight(record.size.height);
     setQuality(record.quality);
@@ -4714,7 +4702,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
       {
         prompt: record.prompt,
         presetId: nextPresetId,
-        sizePresetId: nextSizePresetId,
+        sizePresetId: CUSTOM_SIZE_PRESET_ID,
         size: record.size,
         quality: record.quality,
         outputFormat: record.outputFormat,
@@ -4746,11 +4734,10 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
 
   function reuseGalleryImage(item: GalleryImageItem): void {
     const nextPresetId = coerceStylePresetId(item.presetId);
-    const nextSizePresetId = sizePresetIdForSize(item.size.width, item.size.height);
 
     setPrompt(item.prompt);
     setStylePreset(nextPresetId);
-    setSizePresetId(nextSizePresetId);
+    setSizePresetId(CUSTOM_SIZE_PRESET_ID);
     setWidth(item.size.width);
     setHeight(item.size.height);
     setQuality(item.quality);
@@ -4897,7 +4884,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
 
     setPrompt(item.prompt);
     setStylePreset("none");
-    setSizePresetId(nextPreset.id);
+    setSizePresetId(CUSTOM_SIZE_PRESET_ID);
     setWidth(nextPreset.width);
     setHeight(nextPreset.height);
     setQuality(DEFAULT_IMAGE_QUALITY);
@@ -4948,7 +4935,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
 
     setPrompt(favorite.prompt);
     setStylePreset("none");
-    setSizePresetId(nextPreset.id);
+    setSizePresetId(CUSTOM_SIZE_PRESET_ID);
     setWidth(nextPreset.width);
     setHeight(nextPreset.height);
     setQuality(DEFAULT_IMAGE_QUALITY);
@@ -6659,84 +6646,45 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
             </select>
           </label>
 
-          <div>
-            <span className="control-label">{t("generationSizeLabel")}</span>
-            <div className="quick-size-grid" data-testid="quick-size-presets">
-              {quickSizePresets.map((preset) => (
-                <button
-                  aria-pressed={sizePresetId === preset.id}
-                  className={sizePresetId === preset.id ? "quick-size-button is-active" : "quick-size-button"}
-                  key={preset.id}
-                  type="button"
-                  onClick={() => selectScenePreset(preset.id)}
-                >
-                  <span>{sizePresetLabel(preset, t)}</span>
-                  <small>
-                    {preset.width} x {preset.height}
-                  </small>
-                </button>
-              ))}
-              <button
-                aria-pressed={sizePresetId === CUSTOM_SIZE_PRESET_ID}
-                className={sizePresetId === CUSTOM_SIZE_PRESET_ID ? "quick-size-button is-active" : "quick-size-button"}
-                type="button"
-                onClick={() => selectScenePreset(CUSTOM_SIZE_PRESET_ID)}
-              >
-                <span>{t("customSize")}</span>
-                <small>{t("customSizeManual")}</small>
-              </button>
+          <div className="fixed-size-control" data-size-preset={sizePresetId} data-testid="fixed-size-control">
+            <div className="fixed-size-control__header">
+              <span className="control-label">{t("generationSizeLabel")}</span>
+              <span className="fixed-size-control__badge">
+                {Number.isNaN(width) ? "-" : width} x {Number.isNaN(height) ? "-" : height}
+              </span>
             </div>
-            <label className="mt-3 block">
-              <span className="sr-only">{t("generationAllSizes")}</span>
-              <select
-                className="field-control"
-                id="scene-preset"
-                name="scenePreset"
-                value={sizePresetId}
-                data-testid="scene-preset"
-                onChange={(event) => selectScenePreset(event.target.value)}
-              >
-                {SIZE_PRESETS.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {sizePresetOptionLabel(preset, t)}
-                  </option>
-                ))}
-                <option value={CUSTOM_SIZE_PRESET_ID}>{t("customSizeOption")}</option>
-              </select>
-            </label>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <label>
-              <span className="control-label">{t("generationWidthLabel")}</span>
-              <input
-                className="field-control"
-                id="custom-width"
-                min={MIN_IMAGE_DIMENSION}
-                max={MAX_IMAGE_DIMENSION}
-                name="width"
-                step={1}
-                type="number"
-                value={Number.isNaN(width) ? "" : width}
-                data-testid="custom-width"
-                onChange={(event) => updateWidth(event.target.value)}
-              />
-            </label>
-            <label>
-              <span className="control-label">{t("generationHeightLabel")}</span>
-              <input
-                className="field-control"
-                id="custom-height"
-                min={MIN_IMAGE_DIMENSION}
-                max={MAX_IMAGE_DIMENSION}
-                name="height"
-                step={1}
-                type="number"
-                value={Number.isNaN(height) ? "" : height}
-                data-testid="custom-height"
-                onChange={(event) => updateHeight(event.target.value)}
-              />
-            </label>
+            <div className="fixed-size-control__fields">
+              <label>
+                <span className="control-label">{t("generationWidthLabel")}</span>
+                <input
+                  className="field-control"
+                  id="custom-width"
+                  min={MIN_IMAGE_DIMENSION}
+                  max={MAX_IMAGE_DIMENSION}
+                  name="width"
+                  step={1}
+                  type="number"
+                  value={Number.isNaN(width) ? "" : width}
+                  data-testid="custom-width"
+                  onChange={(event) => updateWidth(event.target.value)}
+                />
+              </label>
+              <label>
+                <span className="control-label">{t("generationHeightLabel")}</span>
+                <input
+                  className="field-control"
+                  id="custom-height"
+                  min={MIN_IMAGE_DIMENSION}
+                  max={MAX_IMAGE_DIMENSION}
+                  name="height"
+                  step={1}
+                  type="number"
+                  value={Number.isNaN(height) ? "" : height}
+                  data-testid="custom-height"
+                  onChange={(event) => updateHeight(event.target.value)}
+                />
+              </label>
+            </div>
           </div>
 
           <div>
@@ -6849,22 +6797,29 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
             ) : null}
           </section>
 
-          <label className="publish-toggle" data-enabled={publishGeneration}>
-            <input
-              checked={publishGeneration}
-              className="publish-toggle__input"
+          <div className="publish-toggle-control">
+            <button
+              aria-label={t("generationPublicOnlyNotice")}
+              className="publish-toggle"
+              data-enabled="true"
               data-testid="generation-public-toggle"
-              type="checkbox"
-              onChange={(event) => setPublishGeneration(event.target.checked)}
-            />
-            <span className="publish-toggle__icon" aria-hidden="true">
-              {publishGeneration ? <Globe2 className="size-4" /> : <LockKeyhole className="size-4" />}
-            </span>
-            <span className="publish-toggle__copy">
-              <span>{t("generationPublishLabel")}</span>
-              <small>{t("generationPublishHint")}</small>
-            </span>
-          </label>
+              type="button"
+              onClick={showPrivacyLockedNotice}
+            >
+              <span className="publish-toggle__icon" aria-hidden="true">
+                <Globe2 className="size-4" />
+              </span>
+              <span className="publish-toggle__copy">
+                <span>{t("generationPublishLabel")}</span>
+                <small>{t("generationPublishHint")}</small>
+              </span>
+            </button>
+            {privacyNoticeVisible ? (
+              <span className="publish-toggle-popover" role="alert">
+                {t("generationPublicOnlyNotice")}
+              </span>
+            ) : null}
+          </div>
 
           <details className="rounded-md border border-neutral-200 bg-neutral-50">
             <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-3 text-sm font-medium text-neutral-800">
