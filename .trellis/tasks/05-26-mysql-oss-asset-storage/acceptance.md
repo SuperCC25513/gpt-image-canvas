@@ -26,3 +26,9 @@ pnpm build
 ```
 
 两条命令均通过。
+
+## 真实联调
+
+- `.env` 已写入本地 MySQL + OSS 联调配置，文件被 Git 忽略。
+- OSS 直连烟测通过：上传小 PNG、SDK 读回、GET 预签名 URL 访问、清理测试对象。
+- 应用链路烟测通过：假 provider 生成图片，资产写入 OSS，生成记录和资产元数据写入 MySQL，`asset.url` 为 OSS URL，`/api/assets/:id/access-url` 返回 200，`/api/assets/:id` 和 `/api/assets/:id/preview` 返回 302，测试行和测试对象已清理。
