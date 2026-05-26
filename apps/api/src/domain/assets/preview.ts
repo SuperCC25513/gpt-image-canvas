@@ -1,8 +1,17 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import sharp from "sharp";
-import { readStoredAsset } from "../generation/image-generation.js";
+import type { AssetAccessUrlResponse } from "../contracts.js";
+import { getStoredAssetFile, readStoredAsset } from "../generation/image-generation.js";
 import { runtimePaths } from "../../infrastructure/runtime.js";
+import {
+  assetStorageSignedUrlExpiresInSeconds,
+  ossObjectExists,
+  previewObjectKeyForAsset,
+  signedOssObjectUrl,
+  usesOssAssetStorage,
+  writeOssObject
+} from "../../infrastructure/storage/asset-storage.js";
 
 const PREVIEW_WIDTHS = [256, 512, 1024, 2048] as const;
 const MAX_PREVIEW_WIDTH = PREVIEW_WIDTHS[PREVIEW_WIDTHS.length - 1];
@@ -57,6 +66,10 @@ export function parsePreviewWidth(value: string | undefined): PreviewWidthResult
 }
 
 export async function readStoredAssetPreview(assetId: string, width: number): Promise<StoredAssetPreview | undefined> {
+  if (usesOssAssetStorage()) {
+    return undefined;
+  }
+
   const asset = await readStoredAsset(assetId);
   if (!asset) {
     return undefined;
@@ -88,6 +101,56 @@ export async function readStoredAssetPreview(assetId: string, width: number): Pr
   return {
     bytes,
     width
+  };
+}
+
+export async function getStoredAssetPreviewAccessUrl(
+  assetId: string,
+  width: number
+): Promise<AssetAccessUrlResponse | undefined> {
+  if (!usesOssAssetStorage()) {
+    return {
+      id: assetId,
+      url: `/api/assets/${encodeURIComponent(assetId)}/preview?width=${width}`,
+      width
+    };
+  }
+
+  const file = await getStoredAssetFile(assetId);
+  if (!file) {
+    return undefined;
+  }
+
+  const objectKey = previewObjectKeyForAsset(assetId, width);
+  if (!(await ossObjectExists(objectKey))) {
+    const asset = await readStoredAsset(assetId);
+    if (!asset) {
+      return undefined;
+    }
+
+    const bytes = await sharp(asset.bytes)
+      .rotate()
+      .resize({
+        width,
+        withoutEnlargement: true
+      })
+      .webp({
+        effort: 4,
+        quality: 78
+      })
+      .toBuffer();
+
+    await writeOssObject(objectKey, bytes, "image/webp");
+  }
+
+  return {
+    id: assetId,
+    url: signedOssObjectUrl(objectKey, {
+      disposition: "inline",
+      fileName: `${file.id}-${width}.webp`
+    }),
+    width,
+    expiresInSeconds: assetStorageSignedUrlExpiresInSeconds()
   };
 }
 

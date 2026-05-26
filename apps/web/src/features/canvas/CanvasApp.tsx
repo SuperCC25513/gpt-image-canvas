@@ -1621,6 +1621,10 @@ function isReadableReferenceSource(sourceUrl: string, asset: TLAsset | undefined
     return false;
   }
 
+  if (getLocalAssetId(asset, sourceUrl)) {
+    return true;
+  }
+
   if (sourceUrl.startsWith("data:")) {
     const mimeType = /^data:([^;,]+)/iu.exec(sourceUrl)?.[1];
     return Boolean(mimeType && isSupportedReferenceImageType(mimeType));
@@ -2033,9 +2037,12 @@ async function readReferenceImage(selection: ReferenceSelectionItem, signal: Abo
   mimeType: string;
 }> {
   let response: Response;
+  const sourceUrl = selection.localAssetId
+    ? `/api/assets/${encodeURIComponent(selection.localAssetId)}?proxy=1`
+    : selection.sourceUrl;
 
   try {
-    response = await fetch(selection.sourceUrl, { signal });
+    response = await fetch(sourceUrl, { signal });
   } catch {
     throw new Error(t("readReferenceFailed"));
   }
@@ -2060,7 +2067,7 @@ async function readReferenceImage(selection: ReferenceSelectionItem, signal: Abo
 }
 
 async function readStoredReferenceImage(assetId: string, signal: AbortSignal, t: Translate): Promise<ReferenceImageInput> {
-  const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}`, { signal });
+  const response = await fetch(`/api/assets/${encodeURIComponent(assetId)}?proxy=1`, { signal });
   if (!response.ok) {
     throw new Error(t("readStoredReferenceFailed"));
   }

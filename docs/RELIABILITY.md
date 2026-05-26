@@ -10,16 +10,16 @@ Use this before changing API routes, provider selection, Agent execution, asset 
 
 ## Persistence
 
-`DATA_DIR` defaults to `./data` locally and `/app/data` in Docker. It contains SQLite state and generated assets. Treat it as private runtime data.
+`DATA_DIR` defaults to `./data` locally and `/app/data` in Docker. In SQLite mode it contains SQLite state, generated assets, and previews. In MySQL + OSS mode, MySQL stores metadata and OSS stores generated asset bytes; `DATA_DIR` may still hold local runtime files. Treat all of it as private runtime data.
 
 SQLite tables are defined in `apps/api/src/infrastructure/schema.ts`; keep `docs/generated/db-schema.md` updated when the schema changes.
 
-MySQL 通过 `USE_MYSQL=true` 显式启用。未设置或设为其他值时使用 SQLite。该模式下 API 只用 MySQL 保存用户、会话、项目、资产、生成记录和 Gallery 元数据，不读取 SQLite 数据，也不做 SQLite 到 MySQL 的迁移。生成图片文件仍保存在 `DATA_DIR/assets`，MySQL 只保存元数据和相对路径。`.env` 凭据必须保留在本机，`MYSQL_CREATE_DATABASE=true` 只用于本地初始化或受控部署；`MYSQL_CREATE_DATABASE=false` 时只自动创建缺失表，不自动创建数据库本身。MySQL 初始化会维护数据库层表注释和字段注释。
+MySQL 通过 `USE_MYSQL=true` 显式启用。未设置或设为其他值时使用 SQLite。该模式下 API 只用 MySQL 保存用户、会话、项目、资产、生成记录和 Gallery 元数据，不读取 SQLite 数据，也不做 SQLite 到 MySQL 的迁移。MySQL 模式下图片资产主存储为 OSS，`assets.relative_path` 保存 OSS object key；SQLite 模式下该字段仍保存相对 `DATA_DIR` 的本地路径。`.env` 凭据必须保留在本机，`MYSQL_CREATE_DATABASE=true` 只用于本地初始化或受控部署；`MYSQL_CREATE_DATABASE=false` 时只自动创建缺失表，不自动创建数据库本身。MySQL 初始化会维护数据库层表注释和字段注释。
 
 Important persistence rules:
 
-- Never write generated assets outside the configured data/assets path.
-- Validate asset paths before reading from disk.
+- Never write generated assets outside the configured `DATA_DIR/assets` path or the configured OSS `root-path`.
+- Validate local asset paths before reading from disk, and validate OSS object keys before signing or reading.
 - Keep generation records, outputs, reference assets, and asset rows consistent.
 - 积分余额变更必须在数据库事务内同时写入 `credit_transactions`。生成预扣、失败退款、注册赠送和每日签到都不能只改 `users.credits`。
 - 生成请求会写入 `generation_audits`，记录请求用户、prompt、公开状态、状态、错误摘要、IP/User-Agent 摘要和输出关联。审计写入失败不应阻断 provider 调用，但成功、失败、取消和重启中断路径应尽力更新审计状态。
@@ -45,7 +45,7 @@ Provider errors should become stable API errors where possible. Avoid exposing r
 - Reference image inputs are size and MIME checked.
 - Batch generation uses bounded concurrency.
 - Individual output failures should be represented in output status instead of erasing the whole record when partial results exist.
-- 生成图片成功后必须能从本地资产目录读取；本地写入失败时不能记录成成功资产。
+- 生成图片成功后必须能从当前资产存储读取；本地或 OSS 写入失败时不能记录成成功资产。
 - 生成前先按 `count * generation_credit_cost` 预扣积分。全部失败按本次输出数退款，部分失败只退失败输出对应积分；退款流水按 generation id 保持幂等。
 
 ## Agent Execution
@@ -58,9 +58,11 @@ Agent plans are dependency-aware DAGs. Reliability-sensitive rules:
 - Cancellation should stop in-flight work where possible and leave the plan in an inspectable state.
 - WebSocket events should be stable, typed through `packages/shared`, and safe for reconnect behavior.
 
-## 本地资产存储
+## 资产存储
 
-图片资产只写入 `DATA_DIR/assets`，读取、预览和下载都以本地文件为唯一来源。旧 SQLite 中残留的已废弃远端备份字段或配置表只作为历史数据存在，新代码不应读取、写入或回退到远端对象。
+SQLite 模式下，图片资产写入 `DATA_DIR/assets`，读取、预览和下载都以本地文件为来源。MySQL 模式下，图片资产写入 OSS；API 先执行 owner/admin/公开输出权限判断，再返回或重定向到 OSS GET 预签名临时 URL。服务端需要 bytes 的场景，例如参考图复用和 Gallery ZIP 导出，可以通过 API 从 OSS 读取对象。
+
+旧 SQLite 中残留的已废弃远端备份字段或配置表只作为历史数据存在，新代码不应读取、写入或回退到旧远端备份对象。
 
 `generation_outputs.is_public` 是唯一的公开读取开关。匿名资产读取只能在资产关联到成功且公开的输出时放行；输出删除或改回私密后，公开广场和匿名资产读取必须同步失效。
 

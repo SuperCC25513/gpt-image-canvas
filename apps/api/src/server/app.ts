@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { initializeAuthFoundation } from "../domain/auth/auth-store.js";
 import { runtimePaths } from "../infrastructure/runtime.js";
+import { assertAssetStorageConfigured } from "../infrastructure/storage/asset-storage.js";
 import { errorResponse } from "./http/errors.js";
 import { registerAgentConfigRoutes } from "./routes/agent-config.js";
 import { registerAgentConversationRoutes } from "./routes/agent-conversations.js";
@@ -26,6 +27,7 @@ export const agentWebSocketServer = new WebSocketServer({ noServer: true });
 export const app = await createApp();
 
 export async function createApp(): Promise<Hono> {
+  assertAssetStorageConfigured();
   await initializeAuthFoundation();
 
   const app = new Hono();

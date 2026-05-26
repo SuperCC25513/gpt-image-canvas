@@ -53,6 +53,7 @@ export type {
   AdminUserUpdateRequest,
   AdminUsersResponse,
   AuthStatusResponse,
+  AssetAccessUrlResponse,
   AssetMetadataResponse,
   CodexAuthSessionView,
   CodexDevicePollResponse,

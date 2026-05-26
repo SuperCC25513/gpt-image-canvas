@@ -79,6 +79,13 @@ export interface AssetMetadataResponse extends ImageSize {
   id: string;
 }
 
+export interface AssetAccessUrlResponse {
+  id: string;
+  url: string;
+  width?: number;
+  expiresInSeconds?: number;
+}
+
 export function resolutionTierForSize(size: ImageSize): ResolutionTier {
   const longestSide = Math.max(size.width, size.height);
   if (longestSide >= 3840) {

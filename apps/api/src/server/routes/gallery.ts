@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import type { GalleryExportRequest } from "../../domain/contracts.js";
 import { createZipStream, prepareZipFiles, type ZipFileInput } from "../../domain/assets/zip.js";
-import { getStoredAssetFile } from "../../domain/generation/image-generation.js";
+import { readStoredAsset } from "../../domain/generation/image-generation.js";
 import {
   deleteGalleryOutput,
   getGalleryExportAssets,
@@ -46,14 +46,15 @@ export function registerGalleryRoutes(app: Hono): void {
 
     const zipInputs: ZipFileInput[] = [];
     for (const [index, exportAsset] of exportAssets.entries()) {
-      const file = await getStoredAssetFile(exportAsset.assetId);
-      if (!file) {
+      const asset = await readStoredAsset(exportAsset.assetId);
+      if (!asset) {
         return c.json(errorResponse("gallery_export_asset_unavailable", "One or more Gallery assets are unavailable."), 404);
       }
 
       zipInputs.push({
-        filePath: file.filePath,
-        name: `${String(index + 1).padStart(3, "0")}-${downloadFileName(file.fileName)}`
+        filePath: asset.file.filePath,
+        bytes: asset.file.filePath ? undefined : asset.bytes,
+        name: `${String(index + 1).padStart(3, "0")}-${downloadFileName(asset.file.fileName)}`
       });
     }
 

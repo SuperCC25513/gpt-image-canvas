@@ -12,7 +12,7 @@ Local AI image canvas for prompt-to-image generation, reference-image generation
 
 - Create and arrange AI-generated images on a tldraw canvas.
 - Generate from text prompts or use selected canvas images as references.
-- Save project state, generation history, and generated assets locally.
+- 本地保存项目状态、生成历史和生成资产；服务端部署可使用 MySQL + OSS。
 - Configure image providers from `.env`, the in-app provider dialog, or Codex login.
 - Plan multi-image work in the Agent tab, then execute DAG-based generation jobs around a plan node.
 - Optionally back up new generated images to Tencent Cloud COS or Cloudflare R2 / S3-compatible storage.
@@ -167,7 +167,7 @@ pnpm --filter @gpt-image-canvas/api rebuild better-sqlite3 --stream
 
 ## Docker
 
-Docker Compose builds shared contracts, the web app, Prompt Pool JSON data, and the API into one image. The API serves both `/api` and the built web bundle from one localhost port. SQLite data and generated assets persist in host `./data`.
+Docker Compose builds shared contracts, the web app, Prompt Pool JSON data, and the API into one image. The API serves both `/api` and the built web bundle from one localhost port. SQLite data and generated assets persist in host `./data`；MySQL 部署把元数据保存在 MySQL，把生成资产字节保存在 OSS。
 
 Windows PowerShell:
 
@@ -192,6 +192,25 @@ The `/pool` route reads bundled JSON from `prompt-pool-data/prompts-all.json` an
 Use `docker compose config --quiet --no-env-resolution` when real credentials exist. Plain `docker compose config` expands env files and can print secrets.
 
 Compose defaults `SQLITE_JOURNAL_MODE=DELETE` and `SQLITE_LOCKING_MODE=EXCLUSIVE` to avoid SQLite shared-memory errors on Docker Desktop bind mounts. Avoid running `pnpm dev` and Docker against the same `data/` directory at the same time.
+
+### MySQL + OSS 资产存储
+
+设置 `USE_MYSQL=true` 并提供 `MYSQL_*` 环境变量后，应用元数据会写入 MySQL。该模式下生成图和参考图会上传到阿里云 OSS；资产路由仍先通过 API 鉴权，再返回或重定向到 OSS GET 预签名 URL。
+
+OSS 配置统一放在 `.env` 或部署环境变量中。Docker Compose 已读取 `.env`，不需要额外的运行时 YAML 配置文件。
+
+```env
+OSS_ENDPOINT=oss-cn-hangzhou.aliyuncs.com
+OSS_BUCKET_NAME=your-bucket
+OSS_ACCESS_KEY_ID=your-access-key-id
+OSS_ACCESS_KEY_SECRET=your-access-key-secret
+OSS_EXPIRE=86400
+OSS_UPLOAD_MAX=10485760
+OSS_ROOT_PATH=marketing/image/gpt-image/
+OSS_INTERNAL=false
+```
+
+不要打印或提交真实 AK/SK。
 
 ### Prebuilt GHCR Image
 
@@ -219,8 +238,11 @@ The default `NODE_IMAGE` is `node:24.15.0-bookworm-slim`.
 
 `DATA_DIR` defaults to `./data` locally and `/app/data` in Docker. It contains:
 
-- `gpt-image-canvas.sqlite`: users, sessions, project state, generation history, asset metadata, provider config, Agent LLM config, optional cloud storage config, and Codex OAuth token records.
-- `assets/`: generated image files.
+- `gpt-image-canvas.sqlite`：SQLite 模式下保存用户、会话、项目状态、生成历史、资产元数据、提供方配置、Agent LLM 配置、可选云存储配置和 Codex OAuth token。
+- `assets/`：SQLite 模式下的生成图片文件。
+- `asset-previews/`：SQLite 模式下的本地预览缓存。
+
+MySQL + OSS 模式下需要同时备份 MySQL 和配置的 OSS bucket/prefix；`DATA_DIR/assets` 不是主资产存储。
 
 Do not commit `.env`, `.ralph/`, `.codex-temp/`, `data/`, generated images, SQLite databases, or build output.
 
@@ -235,6 +257,7 @@ If a real API key was ever committed, rotate the key. Git ignore rules prevent f
 - Custom endpoint fails: confirm `OPENAI_BASE_URL` points to an OpenAI-compatible `/v1` endpoint and supports the configured image model.
 - Agent cannot plan: save the Agent LLM config separately from the image provider config. If `supportsVision` is enabled and the request fails, try fewer or smaller selected images.
 - Agent plan cannot execute: confirm the normal image provider is configured; Agent planning and image generation use separate configs.
+- MySQL mode fails on startup: 确认 `.env` 或部署环境变量里的 `MYSQL_*` 和 `OSS_*` 配置完整。
 - Port conflict: set `PORT` for API/Docker. For web dev, stop the process on `5173` or run `pnpm web:dev -- --port 5174`.
 - Docker cannot pull the base image: restore Docker Hub access or set `NODE_IMAGE` to an equivalent cached Node `24.15.0` image.
 - Docker Prompt Pool is empty: rebuild the image so bundled `prompt-pool-data/prompts-all.json` is copied into the container; if overriding `PROMPT_POOL_DIR`, confirm it points to a directory containing `prompts-all.json`.

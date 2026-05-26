@@ -21,6 +21,10 @@ import type {
 import type { CurrentUser } from "../contracts.js";
 import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import {
+  storedAssetAccessUrl,
+  storedAssetRelativePathForFileName
+} from "../../infrastructure/storage/asset-storage.js";
+import {
   assets,
   creditTransactions,
   generationOutputs,
@@ -98,7 +102,7 @@ export interface GenerationReferenceAssetRow {
 export interface StoredGenerationOutputInput {
   id: string;
   status: OutputStatus;
-  asset?: GeneratedAsset;
+  asset?: GeneratedAsset & { relativePath?: string };
   error?: string;
   isPublic?: boolean;
   publicTitle?: string;
@@ -883,7 +887,7 @@ function insertSqliteGenerationOutput(
         id: output.asset.id,
         userId,
         fileName: output.asset.fileName,
-        relativePath: `assets/${output.asset.fileName}`,
+        relativePath: output.asset.relativePath ?? storedAssetRelativePathForFileName(output.asset.fileName),
         mimeType: output.asset.mimeType,
         width: output.asset.width,
         height: output.asset.height,
@@ -927,7 +931,7 @@ async function insertMySqlGenerationOutput(
         output.asset.id,
         userId,
         output.asset.fileName,
-        `assets/${output.asset.fileName}`,
+        output.asset.relativePath ?? storedAssetRelativePathForFileName(output.asset.fileName),
         output.asset.mimeType,
         output.asset.width,
         output.asset.height,
@@ -1562,7 +1566,12 @@ function toGeneratedAsset(asset: AssetRow | undefined): GeneratedAsset | undefin
 
   return {
     id: asset.id,
-    url: `/api/assets/${asset.id}`,
+    url: storedAssetAccessUrl({
+      id: asset.id,
+      relativePath: asset.relativePath,
+      fileName: asset.fileName,
+      mimeType: asset.mimeType
+    }),
     fileName: asset.fileName,
     mimeType: asset.mimeType,
     width: asset.width,

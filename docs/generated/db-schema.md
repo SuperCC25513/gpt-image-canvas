@@ -10,7 +10,7 @@
 - 设置 `USE_MYSQL=true` 时只连接 MySQL，不读取 SQLite 数据，也不执行 SQLite 到 MySQL 的迁移。
 - MySQL 配置来自环境变量：`MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DATABASE`、`MYSQL_CONNECTION_LIMIT`、`MYSQL_CREATE_DATABASE`。
 - `MYSQL_CREATE_DATABASE=false` 时不会自动创建数据库本身；目标数据库已存在时，启动会自动创建缺失表并补齐表注释和字段注释。
-- 生成图片文件仍只写入 `DATA_DIR/assets`。数据库中的 `assets.relative_path` 只保存相对路径。
+- SQLite 模式下，生成图片文件写入 `DATA_DIR/assets`，数据库中的 `assets.relative_path` 保存相对路径。MySQL + OSS 模式下，生成图片文件写入 OSS，`assets.relative_path` 保存 OSS object key。
 - 新库不创建云存储配置表，也不创建云资产备份字段。
 
 ## SQLite / MySQL 类型差异
@@ -119,7 +119,7 @@ Stores generated and reference asset metadata.
 | `id` | text | Primary key. |
 | `user_id` | text | Optional owner user ID. |
 | `file_name` | text | Required stored filename. |
-| `relative_path` | text | Required path relative to `DATA_DIR`. |
+| `relative_path` | text | SQLite 模式下为相对 `DATA_DIR` 的路径；MySQL + OSS 模式下为 OSS object key。 |
 | `mime_type` | text | Required asset MIME type. |
 | `width` | integer | Required image width. |
 | `height` | integer | Required image height. |

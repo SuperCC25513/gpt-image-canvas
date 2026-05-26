@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { isAbsolute, relative, resolve } from "node:path";
 import sharp from "sharp";
 import type {
+  AssetAccessUrlResponse,
   AssetMetadataResponse,
   GeneratedAsset,
   GenerationOutput,
@@ -25,8 +25,15 @@ import {
   type ImageProviderInput,
   type ProviderImage
 } from "../../infrastructure/providers/image-provider.js";
-import { LocalAssetStorageAdapter } from "../../infrastructure/storage/asset-storage.js";
-import { runtimePaths } from "../../infrastructure/runtime.js";
+import {
+  assetStorageSignedUrlExpiresInSeconds,
+  readStoredAssetBytes,
+  resolveLocalAssetPath,
+  storedAssetAccessUrl,
+  storedAssetRelativePathForFileName,
+  usesOssAssetStorage,
+  writeStoredAssetBytes
+} from "../../infrastructure/storage/asset-storage.js";
 import {
   assetExists,
   completeGenerationRecordWithOutputs,
@@ -45,7 +52,6 @@ const MAX_REFERENCE_IMAGE_BYTES = 50 * 1024 * 1024;
 const SUPPORTED_REFERENCE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"]);
 const INTERRUPTED_GENERATION_ERROR = "Generation was interrupted by an API restart. Rerun it from history.";
 const CANCELLED_GENERATION_ERROR = "This generation was cancelled.";
-const localAssetStorage = new LocalAssetStorageAdapter();
 
 export class GenerationDomainError extends Error {
   constructor(
@@ -61,21 +67,26 @@ export class GenerationDomainError extends Error {
 export interface StoredAssetFile {
   id: string;
   fileName: string;
-  filePath: string;
+  relativePath: string;
+  filePath?: string;
   mimeType: string;
 }
+
+type StoredGeneratedAsset = GeneratedAsset & {
+  relativePath: string;
+};
 
 interface BatchOutputResult {
   id: string;
   status: "succeeded" | "failed";
-  asset?: GeneratedAsset;
+  asset?: StoredGeneratedAsset;
   error?: string;
   isPublic?: boolean;
   publicTitle?: string;
 }
 
 interface SavedProviderImage {
-  asset: GeneratedAsset;
+  asset: StoredGeneratedAsset;
 }
 
 type PersistedGenerationInput = ImageProviderInput & {
@@ -314,11 +325,10 @@ export async function saveReferenceImageInput(input: ReferenceImageInput, user?:
   const assetId = randomUUID();
   const extension = extensionForMimeType(parsed.mimeType);
   const fileName = `${assetId}.${extension}`;
-  const relativePath = `assets/${fileName}`;
-  const filePath = resolve(runtimePaths.dataDir, relativePath);
+  const relativePath = storedAssetRelativePathForFileName(fileName);
   const createdAt = new Date().toISOString();
 
-  await localAssetStorage.putObject({ filePath, bytes: parsed.bytes });
+  await writeStoredAssetBytes(relativePath, parsed.bytes, parsed.mimeType);
   await insertAsset({
     id: assetId,
     userId: user?.id ?? null,
@@ -332,7 +342,7 @@ export async function saveReferenceImageInput(input: ReferenceImageInput, user?:
 
   return {
     id: assetId,
-    url: `/api/assets/${assetId}`,
+    url: storedAssetAccessUrl({ id: assetId, relativePath, fileName, mimeType: parsed.mimeType }),
     fileName,
     mimeType: parsed.mimeType,
     width: imageSize.width,
@@ -372,14 +382,15 @@ export async function getStoredAssetFile(assetId: string): Promise<StoredAssetFi
     return undefined;
   }
 
-  const filePath = resolve(runtimePaths.dataDir, asset.relativePath);
-  if (!isInsideDirectory(filePath, runtimePaths.assetsDir)) {
+  const filePath = resolveLocalAssetPath(asset.relativePath);
+  if (!filePath && !asset.relativePath) {
     return undefined;
   }
 
   return {
     id: asset.id,
     fileName: asset.fileName,
+    relativePath: asset.relativePath,
     filePath,
     mimeType: asset.mimeType
   };
@@ -394,7 +405,7 @@ export async function readStoredAsset(assetId: string): Promise<{ file: StoredAs
   try {
     return {
       file,
-      bytes: await localAssetStorage.getObject({ filePath: file.filePath })
+      bytes: await readStoredAssetBytes(file.relativePath)
     };
   } catch {
     return undefined;
@@ -402,20 +413,43 @@ export async function readStoredAsset(assetId: string): Promise<{ file: StoredAs
 }
 
 export async function readStoredAssetMetadata(assetId: string): Promise<AssetMetadataResponse | undefined> {
-  const asset = await readStoredAsset(assetId);
+  const asset = await findAssetById(assetId);
   if (!asset) {
     return undefined;
   }
 
-  const size = await readImageSize(asset.bytes);
-  if (!size) {
+  if (!usesOssAssetStorage() && !(await readStoredAsset(assetId))) {
     return undefined;
   }
 
   return {
-    id: asset.file.id,
-    width: size.width,
-    height: size.height
+    id: asset.id,
+    width: asset.width,
+    height: asset.height
+  };
+}
+
+export async function getStoredAssetAccessUrl(
+  assetId: string,
+  disposition: "inline" | "attachment" = "inline"
+): Promise<AssetAccessUrlResponse | undefined> {
+  const asset = await findAssetById(assetId);
+  if (!asset) {
+    return undefined;
+  }
+
+  return {
+    id: asset.id,
+    url: storedAssetAccessUrl(
+      {
+        id: asset.id,
+        relativePath: asset.relativePath,
+        fileName: asset.fileName,
+        mimeType: asset.mimeType
+      },
+      { disposition }
+    ),
+    expiresInSeconds: assetStorageSignedUrlExpiresInSeconds()
   };
 }
 
@@ -500,8 +534,7 @@ async function editSingleOutput(input: EditImageProviderInput, provider: ImagePr
 async function saveProviderImage(image: ProviderImage, input: ImageProviderInput, _signal?: AbortSignal): Promise<SavedProviderImage> {
   const assetId = randomUUID();
   const fileName = `${assetId}.${input.outputFormat === "jpeg" ? "jpg" : input.outputFormat}`;
-  const relativePath = `assets/${fileName}`;
-  const filePath = resolve(runtimePaths.dataDir, relativePath);
+  const relativePath = storedAssetRelativePathForFileName(fileName);
   const mimeType = mimeTypes[input.outputFormat];
   const bytes = Buffer.from(image.b64Json, "base64");
   const imageSize = await readImageSize(bytes);
@@ -510,16 +543,17 @@ async function saveProviderImage(image: ProviderImage, input: ImageProviderInput
     throw new ProviderError("unsupported_provider_behavior", "Generated image dimensions could not be read.", 502);
   }
 
-  await localAssetStorage.putObject({ filePath, bytes });
+  await writeStoredAssetBytes(relativePath, bytes, mimeType);
 
   return {
     asset: {
       id: assetId,
-      url: `/api/assets/${assetId}`,
+      url: storedAssetAccessUrl({ id: assetId, relativePath, fileName, mimeType }),
       fileName,
       mimeType,
       width: imageSize.width,
-      height: imageSize.height
+      height: imageSize.height,
+      relativePath
     }
   };
 }
@@ -820,9 +854,4 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
-}
-
-function isInsideDirectory(filePath: string, directory: string): boolean {
-  const localPath = relative(directory, filePath);
-  return Boolean(localPath) && !localPath.startsWith("..") && !isAbsolute(localPath);
 }

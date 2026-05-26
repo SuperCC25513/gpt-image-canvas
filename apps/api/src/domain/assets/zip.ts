@@ -3,7 +3,8 @@ import { stat } from "node:fs/promises";
 
 export interface ZipFileInput {
   name: string;
-  filePath: string;
+  filePath?: string;
+  bytes?: Buffer;
   modifiedAt?: Date;
 }
 
@@ -32,11 +33,8 @@ export async function prepareZipFiles(files: ZipFileInput[]): Promise<PreparedZi
 
   return Promise.all(
     files.map(async (file) => {
-      const fileStat = await stat(file.filePath);
-      if (!fileStat.isFile()) {
-        throw new Error("ZIP export entry is not a file.");
-      }
-      if (fileStat.size > MAX_ZIP_UINT32) {
+      const prepared = await prepareZipFileSource(file);
+      if (prepared.size > MAX_ZIP_UINT32) {
         throw new Error("ZIP export entry is too large.");
       }
 
@@ -45,7 +43,7 @@ export async function prepareZipFiles(files: ZipFileInput[]): Promise<PreparedZi
         throw new Error("ZIP export entry name is too long.");
       }
 
-      const modifiedAt = file.modifiedAt ?? fileStat.mtime;
+      const modifiedAt = file.modifiedAt ?? prepared.modifiedAt;
       const { dosDate, dosTime } = dateToDos(modifiedAt);
 
       return {
@@ -55,7 +53,7 @@ export async function prepareZipFiles(files: ZipFileInput[]): Promise<PreparedZi
         dosTime,
         localHeaderOffset: 0,
         nameBytes,
-        size: fileStat.size
+        size: prepared.size
       };
     })
   );
@@ -94,8 +92,7 @@ async function* zipChunks(files: PreparedZipFile[]): AsyncGenerator<Uint8Array> 
 
     let crc32 = 0;
     let size = 0;
-    for await (const chunk of createReadStream(file.filePath)) {
-      const bytes = chunkToUint8Array(chunk);
+    for await (const bytes of fileContentChunks(file)) {
       crc32 = updateCrc32(crc32, bytes);
       size += bytes.byteLength;
       yield bytes;
@@ -124,6 +121,44 @@ async function* zipChunks(files: PreparedZipFile[]): AsyncGenerator<Uint8Array> 
   const centralDirectorySize = offset - centralDirectoryOffset;
   const endRecord = createEndOfCentralDirectory(files.length, centralDirectorySize, centralDirectoryOffset);
   yield endRecord;
+}
+
+async function prepareZipFileSource(file: ZipFileInput): Promise<{ size: number; modifiedAt: Date }> {
+  if (file.bytes) {
+    return {
+      size: file.bytes.byteLength,
+      modifiedAt: new Date()
+    };
+  }
+
+  if (!file.filePath) {
+    throw new Error("ZIP export entry has no file source.");
+  }
+
+  const fileStat = await stat(file.filePath);
+  if (!fileStat.isFile()) {
+    throw new Error("ZIP export entry is not a file.");
+  }
+
+  return {
+    size: fileStat.size,
+    modifiedAt: fileStat.mtime
+  };
+}
+
+async function* fileContentChunks(file: PreparedZipFile): AsyncGenerator<Uint8Array> {
+  if (file.bytes) {
+    yield file.bytes;
+    return;
+  }
+
+  if (!file.filePath) {
+    throw new Error("ZIP export entry has no file source.");
+  }
+
+  for await (const chunk of createReadStream(file.filePath)) {
+    yield chunkToUint8Array(chunk);
+  }
 }
 
 function createLocalHeader(file: PreparedZipFile): Buffer {

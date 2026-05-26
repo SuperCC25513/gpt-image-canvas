@@ -183,7 +183,7 @@ const mySqlSchema: MySqlTableDefinition[] = [
       { name: "id", definition: "VARCHAR(191) PRIMARY KEY NOT NULL", comment: "资产唯一标识" },
       { name: "user_id", definition: "VARCHAR(191)", comment: "资产所属用户 ID" },
       { name: "file_name", definition: "TEXT NOT NULL", comment: "存储文件名" },
-      { name: "relative_path", definition: "TEXT NOT NULL", comment: "相对 DATA_DIR 的资产路径" },
+      { name: "relative_path", definition: "TEXT NOT NULL", comment: "本地相对路径或 OSS Object Key" },
       { name: "mime_type", definition: "VARCHAR(191) NOT NULL", comment: "资产 MIME 类型" },
       { name: "width", definition: "INT NOT NULL", comment: "图片宽度像素" },
       { name: "height", definition: "INT NOT NULL", comment: "图片高度像素" },
