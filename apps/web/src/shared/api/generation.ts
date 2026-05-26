@@ -2,15 +2,20 @@ import {
   CREDIT_TRANSACTION_REASONS,
   IMAGE_QUALITIES,
   OUTPUT_FORMATS,
+  REDEMPTION_CODE_STATUSES,
   type CreditTransaction,
   type CreditTransactionListResponse,
+  type AdminCreateRedemptionCodesResponse,
   type GalleryImageItem,
   type GalleryResponse,
   type GeneratedAsset,
   type GenerationOutput,
   type GenerationRecord,
   type GenerationResponse,
-  type PublicGalleryResponse
+  type PublicGalleryResponse,
+  type RedeemCreditCodeResponse,
+  type RedemptionCodeListResponse,
+  type RedemptionCodeSummary
 } from "@gpt-image-canvas/shared";
 import { localizedApiErrorMessage, type Locale } from "../i18n";
 
@@ -69,6 +74,27 @@ export function isCreditTransactionListResponse(value: unknown): value is Credit
   return isRecord(value) && Array.isArray(value.items) && value.items.every(isCreditTransaction);
 }
 
+export function isRedemptionCodeListResponse(value: unknown): value is RedemptionCodeListResponse {
+  return isRecord(value) && Array.isArray(value.items) && value.items.every(isRedemptionCodeSummary);
+}
+
+export function isAdminCreateRedemptionCodesResponse(value: unknown): value is AdminCreateRedemptionCodesResponse {
+  return isRecord(value) && Array.isArray(value.items) && value.items.every(isRedemptionCodeSummary);
+}
+
+export function isRedeemCreditCodeResponse(value: unknown): value is RedeemCreditCodeResponse {
+  return (
+    isRecord(value) &&
+    isCurrentUser(value.user) &&
+    isCreditTransaction(value.transaction) &&
+    isRecord(value.redemption) &&
+    typeof value.redemption.codeId === "string" &&
+    typeof value.redemption.codeShort === "string" &&
+    isFiniteNumber(value.redemption.creditsAwarded) &&
+    typeof value.redemption.redeemedAt === "string"
+  );
+}
+
 export function isGalleryImageItem(value: unknown): value is GalleryImageItem {
   return (
     isRecord(value) &&
@@ -116,8 +142,42 @@ function isCreditTransaction(value: unknown): value is CreditTransaction {
     (value.relatedGenerationId === undefined || typeof value.relatedGenerationId === "string") &&
     (value.relatedOutputId === undefined || typeof value.relatedOutputId === "string") &&
     (value.relatedCheckinDate === undefined || typeof value.relatedCheckinDate === "string") &&
+    (value.relatedRedemptionCodeId === undefined || typeof value.relatedRedemptionCodeId === "string") &&
     (value.adminNote === undefined || typeof value.adminNote === "string") &&
     typeof value.createdAt === "string"
+  );
+}
+
+function isRedemptionCodeSummary(value: unknown): value is RedemptionCodeSummary {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.code === "string" &&
+    isFiniteNumber(value.credits) &&
+    typeof value.status === "string" &&
+    (REDEMPTION_CODE_STATUSES as readonly string[]).includes(value.status) &&
+    (value.expiresAt === undefined || typeof value.expiresAt === "string") &&
+    (value.redeemedByUserId === undefined || typeof value.redeemedByUserId === "string") &&
+    (value.redeemedByUserName === undefined || typeof value.redeemedByUserName === "string") &&
+    (value.redeemedByUserEmail === undefined || typeof value.redeemedByUserEmail === "string") &&
+    (value.redeemedAt === undefined || typeof value.redeemedAt === "string") &&
+    (value.createdByAdminId === undefined || typeof value.createdByAdminId === "string") &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+function isCurrentUser(value: unknown): value is RedeemCreditCodeResponse["user"] {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.email === "string" &&
+    (value.role === "admin" || value.role === "user") &&
+    (value.status === "active" || value.status === "pending" || value.status === "disabled") &&
+    isFiniteNumber(value.credits) &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
   );
 }
 

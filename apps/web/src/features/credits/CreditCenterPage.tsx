@@ -6,9 +6,10 @@ import {
   Loader2,
   RefreshCw,
   Sparkles,
+  Ticket,
   WalletCards
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type {
   AuthMeResponse,
   CreditTransaction,
@@ -17,6 +18,7 @@ import type {
 import { useI18n, type Translate } from "../../shared/i18n";
 import {
   isCreditTransactionListResponse,
+  isRedeemCreditCodeResponse,
   readApiErrorMessage
 } from "../../shared/api/generation";
 
@@ -43,6 +45,9 @@ export function CreditCenterPage({
   const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
   const [isTransactionsLoading, setIsTransactionsLoading] = useState(true);
   const [transactionsError, setTransactionsError] = useState("");
+  const [redeemCode, setRedeemCode] = useState("");
+  const [redeemError, setRedeemError] = useState("");
+  const [isRedeeming, setIsRedeeming] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const accountUser = accountStatus?.authenticated ? accountStatus.user : undefined;
   const checkinStatus = accountStatus?.checkin;
@@ -112,6 +117,45 @@ export function CreditCenterPage({
     await onCheckin();
     await Promise.all([onRefreshAccountStatus(), loadTransactions()]);
     setStatusMessage(t("creditsCenterCheckinSynced"));
+  }
+
+  async function redeemCreditCode(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const code = redeemCode.trim();
+    if (!code) {
+      setRedeemError(t("creditsRedeemInvalidCode"));
+      return;
+    }
+
+    setIsRedeeming(true);
+    setRedeemError("");
+    setStatusMessage("");
+    try {
+      const response = await fetch("/api/credits/redeem", {
+        body: JSON.stringify({ code }),
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      if (!response.ok) {
+        throw new Error(await readApiErrorMessage(response, locale, t("creditsRedeemFailed")));
+      }
+
+      const body = (await response.json()) as unknown;
+      if (!isRedeemCreditCodeResponse(body)) {
+        throw new Error(t("creditsTransactionsInvalidData"));
+      }
+
+      setRedeemCode("");
+      await Promise.all([onRefreshAccountStatus(), loadTransactions()]);
+      setStatusMessage(t("creditsRedeemSuccess", { credits: body.redemption.creditsAwarded }));
+    } catch (error) {
+      setRedeemError(error instanceof Error ? error.message : t("creditsRedeemFailed"));
+    } finally {
+      setIsRedeeming(false);
+    }
   }
 
   return (
@@ -208,14 +252,45 @@ export function CreditCenterPage({
           </div>
         </section>
 
-        {accountError || transactionsError || statusMessage ? (
+        <section className="credits-redeem" aria-labelledby="credits-redeem-title">
+          <div className="credits-redeem__heading">
+            <span className="credits-stat__icon credits-stat__icon--teal">
+              <Ticket className="size-5" aria-hidden="true" />
+            </span>
+            <div>
+              <h2 id="credits-redeem-title">{t("creditsRedeemCodeTitle")}</h2>
+              <p>{t("creditsRedeemCodePlaceholder")}</p>
+            </div>
+          </div>
+          <form className="credits-redeem__form" onSubmit={(event) => void redeemCreditCode(event)}>
+            <label>
+              <span>{t("creditsRedeemCodeLabel")}</span>
+              <input
+                autoCapitalize="characters"
+                placeholder={t("creditsRedeemCodePlaceholder")}
+                value={redeemCode}
+                onChange={(event) => setRedeemCode(event.target.value.toUpperCase())}
+              />
+            </label>
+            <button disabled={isRedeeming || !accountUser} type="submit">
+              {isRedeeming ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Ticket className="size-4" aria-hidden="true" />}
+              {t("creditsRedeemCodeSubmit")}
+            </button>
+          </form>
+        </section>
+
+        {accountError || transactionsError || redeemError || statusMessage ? (
           <div
             className="credits-page__notice"
-            data-tone={accountError || transactionsError ? "error" : "success"}
-            role={accountError || transactionsError ? "alert" : "status"}
+            data-tone={accountError || transactionsError || redeemError ? "error" : "success"}
+            role={accountError || transactionsError || redeemError ? "alert" : "status"}
           >
-            {accountError || transactionsError ? <AlertTriangle className="size-4" aria-hidden="true" /> : <CheckCircle2 className="size-4" aria-hidden="true" />}
-            <span>{accountError || transactionsError || statusMessage}</span>
+            {accountError || transactionsError || redeemError ? (
+              <AlertTriangle className="size-4" aria-hidden="true" />
+            ) : (
+              <CheckCircle2 className="size-4" aria-hidden="true" />
+            )}
+            <span>{accountError || transactionsError || redeemError || statusMessage}</span>
           </div>
         ) : null}
 
@@ -275,6 +350,10 @@ function TransactionDetails({ transaction, t }: { transaction: CreditTransaction
 
 function transactionDetails(transaction: CreditTransaction, t: Translate): string[] {
   const details: string[] = [];
+  const redemptionCodeNote =
+    transaction.reason === "redemption_code" && transaction.adminNote?.startsWith("code:")
+      ? transaction.adminNote.slice("code:".length)
+      : "";
   if (transaction.relatedGenerationId) {
     details.push(t("creditsTransactionRelatedGeneration", { id: shortIdentifier(transaction.relatedGenerationId) }));
   }
@@ -284,7 +363,12 @@ function transactionDetails(transaction: CreditTransaction, t: Translate): strin
   if (transaction.relatedCheckinDate) {
     details.push(t("creditsTransactionRelatedCheckin", { date: transaction.relatedCheckinDate }));
   }
-  if (transaction.adminNote) {
+  if (redemptionCodeNote) {
+    details.push(t("creditsTransactionRelatedRedemptionCode", { code: redemptionCodeNote }));
+  } else if (transaction.relatedRedemptionCodeId) {
+    details.push(t("creditsTransactionRelatedRedemptionCode", { code: shortIdentifier(transaction.relatedRedemptionCodeId) }));
+  }
+  if (transaction.adminNote && !redemptionCodeNote) {
     details.push(t("creditsTransactionAdminNote", { note: transaction.adminNote }));
   }
   return details;
@@ -309,6 +393,8 @@ function creditTransactionReasonLabel(reason: CreditTransactionReason, t: Transl
       return t("creditsReasonGenerationRefund");
     case "admin_adjustment":
       return t("creditsReasonAdminAdjustment");
+    case "redemption_code":
+      return t("creditsReasonRedemptionCode");
   }
 }
 

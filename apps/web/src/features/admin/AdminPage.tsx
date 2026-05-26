@@ -2,13 +2,18 @@ import {
   AlertTriangle,
   CheckCircle2,
   Coins,
+  Copy,
+  Gift,
   KeyRound,
   Loader2,
+  Power,
+  PowerOff,
   RefreshCw,
   Save,
   Search,
   Settings,
-  ShieldCheck
+  ShieldCheck,
+  Trash2
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type {
@@ -21,14 +26,21 @@ import type {
   AdminUserResponse,
   AdminUserSummary,
   AdminUsersResponse,
+  AdminUpdateRedemptionCodeRequest,
   CurrentUser,
+  RedemptionCodeStatus,
+  RedemptionCodeSummary,
   UserRole,
   UserStatus
 } from "@gpt-image-canvas/shared";
 import { localizedApiErrorMessage, useI18n, type Locale, type Translate } from "../../shared/i18n";
+import {
+  isAdminCreateRedemptionCodesResponse,
+  isRedemptionCodeListResponse
+} from "../../shared/api/generation";
 import { ProviderConfigPanel, type ProviderConfigPanelProps } from "../provider-config/ProviderConfigDialog";
 
-export type AdminTab = "users" | "providers" | "settings" | "audits";
+export type AdminTab = "users" | "redemptionCodes" | "providers" | "settings" | "audits";
 
 interface AdminPageProps {
   activeTab: AdminTab;
@@ -43,6 +55,12 @@ interface CreditFormState {
   note: string;
 }
 
+interface RedemptionCodeFormState {
+  credits: string;
+  count: string;
+  expiresAt: string;
+}
+
 const roleOptions: UserRole[] = ["user", "admin"];
 const statusOptions: UserStatus[] = ["active", "pending", "disabled"];
 
@@ -52,17 +70,38 @@ const initialCreditForm: CreditFormState = {
   note: ""
 };
 
+const initialRedemptionCodeForm: RedemptionCodeFormState = {
+  credits: "100",
+  count: "1",
+  expiresAt: ""
+};
+
+const redemptionCodeExpiryPresetOptions = [
+  { id: "tomorrow", labelKey: "adminRedemptionCodeExpiryTomorrow", unit: "days", amount: 1 },
+  { id: "threeDays", labelKey: "adminRedemptionCodeExpiryThreeDays", unit: "days", amount: 3 },
+  { id: "oneWeek", labelKey: "adminRedemptionCodeExpiryOneWeek", unit: "days", amount: 7 },
+  { id: "oneMonth", labelKey: "adminRedemptionCodeExpiryOneMonth", unit: "months", amount: 1 },
+  { id: "oneYear", labelKey: "adminRedemptionCodeExpiryOneYear", unit: "months", amount: 12 }
+] as const;
+
+type RedemptionCodeExpiryPresetOption = (typeof redemptionCodeExpiryPresetOptions)[number];
+
 export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig }: AdminPageProps) {
   const { formatDateTime, locale, t } = useI18n();
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [userSearch, setUserSearch] = useState("");
   const [settings, setSettings] = useState<AdminSettings | null>(null);
   const [audits, setAudits] = useState<AdminGenerationAuditRecord[]>([]);
+  const [redemptionCodes, setRedemptionCodes] = useState<RedemptionCodeSummary[]>([]);
+  const [createdRedemptionCodes, setCreatedRedemptionCodes] = useState<RedemptionCodeSummary[]>([]);
+  const [redemptionCodeForm, setRedemptionCodeForm] = useState<RedemptionCodeFormState>(initialRedemptionCodeForm);
+  const [copiedRedemptionCodeId, setCopiedRedemptionCodeId] = useState("");
   const [creditForms, setCreditForms] = useState<Record<string, CreditFormState>>({});
   const [loading, setLoading] = useState({
     users: true,
     settings: true,
-    audits: true
+    audits: true,
+    redemptionCodes: true
   });
   const [busyKey, setBusyKey] = useState("");
   const [error, setError] = useState("");
@@ -71,6 +110,11 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
   const sortedAudits = useMemo(
     () => [...audits].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)),
     [audits]
+  );
+
+  const sortedRedemptionCodes = useMemo(
+    () => [...redemptionCodes].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)),
+    [redemptionCodes]
   );
 
   const loadUsers = useCallback(
@@ -126,9 +170,28 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
     }
   }, [locale, t]);
 
+  const loadRedemptionCodes = useCallback(async (): Promise<void> => {
+    setLoading((value) => ({ ...value, redemptionCodes: true }));
+    setError("");
+    try {
+      const body = await adminRequest<unknown>("/api/admin/redemption-codes?limit=200", {
+        locale,
+        t
+      });
+      if (!isRedemptionCodeListResponse(body)) {
+        throw new Error(t("adminRedemptionCodesInvalidData"));
+      }
+      setRedemptionCodes(body.items);
+    } catch (requestError) {
+      setError(errorMessage(requestError, t("adminRedemptionCodesLoadFailed")));
+    } finally {
+      setLoading((value) => ({ ...value, redemptionCodes: false }));
+    }
+  }, [locale, t]);
+
   useEffect(() => {
-    void Promise.all([loadUsers(""), loadSettings(), loadAudits()]);
-  }, [loadAudits, loadSettings, loadUsers]);
+    void Promise.all([loadUsers(""), loadSettings(), loadAudits(), loadRedemptionCodes()]);
+  }, [loadAudits, loadRedemptionCodes, loadSettings, loadUsers]);
 
   async function submitUserSearch(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -217,6 +280,127 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
     }
   }
 
+  async function createRedemptionCodes(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const credits = Number(redemptionCodeForm.credits);
+    const count = Number(redemptionCodeForm.count);
+    if (!Number.isInteger(credits) || !Number.isInteger(count)) {
+      setError(t("adminRedemptionCodeInvalidForm"));
+      return;
+    }
+
+    setBusyKey("redemption:create");
+    setError("");
+    setNotice("");
+    try {
+      const payload = {
+        credits,
+        count,
+        expiresAt: redemptionCodeForm.expiresAt ? new Date(redemptionCodeForm.expiresAt).toISOString() : undefined
+      };
+      const createPromise = adminRequest<unknown>("/api/admin/redemption-codes", {
+        body: JSON.stringify(payload),
+        locale,
+        method: "POST",
+        t
+      });
+      const asyncClipboardWrite = count === 1 ? prepareSingleCodeClipboardWrite(createPromise) : undefined;
+      const body = await createPromise;
+      if (!isAdminCreateRedemptionCodesResponse(body)) {
+        throw new Error(t("adminRedemptionCodesInvalidData"));
+      }
+
+      setCreatedRedemptionCodes(body.items);
+      setRedemptionCodes((items) => mergeRedemptionCodes(body.items, items));
+      setRedemptionCodeForm(initialRedemptionCodeForm);
+
+      if (body.items.length === 1) {
+        let copied = await finishPreparedClipboardWrite(asyncClipboardWrite);
+        if (copied) {
+          setCopiedRedemptionCodeId(body.items[0].id);
+        } else {
+          copied = await copyRedemptionCode(body.items[0]);
+        }
+        setNotice(copied ? t("adminRedemptionCodeCreatedSingleCopied") : t("adminRedemptionCodesCreated", { count: 1 }));
+      } else {
+        setNotice(t("adminRedemptionCodesCreated", { count: body.items.length }));
+      }
+    } catch (requestError) {
+      setError(errorMessage(requestError, t("adminRedemptionCodeCreateFailed")));
+    } finally {
+      setBusyKey("");
+    }
+  }
+
+  function applyRedemptionCodeExpiryPreset(option: RedemptionCodeExpiryPresetOption): void {
+    setRedemptionCodeForm((value) => ({
+      ...value,
+      expiresAt: redemptionCodeExpiryPresetValue(option)
+    }));
+  }
+
+  async function updateRedemptionCodeStatus(code: RedemptionCodeSummary, status: RedemptionCodeStatus): Promise<void> {
+    setBusyKey(`redemption:status:${code.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const patch: AdminUpdateRedemptionCodeRequest = { status };
+      const updated = await adminRequest<RedemptionCodeSummary>(`/api/admin/redemption-codes/${encodeURIComponent(code.id)}`, {
+        body: JSON.stringify(patch),
+        locale,
+        method: "PATCH",
+        t
+      });
+      setRedemptionCodes((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      setCreatedRedemptionCodes((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      setNotice(t("adminRedemptionCodeUpdated"));
+    } catch (requestError) {
+      setError(errorMessage(requestError, t("adminRedemptionCodeUpdateFailed")));
+    } finally {
+      setBusyKey("");
+    }
+  }
+
+  async function deleteRedemptionCode(code: RedemptionCodeSummary): Promise<void> {
+    if (!window.confirm(t("adminRedemptionCodeDeleteConfirm", { code: code.code }))) {
+      return;
+    }
+
+    setBusyKey(`redemption:delete:${code.id}`);
+    setError("");
+    setNotice("");
+    try {
+      await adminRequest<{ ok: true; id: string }>(`/api/admin/redemption-codes/${encodeURIComponent(code.id)}`, {
+        locale,
+        method: "DELETE",
+        t
+      });
+      setRedemptionCodes((items) => items.filter((item) => item.id !== code.id));
+      setCreatedRedemptionCodes((items) => items.filter((item) => item.id !== code.id));
+      setNotice(t("adminRedemptionCodeDeleted"));
+    } catch (requestError) {
+      setError(errorMessage(requestError, t("adminRedemptionCodeDeleteFailed")));
+    } finally {
+      setBusyKey("");
+    }
+  }
+
+  async function copyRedemptionCode(code: RedemptionCodeSummary): Promise<boolean> {
+    setBusyKey(`redemption:copy:${code.id}`);
+    setError("");
+    try {
+      await writeClipboardText(code.code);
+      setCopiedRedemptionCodeId(code.id);
+      setNotice(t("adminRedemptionCodeCopied"));
+      return true;
+    } catch {
+      setError(t("adminRedemptionCodeCopyFailed"));
+      return false;
+    } finally {
+      setBusyKey("");
+    }
+  }
+
   function updateCreditForm(userId: string, patch: Partial<CreditFormState>): void {
     setCreditForms((items) => ({
       ...items,
@@ -243,7 +427,11 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
             <h1>{t("adminTitle")}</h1>
             <p>{t("adminSubtitle")}</p>
           </div>
-          <button className="admin-ghost-button" type="button" onClick={() => void Promise.all([loadUsers(userSearch), loadSettings(), loadAudits()])}>
+          <button
+            className="admin-ghost-button"
+            type="button"
+            onClick={() => void Promise.all([loadUsers(userSearch), loadSettings(), loadAudits(), loadRedemptionCodes()])}
+          >
             <RefreshCw className="size-4" aria-hidden="true" />
             {t("adminRefresh")}
           </button>
@@ -251,6 +439,12 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
 
         <div className="admin-tabs" role="tablist" aria-label={t("adminTabsAria")}>
           <TabButton active={activeTab === "users"} label={t("adminUsersTab")} tab="users" onSelect={onSelectTab} />
+          <TabButton
+            active={activeTab === "redemptionCodes"}
+            label={t("adminRedemptionCodesTab")}
+            tab="redemptionCodes"
+            onSelect={onSelectTab}
+          />
           <TabButton active={activeTab === "providers"} label={t("adminProvidersTab")} tab="providers" onSelect={onSelectTab} />
           <TabButton active={activeTab === "audits"} label={t("adminAuditsTab")} tab="audits" onSelect={onSelectTab} />
           <TabButton active={activeTab === "settings"} label={t("adminSettingsTab")} tab="settings" onSelect={onSelectTab} />
@@ -383,6 +577,168 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
               </div>
             ) : (
               <EmptyState label={t("adminEmptyUsers")} />
+            )}
+          </section>
+        ) : null}
+
+        {activeTab === "redemptionCodes" ? (
+          <section className="admin-panel" aria-labelledby="admin-redemption-codes-title">
+            <PanelHeading
+              icon={<Gift className="size-5" aria-hidden="true" />}
+              title={t("adminRedemptionCodesTitle")}
+              description={t("adminRedemptionCodesSubtitle")}
+            />
+            <form className="admin-redemption-form" onSubmit={(event) => void createRedemptionCodes(event)}>
+              <label>
+                <span>{t("adminRedemptionCodeCredits")}</span>
+                <input
+                  max={10000}
+                  min={1}
+                  required
+                  type="number"
+                  value={redemptionCodeForm.credits}
+                  onChange={(event) => setRedemptionCodeForm((value) => ({ ...value, credits: event.target.value }))}
+                />
+              </label>
+              <label>
+                <span>{t("adminRedemptionCodeCount")}</span>
+                <input
+                  max={200}
+                  min={1}
+                  required
+                  type="number"
+                  value={redemptionCodeForm.count}
+                  onChange={(event) => setRedemptionCodeForm((value) => ({ ...value, count: event.target.value }))}
+                />
+              </label>
+              <div className="admin-redemption-expiry-field">
+                <label htmlFor="admin-redemption-expires-at">
+                  <span>{t("adminRedemptionCodeExpiresAt")}</span>
+                  <input
+                    id="admin-redemption-expires-at"
+                    step={1}
+                    type="datetime-local"
+                    value={redemptionCodeForm.expiresAt}
+                    onChange={(event) =>
+                      setRedemptionCodeForm((value) => ({ ...value, expiresAt: event.target.value }))
+                    }
+                  />
+                </label>
+                <div className="admin-redemption-expiry-presets" aria-label={t("adminRedemptionCodeExpiryQuickLabel")}>
+                  {redemptionCodeExpiryPresetOptions.map((option) => (
+                    <button key={option.id} type="button" onClick={() => applyRedemptionCodeExpiryPreset(option)}>
+                      {t(option.labelKey)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button className="admin-primary-button" disabled={busyKey === "redemption:create"} type="submit">
+                {busyKey === "redemption:create" ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Gift className="size-4" aria-hidden="true" />
+                )}
+                {t("adminRedemptionCodeCreate")}
+              </button>
+            </form>
+
+            {createdRedemptionCodes.length > 0 ? (
+              <div className="admin-redemption-created" aria-live="polite">
+                <strong>{t("adminRedemptionCodeCreatedTitle")}</strong>
+                <div className="admin-redemption-created__list">
+                  {createdRedemptionCodes.map((code) => (
+                    <button key={code.id} type="button" onClick={() => void copyRedemptionCode(code)}>
+                      <code>{code.code}</code>
+                      <Copy className="size-4" aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {loading.redemptionCodes ? (
+              <LoadingState label={t("adminLoading")} />
+            ) : sortedRedemptionCodes.length > 0 ? (
+              <div className="admin-table-wrap">
+                <table className="admin-table admin-redemption-table">
+                  <thead>
+                    <tr>
+                      <th>{t("adminRedemptionCodeColumnCode")}</th>
+                      <th>{t("adminColumnCredits")}</th>
+                      <th>{t("adminColumnStatus")}</th>
+                      <th>{t("adminRedemptionCodeColumnRedeemed")}</th>
+                      <th>{t("adminRedemptionCodeExpiresAt")}</th>
+                      <th>{t("adminColumnCreated")}</th>
+                      <th>{t("adminColumnActions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedRedemptionCodes.map((code) => {
+                      const isRedeemed = Boolean(code.redeemedAt || code.redeemedByUserId);
+                      const nextStatus: RedemptionCodeStatus = code.status === "active" ? "disabled" : "active";
+                      const statusBusy = busyKey === `redemption:status:${code.id}`;
+                      const deleteBusy = busyKey === `redemption:delete:${code.id}`;
+                      const copyBusy = busyKey === `redemption:copy:${code.id}`;
+                      return (
+                        <tr key={code.id}>
+                          <td>
+                            <div className="admin-code-cell">
+                              <code>{code.code}</code>
+                              {copiedRedemptionCodeId === code.id ? <span>{t("adminRedemptionCodeCopiedShort")}</span> : null}
+                            </div>
+                          </td>
+                          <td>{t("adminCreditBalance", { credits: code.credits })}</td>
+                          <td>
+                            <span className={`admin-redemption-status admin-redemption-status--${code.status}`}>
+                              {redemptionStatusLabel(code.status, t)}
+                            </span>
+                          </td>
+                          <td>
+                            {isRedeemed ? (
+                              <div className="admin-code-cell">
+                                <strong>{code.redeemedByUserName || code.redeemedByUserEmail || code.redeemedByUserId}</strong>
+                                <span>{code.redeemedAt ? formatDateTime(code.redeemedAt) : t("commonNotRecorded")}</span>
+                              </div>
+                            ) : (
+                              t("adminRedemptionCodeUnredeemed")
+                            )}
+                          </td>
+                          <td>{code.expiresAt ? formatDateTime(code.expiresAt) : t("adminRedemptionCodeNeverExpires")}</td>
+                          <td>{formatDateTime(code.createdAt)}</td>
+                          <td>
+                            <div className="admin-row-actions">
+                              <button disabled={copyBusy} type="button" onClick={() => void copyRedemptionCode(code)}>
+                                {copyBusy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Copy className="size-4" aria-hidden="true" />}
+                                {t("commonCopy")}
+                              </button>
+                              <button
+                                disabled={statusBusy}
+                                type="button"
+                                onClick={() => void updateRedemptionCodeStatus(code, nextStatus)}
+                              >
+                                {statusBusy ? (
+                                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                                ) : nextStatus === "active" ? (
+                                  <Power className="size-4" aria-hidden="true" />
+                                ) : (
+                                  <PowerOff className="size-4" aria-hidden="true" />
+                                )}
+                                {nextStatus === "active" ? t("adminRedemptionCodeEnable") : t("adminRedemptionCodeDisable")}
+                              </button>
+                              <button disabled={isRedeemed || deleteBusy} type="button" onClick={() => void deleteRedemptionCode(code)}>
+                                {deleteBusy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
+                                {t("commonRemove")}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <EmptyState label={t("adminRedemptionCodesEmpty")} />
             )}
           </section>
         ) : null}
@@ -614,6 +970,113 @@ function NumberSetting({
       />
     </label>
   );
+}
+
+function redemptionStatusLabel(status: RedemptionCodeStatus, t: Translate): string {
+  return status === "disabled" ? t("adminRedemptionCodeStatusDisabled") : t("adminRedemptionCodeStatusActive");
+}
+
+function mergeRedemptionCodes(newItems: RedemptionCodeSummary[], currentItems: RedemptionCodeSummary[]): RedemptionCodeSummary[] {
+  const next = new Map<string, RedemptionCodeSummary>();
+  for (const item of [...newItems, ...currentItems]) {
+    next.set(item.id, item);
+  }
+  return [...next.values()];
+}
+
+function redemptionCodeExpiryPresetValue(option: RedemptionCodeExpiryPresetOption): string {
+  const baseDate = new Date();
+  const expiresAt = option.unit === "months" ? addCalendarMonths(baseDate, option.amount) : addCalendarDays(baseDate, option.amount);
+  expiresAt.setHours(23, 59, 59, 0);
+  return formatDateTimeLocalInputValue(expiresAt);
+}
+
+function addCalendarDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function addCalendarMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  const day = result.getDate();
+  result.setDate(1);
+  result.setMonth(result.getMonth() + months);
+  const lastDayOfTargetMonth = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+  result.setDate(Math.min(day, lastDayOfTargetMonth));
+  return result;
+}
+
+function formatDateTimeLocalInputValue(date: Date): string {
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(
+    date.getMinutes()
+  )}:${pad(date.getSeconds())}`;
+}
+
+function prepareSingleCodeClipboardWrite(createPromise: Promise<unknown>): Promise<boolean> | undefined {
+  if (!navigator.clipboard?.write || typeof ClipboardItem !== "function") {
+    return undefined;
+  }
+
+  try {
+    const item = new ClipboardItem({
+      "text/plain": createPromise.then((body) => {
+        if (!isAdminCreateRedemptionCodesResponse(body) || body.items.length !== 1) {
+          throw new Error("Created redemption code response is invalid.");
+        }
+        return new Blob([body.items[0].code], { type: "text/plain" });
+      })
+    });
+    return navigator.clipboard.write([item]).then(
+      () => true,
+      () => false
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+async function finishPreparedClipboardWrite(writePromise: Promise<boolean> | undefined): Promise<boolean> {
+  if (!writePromise) {
+    return false;
+  }
+
+  try {
+    return await writePromise;
+  } catch {
+    return false;
+  }
+}
+
+async function writeClipboardText(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // 部分浏览器会在异步创建后拒绝 Clipboard API，继续走 textarea fallback。
+    }
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.readOnly = true;
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  textArea.style.top = "0";
+  document.body.append(textArea);
+  textArea.focus();
+  textArea.select();
+
+  try {
+    const copied = document.execCommand("copy");
+    if (!copied) {
+      throw new Error("Copy command was not accepted.");
+    }
+  } finally {
+    textArea.remove();
+  }
 }
 
 async function adminRequest<T>(

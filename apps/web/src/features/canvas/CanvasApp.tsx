@@ -346,6 +346,7 @@ type AppRoute = "home" | "generate" | "canvas" | "pool" | "gallery" | "publicGal
 const DEFAULT_ADMIN_TAB: AdminTab = "users";
 const ADMIN_TAB_PATHS = {
   users: "/admin/users",
+  redemptionCodes: "/admin/redemption-codes",
   providers: "/admin/providers",
   audits: "/admin/audits",
   settings: "/admin/settings"

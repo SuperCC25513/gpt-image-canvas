@@ -65,7 +65,8 @@
 
 .credits-page__ghost-action,
 .credits-page__primary-action,
-.credits-stat__action {
+.credits-stat__action,
+.credits-redeem__form button {
   display: inline-flex;
   min-height: 2.5rem;
   align-items: center;
@@ -90,7 +91,8 @@
 }
 
 .credits-page__primary-action,
-.credits-stat__action {
+.credits-stat__action,
+.credits-redeem__form button {
   border: 1px solid var(--accent-dark);
   background: var(--accent-dark);
   color: #fffdf8;
@@ -103,20 +105,23 @@
 }
 
 .credits-page__primary-action:hover,
-.credits-stat__action:not(:disabled):hover {
+.credits-stat__action:not(:disabled):hover,
+.credits-redeem__form button:not(:disabled):hover {
   border-color: var(--accent);
   background: var(--accent);
 }
 
 .credits-page__ghost-action:disabled,
-.credits-stat__action:disabled {
+.credits-stat__action:disabled,
+.credits-redeem__form button:disabled {
   cursor: not-allowed;
   opacity: 0.64;
 }
 
 .credits-page__ghost-action:focus-visible,
 .credits-page__primary-action:focus-visible,
-.credits-stat__action:focus-visible {
+.credits-stat__action:focus-visible,
+.credits-redeem__form button:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -205,6 +210,71 @@
   border-color: transparent;
   background: var(--focus-soft);
   color: var(--success);
+}
+
+.credits-redeem {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(18rem, 1fr);
+  gap: 1rem;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper-panel);
+  box-shadow: 0 12px 28px rgb(92 63 35 / 0.08);
+  padding: 0.9rem;
+}
+
+.credits-redeem__heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.credits-redeem__heading h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.credits-redeem__heading p {
+  margin: 0.24rem 0 0;
+  color: var(--muted-ink);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.credits-redeem__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: end;
+}
+
+.credits-redeem__form label {
+  display: grid;
+  min-width: 0;
+  gap: 0.28rem;
+}
+
+.credits-redeem__form span {
+  color: var(--muted-ink);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.credits-redeem__form input {
+  min-width: 0;
+  min-height: 2.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  padding: 0 0.7rem;
+  text-transform: uppercase;
 }
 
 .credits-page__notice {
@@ -356,6 +426,10 @@
   .credits-page__overview {
     grid-template-columns: 1fr;
   }
+
+  .credits-redeem {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 520px) {
@@ -365,8 +439,13 @@
 
   .credits-page__toolbar,
   .credits-page__ghost-action,
-  .credits-page__primary-action {
+  .credits-page__primary-action,
+  .credits-redeem__form button {
     width: 100%;
+  }
+
+  .credits-redeem__form {
+    grid-template-columns: 1fr;
   }
 
   .credits-ledger__item {
