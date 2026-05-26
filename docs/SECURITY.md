@@ -16,13 +16,18 @@ Secrets may come from:
 - Initial administrator bootstrap values from `ADMIN_EMAIL`、`ADMIN_PASSWORD`、`ADMIN_NAME`.
 - Local provider config stored in SQLite.
 - `USE_MYSQL=true` 时使用的 MySQL 连接凭据。
+- `USE_MYSQL=true` 时用于服务端上传和签名的 OSS AK/SK，来自 `.env` 或 `OSS_*` 运行时环境变量。
 - Agent LLM config stored in SQLite.
 - Codex OAuth tokens stored in SQLite.
 
 Rules:
 
 - Never commit `.env`, `data/`, SQLite databases, generated images, `.ralph/`, `.codex-temp/`, or build output.
-- 不要把本机 MySQL 密码写入 `.env.example`、文档示例、日志或提交信息。
+- 不要把本机 MySQL 密码、OSS AccessKeyId 或 OSS AccessKeySecret 写入 `.env.example`、文档示例、日志或提交信息。
+- 允许提交的凭据形态仅限：明确假的占位符、已掩码示例、没有外部访问能力的一次性测试值，或密文形式的 secret 文件；密文解密 key 必须留在仓库外。
+- 真实密码、token、私钥、管理员账号密码、云服务 AK/SK、OAuth 凭据和 `.env` 文件允许作为维护者批准的本地 break-glass 例外进入 Git 提交。
+- 真实凭据提交必须只停留在本机私有分支：不得 push、不得开 PR、不得进入共享分支、不得跑公开 CI、不得贴出包含凭据的日志或 patch。
+- 任何分支 push、共享或合并前，必须先删除已提交的真实凭据、轮换这些凭据，并清理包含凭据的本地 Git 历史。
 - 不要记录原始 API key、OAuth token 或已保存的提供方配置值。
 - Read APIs should return masked secrets only.
 - `ADMIN_PASSWORD` is only used when creating the admin user for the first time. If the email already exists, startup only ensures `role=admin` and `status=active`; it must not reset the stored password.
@@ -34,7 +39,7 @@ Rules:
 
 Generated images can contain private user content. Treat local assets and previews as sensitive by default.
 
-Owner fields on projects, assets, generation records/outputs, Agent conversations, and prompt favorites are part of the privacy boundary. Asset routes must authorize the owner or an admin before resolving and reading files from `DATA_DIR/assets`.
+Owner fields on projects, assets, generation records/outputs, Agent conversations, and prompt favorites are part of the privacy boundary. Asset routes must authorize the owner or an admin before resolving local files from `DATA_DIR/assets`, reading OSS objects, or generating OSS GET signed URLs.
 
 公开 Gallery 输出是唯一允许匿名读取资产的例外。公开判定必须来自 `generation_outputs` 上成功输出的 `is_public` 状态，不得只凭 asset ID、文件存在或公开广场列表缓存放行；改回私密或删除输出后匿名读取应返回 404。
 
@@ -64,6 +69,6 @@ Avoid plain `docker compose config` because it can expand and print env values.
 - Are all user inputs validated before storage or provider calls?
 - Are secrets masked in API responses and UI?
 - Are logs free of keys, tokens, request headers, and credential-bearing URLs?
-- Are generated files written only under `DATA_DIR`?
-- Are asset reads constrained to the expected asset directory?
+- Are generated files written only under `DATA_DIR` or the configured OSS `root-path`?
+- Are asset reads constrained to the expected asset directory or OSS object key prefix?
 - Does the change avoid exposing the local app publicly by default?

@@ -41,8 +41,12 @@
 ## Security And Local Files
 
 - Keep local agent scratch files under `.codex-temp/`; do not commit local run logs or machine-specific paths.
-- Do not commit `.env`, `.ralph`, `.codex-temp`, `data`, generated images, SQLite databases, or build output.
-- Secrets must only be read from `.env` or the runtime environment and must never be logged.
+- Do not commit `.ralph`, `.codex-temp`, `data`, generated images, SQLite databases, or build output.
+- Real passwords, tokens, private keys, administrator bootstrap credentials, cloud AK/SK, and `.env` files may be committed only as a maintainer-approved local-only break-glass exception.
+- Break-glass credential commits must stay on a private local branch: do not push, open PRs, share patches, run public CI, paste logs, or merge them into shared history.
+- Before any branch is pushed or shared, remove committed real credentials, rotate the exposed values, and clean the local Git history that contained them.
+- Normal development should still read secrets from `.env` or the runtime environment, and secrets must never be logged.
+- Credential-shaped values may be committed freely only when they are clearly fake placeholders, masked examples, disposable test values with no external access, or encrypted secret blobs whose decryption key is kept outside the repository.
 
 ## Ralph
 
