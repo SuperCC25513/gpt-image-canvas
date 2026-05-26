@@ -683,3 +683,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: 完成兑换码积分兑换
+
+**Date**: 2026-05-26
+**Task**: 完成兑换码积分兑换
+**Branch**: `main`
+
+### Summary
+
+实现 CC 前缀一次性全局兑换码，包含后端 API/数据库事务、后台管理界面、积分中心兑换入口、任务文档和契约规范。验证通过 pnpm typecheck、pnpm build，并使用内置浏览器确认生成与兑换相关 UI。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `42cd919` | (see git log) |
+| `b4432bf` | (see git log) |
+| `13031d5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
