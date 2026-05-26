@@ -183,6 +183,10 @@ export async function readStoredAssetBytes(relativePath: string): Promise<Buffer
 }
 
 export function resolveLocalAssetPath(relativePath: string): string | undefined {
+  if (usesOssAssetStorage()) {
+    return undefined;
+  }
+
   const filePath = resolve(runtimePaths.dataDir, relativePath);
   return isInsideDirectory(filePath, runtimePaths.assetsDir) ? filePath : undefined;
 }

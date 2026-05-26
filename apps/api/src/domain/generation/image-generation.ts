@@ -382,8 +382,12 @@ export async function getStoredAssetFile(assetId: string): Promise<StoredAssetFi
     return undefined;
   }
 
-  const filePath = resolveLocalAssetPath(asset.relativePath);
-  if (!filePath && !asset.relativePath) {
+  if (!asset.relativePath) {
+    return undefined;
+  }
+  const usesOss = usesOssAssetStorage();
+  const filePath = usesOss ? undefined : resolveLocalAssetPath(asset.relativePath);
+  if (!usesOss && !filePath) {
     return undefined;
   }
 
