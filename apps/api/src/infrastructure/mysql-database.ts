@@ -94,6 +94,7 @@ const mySqlSchema: MySqlTableDefinition[] = [
       { name: "related_generation_id", definition: "VARCHAR(191)", comment: "关联生成记录 ID" },
       { name: "related_output_id", definition: "VARCHAR(191)", comment: "关联生成输出 ID" },
       { name: "related_checkin_date", definition: "VARCHAR(32)", comment: "关联签到日期键" },
+      { name: "related_redemption_code_id", definition: "VARCHAR(191)", comment: "关联兑换码 ID" },
       { name: "admin_note", definition: "TEXT", comment: "管理员手动调整备注" },
       { name: "created_at", definition: "VARCHAR(32) NOT NULL", comment: "创建时间 ISO 字符串" }
     ],
@@ -116,6 +117,50 @@ const mySqlSchema: MySqlTableDefinition[] = [
       "PRIMARY KEY (user_id, checkin_date)",
       "KEY user_checkins_user_id_idx (user_id)",
       "CONSTRAINT user_checkins_user_fk FOREIGN KEY (user_id) REFERENCES users(id)"
+    ]
+  },
+  {
+    name: "redemption_codes",
+    comment: "后台生成的积分兑换码",
+    columns: [
+      { name: "id", definition: "VARCHAR(191) PRIMARY KEY NOT NULL", comment: "兑换码记录唯一标识" },
+      { name: "code", definition: "VARCHAR(64) NOT NULL", comment: "兑换码码值" },
+      { name: "credits", definition: "INT NOT NULL", comment: "兑换后发放积分" },
+      { name: "status", definition: "VARCHAR(32) NOT NULL", comment: "兑换码状态，active 或 disabled" },
+      { name: "expires_at", definition: "VARCHAR(32)", comment: "过期时间 ISO 字符串，空表示永久有效" },
+      { name: "redeemed_by_user_id", definition: "VARCHAR(191)", comment: "成功兑换用户 ID" },
+      { name: "redeemed_at", definition: "VARCHAR(32)", comment: "成功兑换时间 ISO 字符串" },
+      { name: "created_by_admin_id", definition: "VARCHAR(191)", comment: "创建管理员 ID" },
+      { name: "created_at", definition: "VARCHAR(32) NOT NULL", comment: "创建时间 ISO 字符串" },
+      { name: "updated_at", definition: "VARCHAR(32) NOT NULL", comment: "更新时间 ISO 字符串" }
+    ],
+    constraints: [
+      "UNIQUE KEY redemption_codes_code_idx (code)",
+      "KEY redemption_codes_status_idx (status)",
+      "KEY redemption_codes_redeemed_by_user_id_idx (redeemed_by_user_id)",
+      "KEY redemption_codes_created_at_idx (created_at)",
+      "CONSTRAINT redemption_codes_redeemed_user_fk FOREIGN KEY (redeemed_by_user_id) REFERENCES users(id)",
+      "CONSTRAINT redemption_codes_admin_fk FOREIGN KEY (created_by_admin_id) REFERENCES users(id)"
+    ]
+  },
+  {
+    name: "credit_redemptions",
+    comment: "兑换码成功兑换审计记录",
+    columns: [
+      { name: "id", definition: "VARCHAR(191) PRIMARY KEY NOT NULL", comment: "兑换记录唯一标识" },
+      { name: "code_id", definition: "VARCHAR(191) NOT NULL", comment: "兑换码记录 ID" },
+      { name: "user_id", definition: "VARCHAR(191) NOT NULL", comment: "兑换用户 ID" },
+      { name: "credits_awarded", definition: "INT NOT NULL", comment: "本次发放积分" },
+      { name: "transaction_id", definition: "VARCHAR(191) NOT NULL", comment: "对应积分流水 ID" },
+      { name: "created_at", definition: "VARCHAR(32) NOT NULL", comment: "创建时间 ISO 字符串" }
+    ],
+    constraints: [
+      "UNIQUE KEY credit_redemptions_code_id_idx (code_id)",
+      "KEY credit_redemptions_user_id_idx (user_id)",
+      "KEY credit_redemptions_transaction_id_idx (transaction_id)",
+      "CONSTRAINT credit_redemptions_code_fk FOREIGN KEY (code_id) REFERENCES redemption_codes(id)",
+      "CONSTRAINT credit_redemptions_user_fk FOREIGN KEY (user_id) REFERENCES users(id)",
+      "CONSTRAINT credit_redemptions_transaction_fk FOREIGN KEY (transaction_id) REFERENCES credit_transactions(id)"
     ]
   },
   {
@@ -490,6 +535,7 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlColumn(pool, "app_settings", "generation_credit_cost");
   await ensureMySqlColumn(pool, "app_settings", "checkin_credit");
   await ensureMySqlColumn(pool, "app_settings", "max_images_per_request");
+  await ensureMySqlColumn(pool, "credit_transactions", "related_redemption_code_id");
   await ensureMySqlColumn(pool, "agent_conversations", "user_id");
   await ensureMySqlColumn(pool, "prompt_favorite_groups", "user_id");
   await ensureMySqlColumn(pool, "prompt_favorites", "user_id");
@@ -507,6 +553,13 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
     "reason"
   ]);
   await ensureMySqlIndex(pool, "user_checkins", "user_checkins_user_id_idx", "user_id");
+  await ensureMySqlUniqueIndex(pool, "redemption_codes", "redemption_codes_code_idx", "code");
+  await ensureMySqlIndex(pool, "redemption_codes", "redemption_codes_status_idx", "status");
+  await ensureMySqlIndex(pool, "redemption_codes", "redemption_codes_redeemed_by_user_id_idx", "redeemed_by_user_id");
+  await ensureMySqlIndex(pool, "redemption_codes", "redemption_codes_created_at_idx", "created_at");
+  await ensureMySqlUniqueIndex(pool, "credit_redemptions", "credit_redemptions_code_id_idx", "code_id");
+  await ensureMySqlIndex(pool, "credit_redemptions", "credit_redemptions_user_id_idx", "user_id");
+  await ensureMySqlIndex(pool, "credit_redemptions", "credit_redemptions_transaction_id_idx", "transaction_id");
   await ensureMySqlIndex(pool, "agent_conversations", "agent_conversations_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "prompt_favorite_groups", "prompt_favorite_groups_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "prompt_favorites", "prompt_favorites_user_id_idx", "user_id");

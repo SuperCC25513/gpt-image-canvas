@@ -4,6 +4,7 @@ export * from "./generation.js";
 export * from "./project.js";
 export * from "./auth.js";
 export * from "./credits.js";
+export * from "./redemption-codes.js";
 export * from "./admin.js";
 export * from "./provider-config.js";
 export * from "./agent.js";

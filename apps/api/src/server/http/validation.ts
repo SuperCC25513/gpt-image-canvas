@@ -4,6 +4,12 @@ import {
   MAX_REFERENCE_IMAGES,
   OUTPUT_FORMATS,
   PROVIDER_SOURCE_IDS,
+  REDEMPTION_CODE_MAX_CREATE_COUNT,
+  REDEMPTION_CODE_MAX_CREDITS,
+  REDEMPTION_CODE_MIN_CREATE_COUNT,
+  REDEMPTION_CODE_MIN_CREDITS,
+  REDEMPTION_CODE_PREFIX,
+  REDEMPTION_CODE_STATUSES,
   SIZE_PRESETS,
   STYLE_PRESETS,
   USER_ROLES,
@@ -11,7 +17,9 @@ import {
   composePrompt,
   validateSceneImageSize,
   type AdminCreditAdjustmentRequest,
+  type AdminCreateRedemptionCodesRequest,
   type AdminSettingsUpdateRequest,
+  type AdminUpdateRedemptionCodeRequest,
   type AdminUserUpdateRequest,
   type GenerationCount,
   type CurrentUser,
@@ -20,6 +28,7 @@ import {
   type LoginRequest,
   type OutputFormat,
   type ProviderSourceId,
+  type RedeemCreditCodeRequest,
   type ReferenceImageInput,
   type RegisterRequest,
   type SaveAgentLlmConfigRequest,
@@ -41,6 +50,11 @@ const MAX_AUTH_NAME_LENGTH = 80;
 const MAX_AUTH_EMAIL_LENGTH = 254;
 const MIN_AUTH_PASSWORD_LENGTH = 8;
 const MAX_ADMIN_NOTE_LENGTH = 240;
+const MAX_REDEMPTION_CODE_LENGTH = 64;
+const REDEMPTION_CODE_PATTERN = new RegExp(
+  `^${REDEMPTION_CODE_PREFIX}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$`,
+  "u"
+);
 
 export interface ProjectPayload {
   name?: string;
@@ -249,6 +263,101 @@ export function parseAdminCreditAdjustmentPayload(input: unknown): ParseResult<A
       mode: input.mode,
       amount,
       note: note || undefined
+    }
+  };
+}
+
+export function parseRedeemCreditCodePayload(input: unknown): ParseResult<RedeemCreditCodeRequest> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_redemption_code", "兑换码请求必须是 JSON 对象。")
+    };
+  }
+
+  const code = parseRedemptionCode(input.code);
+  if (!code) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_redemption_code", "请输入有效的兑换码。")
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      code
+    }
+  };
+}
+
+export function parseAdminCreateRedemptionCodesPayload(input: unknown): ParseResult<AdminCreateRedemptionCodesRequest> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_redemption_code", "兑换码创建请求必须是 JSON 对象。")
+    };
+  }
+
+  const credits = parseStrictInteger(input.credits);
+  if (credits === undefined || credits < REDEMPTION_CODE_MIN_CREDITS || credits > REDEMPTION_CODE_MAX_CREDITS) {
+    return {
+      ok: false,
+      error: errorResponse(
+        "invalid_admin_redemption_code",
+        `兑换积分额度必须在 ${REDEMPTION_CODE_MIN_CREDITS}-${REDEMPTION_CODE_MAX_CREDITS} 之间。`
+      )
+    };
+  }
+
+  const count = parseStrictInteger(input.count);
+  if (count === undefined || count < REDEMPTION_CODE_MIN_CREATE_COUNT || count > REDEMPTION_CODE_MAX_CREATE_COUNT) {
+    return {
+      ok: false,
+      error: errorResponse(
+        "invalid_admin_redemption_code",
+        `生成数量必须在 ${REDEMPTION_CODE_MIN_CREATE_COUNT}-${REDEMPTION_CODE_MAX_CREATE_COUNT} 之间。`
+      )
+    };
+  }
+
+  const expiresAt = parseRedemptionCodeExpiresAt(input.expiresAt);
+  if (!expiresAt.ok) {
+    return expiresAt;
+  }
+
+  return {
+    ok: true,
+    value: {
+      credits,
+      count,
+      expiresAt: expiresAt.value
+    }
+  };
+}
+
+export function parseAdminRedemptionCodePatchPayload(input: unknown): ParseResult<AdminUpdateRedemptionCodeRequest> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_redemption_code", "兑换码更新请求必须是 JSON 对象。")
+    };
+  }
+
+  if (
+    typeof input.status !== "string" ||
+    !REDEMPTION_CODE_STATUSES.includes(input.status as (typeof REDEMPTION_CODE_STATUSES)[number])
+  ) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_redemption_code", "不支持的兑换码状态。")
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      status: input.status as AdminUpdateRedemptionCodeRequest["status"]
     }
   };
 }
@@ -877,8 +986,75 @@ function parseInteger(value: unknown): number | undefined {
   return Number.isInteger(parsed) ? parsed : undefined;
 }
 
+function parseStrictInteger(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? value : undefined;
+  }
+
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!/^-?\d+$/u.test(trimmed)) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
 function parseOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function parseRedemptionCode(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const code = value.trim().toUpperCase();
+  if (!code || code.length > MAX_REDEMPTION_CODE_LENGTH) {
+    return undefined;
+  }
+
+  return REDEMPTION_CODE_PATTERN.test(code) ? code : undefined;
+}
+
+function parseRedemptionCodeExpiresAt(value: unknown): ParseResult<string | undefined> {
+  if (value === undefined || value === null || value === "") {
+    return {
+      ok: true,
+      value: undefined
+    };
+  }
+
+  if (typeof value !== "string") {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_redemption_code", "过期时间必须是字符串。")
+    };
+  }
+
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_redemption_code", "过期时间格式不正确。")
+    };
+  }
+
+  if (timestamp <= Date.now()) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_admin_redemption_code", "过期时间必须晚于当前时间。")
+    };
+  }
+
+  return {
+    ok: true,
+    value: new Date(timestamp).toISOString()
+  };
 }
 
 function parseAuthName(value: unknown): string | undefined {

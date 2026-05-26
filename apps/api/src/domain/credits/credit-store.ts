@@ -37,6 +37,7 @@ interface CreditTransactionRow extends RowDataPacket {
   relatedGenerationId: string | null;
   relatedOutputId: string | null;
   relatedCheckinDate: string | null;
+  relatedRedemptionCodeId: string | null;
   adminNote: string | null;
   createdAt: string;
 }
@@ -60,6 +61,7 @@ interface CreditTransactionInsert {
   relatedGenerationId: string | null;
   relatedOutputId: string | null;
   relatedCheckinDate: string | null;
+  relatedRedemptionCodeId: string | null;
   adminNote: string | null;
   createdAt: string;
 }
@@ -639,6 +641,7 @@ function creditTransaction(input: {
   relatedGenerationId?: string;
   relatedOutputId?: string;
   relatedCheckinDate?: string;
+  relatedRedemptionCodeId?: string;
   adminNote?: string;
   createdAt: string;
 }): CreditTransactionInsert {
@@ -650,6 +653,7 @@ function creditTransaction(input: {
     relatedGenerationId: input.relatedGenerationId ?? null,
     relatedOutputId: input.relatedOutputId ?? null,
     relatedCheckinDate: input.relatedCheckinDate ?? null,
+    relatedRedemptionCodeId: input.relatedRedemptionCodeId ?? null,
     adminNote: input.adminNote ?? null,
     createdAt: input.createdAt
   };
@@ -661,8 +665,8 @@ async function insertMySqlCreditTransaction(
 ): Promise<void> {
   await connection.execute(
     `INSERT INTO credit_transactions
-      (id, user_id, delta, reason, related_generation_id, related_output_id, related_checkin_date, admin_note, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, user_id, delta, reason, related_generation_id, related_output_id, related_checkin_date, related_redemption_code_id, admin_note, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       transaction.id,
       transaction.userId,
@@ -671,6 +675,7 @@ async function insertMySqlCreditTransaction(
       transaction.relatedGenerationId,
       transaction.relatedOutputId,
       transaction.relatedCheckinDate,
+      transaction.relatedRedemptionCodeId,
       transaction.adminNote,
       transaction.createdAt
     ]
@@ -690,6 +695,7 @@ function storedCreditTransactionResponse(transaction: CreditTransactionInsert | 
     relatedGenerationId: transaction.relatedGenerationId ?? undefined,
     relatedOutputId: transaction.relatedOutputId ?? undefined,
     relatedCheckinDate: transaction.relatedCheckinDate ?? undefined,
+    relatedRedemptionCodeId: transaction.relatedRedemptionCodeId ?? undefined,
     adminNote: transaction.adminNote ?? undefined,
     createdAt: transaction.createdAt
   };
@@ -703,6 +709,7 @@ function creditTransactionSelectSql(): string {
                  related_generation_id AS relatedGenerationId,
                  related_output_id AS relatedOutputId,
                  related_checkin_date AS relatedCheckinDate,
+                 related_redemption_code_id AS relatedRedemptionCodeId,
                  admin_note AS adminNote,
                  created_at AS createdAt
           FROM credit_transactions`;

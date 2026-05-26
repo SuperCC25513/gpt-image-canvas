@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS credit_transactions (
   related_generation_id TEXT,
   related_output_id TEXT,
   related_checkin_date TEXT,
+  related_redemption_code_id TEXT,
   admin_note TEXT,
   created_at TEXT NOT NULL
 );
@@ -145,6 +146,28 @@ CREATE TABLE IF NOT EXISTS user_checkins (
   credits_awarded INTEGER NOT NULL,
   created_at TEXT NOT NULL,
   PRIMARY KEY (user_id, checkin_date)
+);
+
+CREATE TABLE IF NOT EXISTS redemption_codes (
+  id TEXT PRIMARY KEY NOT NULL,
+  code TEXT NOT NULL,
+  credits INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  expires_at TEXT,
+  redeemed_by_user_id TEXT REFERENCES users(id),
+  redeemed_at TEXT,
+  created_by_admin_id TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS credit_redemptions (
+  id TEXT PRIMARY KEY NOT NULL,
+  code_id TEXT NOT NULL REFERENCES redemption_codes(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  credits_awarded INTEGER NOT NULL,
+  transaction_id TEXT NOT NULL REFERENCES credit_transactions(id),
+  created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS agent_llm_configs (
@@ -305,6 +328,13 @@ CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS credit_transactions_user_id_idx ON credit_transactions(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS credit_transactions_generation_reason_idx ON credit_transactions(related_generation_id, reason);
 CREATE INDEX IF NOT EXISTS user_checkins_user_id_idx ON user_checkins(user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS redemption_codes_code_idx ON redemption_codes(code);
+CREATE INDEX IF NOT EXISTS redemption_codes_status_idx ON redemption_codes(status);
+CREATE INDEX IF NOT EXISTS redemption_codes_redeemed_by_user_id_idx ON redemption_codes(redeemed_by_user_id);
+CREATE INDEX IF NOT EXISTS redemption_codes_created_at_idx ON redemption_codes(created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS credit_redemptions_code_id_idx ON credit_redemptions(code_id);
+CREATE INDEX IF NOT EXISTS credit_redemptions_user_id_idx ON credit_redemptions(user_id);
+CREATE INDEX IF NOT EXISTS credit_redemptions_transaction_id_idx ON credit_redemptions(transaction_id);
 CREATE INDEX IF NOT EXISTS agent_conversations_updated_at_idx ON agent_conversations(updated_at);
 CREATE INDEX IF NOT EXISTS agent_conversations_user_id_idx ON agent_conversations(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS agent_skills_slug_idx ON agent_skills(slug);
@@ -343,9 +373,17 @@ CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites
   ensureColumn(sqlite, "app_settings", "generation_credit_cost", `generation_credit_cost INTEGER NOT NULL DEFAULT ${DEFAULT_GENERATION_CREDIT_COST}`);
   ensureColumn(sqlite, "app_settings", "checkin_credit", `checkin_credit INTEGER NOT NULL DEFAULT ${DEFAULT_CHECKIN_CREDIT}`);
   ensureColumn(sqlite, "app_settings", "max_images_per_request", `max_images_per_request INTEGER NOT NULL DEFAULT ${DEFAULT_MAX_IMAGES_PER_REQUEST}`);
+  ensureColumn(sqlite, "credit_transactions", "related_redemption_code_id", "related_redemption_code_id TEXT");
   sqlite.exec("CREATE INDEX IF NOT EXISTS credit_transactions_user_id_idx ON credit_transactions(user_id)");
   sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS credit_transactions_generation_reason_idx ON credit_transactions(related_generation_id, reason)");
   sqlite.exec("CREATE INDEX IF NOT EXISTS user_checkins_user_id_idx ON user_checkins(user_id)");
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS redemption_codes_code_idx ON redemption_codes(code)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS redemption_codes_status_idx ON redemption_codes(status)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS redemption_codes_redeemed_by_user_id_idx ON redemption_codes(redeemed_by_user_id)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS redemption_codes_created_at_idx ON redemption_codes(created_at)");
+  sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS credit_redemptions_code_id_idx ON credit_redemptions(code_id)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS credit_redemptions_user_id_idx ON credit_redemptions(user_id)");
+  sqlite.exec("CREATE INDEX IF NOT EXISTS credit_redemptions_transaction_id_idx ON credit_redemptions(transaction_id)");
   ensureColumn(sqlite, "agent_conversations", "user_id", "user_id TEXT");
   ensureColumn(sqlite, "prompt_favorite_groups", "user_id", "user_id TEXT");
   ensureColumn(sqlite, "prompt_favorites", "user_id", "user_id TEXT");

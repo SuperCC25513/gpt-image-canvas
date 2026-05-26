@@ -20,6 +20,7 @@ import { registerProjectRoutes } from "./routes/project.js";
 import { registerPromptFavoriteRoutes } from "./routes/prompt-favorites.js";
 import { registerPromptPoolRoutes } from "./routes/prompt-pool.js";
 import { registerProviderConfigRoutes } from "./routes/provider-config.js";
+import { registerRedemptionCodeRoutes } from "./routes/redemption-codes.js";
 
 export const agentWebSocketServer = new WebSocketServer({ noServer: true });
 export const app = await createApp();
@@ -37,6 +38,7 @@ export async function createApp(): Promise<Hono> {
   registerCoreRoutes(app);
   registerAuthRoutes(app);
   registerCreditRoutes(app);
+  registerRedemptionCodeRoutes(app);
   registerAdminRoutes(app);
   registerProviderConfigRoutes(app);
   registerAgentConfigRoutes(app);

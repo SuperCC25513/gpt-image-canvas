@@ -45,6 +45,7 @@ export const creditTransactions = sqliteTable("credit_transactions", {
   relatedGenerationId: text("related_generation_id"),
   relatedOutputId: text("related_output_id"),
   relatedCheckinDate: text("related_checkin_date"),
+  relatedRedemptionCodeId: text("related_redemption_code_id"),
   adminNote: text("admin_note"),
   createdAt: text("created_at").notNull()
 });
@@ -63,6 +64,34 @@ export const userCheckins = sqliteTable(
     pk: primaryKey({ columns: [table.userId, table.checkinDate] })
   })
 );
+
+export const redemptionCodes = sqliteTable("redemption_codes", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull(),
+  credits: integer("credits").notNull(),
+  status: text("status").notNull(),
+  expiresAt: text("expires_at"),
+  redeemedByUserId: text("redeemed_by_user_id").references(() => users.id),
+  redeemedAt: text("redeemed_at"),
+  createdByAdminId: text("created_by_admin_id").references(() => users.id),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
+export const creditRedemptions = sqliteTable("credit_redemptions", {
+  id: text("id").primaryKey(),
+  codeId: text("code_id")
+    .notNull()
+    .references(() => redemptionCodes.id),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id),
+  creditsAwarded: integer("credits_awarded").notNull(),
+  transactionId: text("transaction_id")
+    .notNull()
+    .references(() => creditTransactions.id),
+  createdAt: text("created_at").notNull()
+});
 
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),

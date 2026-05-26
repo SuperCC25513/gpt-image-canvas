@@ -10,6 +10,7 @@ export const CREDIT_TRANSACTION_REASONS = [
   "daily_checkin",
   "generation_charge",
   "generation_refund",
+  "redemption_code",
   "admin_adjustment"
 ] as const;
 
@@ -23,6 +24,7 @@ export interface CreditTransaction {
   relatedGenerationId?: string;
   relatedOutputId?: string;
   relatedCheckinDate?: string;
+  relatedRedemptionCodeId?: string;
   adminNote?: string;
   createdAt: string;
 }
