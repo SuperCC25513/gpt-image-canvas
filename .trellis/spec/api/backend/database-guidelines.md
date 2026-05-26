@@ -134,8 +134,9 @@ await db.insert(assets).values({ id, fileName, relativePath, mimeType, width, he
 - MySQL 建库只在 `MYSQL_CREATE_DATABASE=true` 时执行，库名必须通过内部白名单校验后再拼接为 identifier。
 - `MYSQL_CREATE_DATABASE=false` 时不自动创建数据库本身，但目标数据库已存在时必须自动创建缺失表。
 - MySQL 初始化 SQL 必须维护数据库层表注释和字段注释；已有表和字段也要通过启动兼容迁移补齐注释。
-- MySQL 只存元数据和 `assets/<file>` 相对路径，图片二进制仍在 `DATA_DIR/assets`。
-- 两种驱动都不创建云存储表、云资产字段或远端 fallback 字段。
+- MySQL 只存元数据；图片二进制主存储为 OSS，`assets.relative_path` 保存 OSS object key。
+- SQLite 本地路径和 MySQL OSS object key 共享 `assets.relative_path` 字段名，但读取 helper 必须按当前驱动解释，不能把 OSS object key 解析成本地 `DATA_DIR/assets` 路径。
+- 两种驱动都不创建额外云存储表、云资产字段或远端 fallback 字段。
 
 ### 4. 验证与错误矩阵
 
@@ -171,6 +172,61 @@ const row = db.select().from(generationRecords).where(eq(generationRecords.id, i
 ```ts
 // 业务层走异步 store facade，由 facade 按当前 driver 分发。
 const record = await readGenerationRecord(id);
+```
+
+## 场景：MySQL + OSS 资产路径解析
+
+### 1. 范围 / 触发
+
+- 触发：修改 `asset-storage.ts`、`image-generation.ts`、Gallery ZIP 导出、资产预览、下载或参考图复用。
+- 范围：`assets.relative_path`、`getStoredAssetFile()`、`resolveLocalAssetPath()`、`readStoredAssetBytes()`、`storedAssetAccessUrl()`。
+
+### 2. 签名
+
+- SQLite：`assets.relative_path = assets/<assetId>.<ext>`，可解析到 `DATA_DIR/assets`。
+- MySQL + OSS：`assets.relative_path = <OSS_ROOT_PATH><assetId>.<ext>`，只能作为 OSS object key 使用。
+- `StoredAssetFile.filePath` 只允许在 SQLite 本地存储模式下存在。
+
+### 3. 契约
+
+- MySQL + OSS 模式下，`resolveLocalAssetPath()` 必须返回 `undefined`，即使 object key 恰好以 `assets/` 开头。
+- MySQL + OSS 的 ZIP 导出、Agent 参考图复用和 `?proxy=1` 原图读取必须通过 `readStoredAssetBytes()` 从 OSS 读取 bytes。
+- MySQL + OSS 的普通原图、下载和预览入口必须先做 `userCanReadAsset()`，再返回或重定向到 OSS GET 预签名 URL。
+
+### 4. 验证与错误矩阵
+
+- `USE_MYSQL=true` 且 `OSS_ROOT_PATH` 为空或为 `assets/` -> 不得生成本地 `filePath`。
+- OSS object key 缺失或越过 `OSS_ROOT_PATH` -> 资产读取/签名失败，返回不可用或 404。
+- SQLite 本地路径越过 `DATA_DIR/assets` -> 资产不可用或 404。
+
+### 5. 良好 / 基线 / 错误
+
+- 良好：MySQL + OSS 下 Gallery ZIP 导出使用 OSS bytes，不访问 `DATA_DIR/assets/<file>`。
+- 基线：SQLite 下 `filePath` 仍指向 `DATA_DIR/assets/<file>`，ZIP 可流式读取本地文件。
+- 错误：只看 `relative_path` 字符串前缀；把 `assets/<file>` OSS object key 当成本地文件路径。
+
+### 6. 必跑测试
+
+- 探针：`USE_MYSQL=true`、`OSS_ROOT_PATH=` 时，`resolveLocalAssetPath(storedAssetRelativePathForFileName("x.png"))` 应为 `undefined`。
+- `pnpm typecheck`
+- `pnpm build`
+- SQLite smoke：`USE_MYSQL=false pnpm --filter @gpt-image-canvas/api smoke:executor`
+
+### 7. 错误写法 vs 正确写法
+
+错误：
+
+```ts
+const filePath = resolveLocalAssetPath(asset.relativePath);
+return { ...asset, filePath };
+```
+
+正确：
+
+```ts
+const usesOss = usesOssAssetStorage();
+const filePath = usesOss ? undefined : resolveLocalAssetPath(asset.relativePath);
+return { ...asset, filePath };
 ```
 
 ## 场景：用户会话与私有 owner 归属
