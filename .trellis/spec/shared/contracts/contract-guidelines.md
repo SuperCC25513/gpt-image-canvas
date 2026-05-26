@@ -157,6 +157,65 @@ if (!auth.ok) return auth.response;
 return c.json(await listCreditTransactionsForUser(auth.user.id, { limit }));
 ```
 
+## Scenario: 兑换码积分兑换
+
+### 1. Scope / Trigger
+
+- Trigger: 新增或修改兑换码生成、校验、后台管理或用户兑换入口。
+- 这是 shared、API、DB、Web 的跨层契约，码值格式和积分流水字段必须保持一致。
+
+### 2. Signatures
+
+- Shared constant: `REDEMPTION_CODE_PREFIX = "CC"`。
+- API: `POST /api/credits/redeem`，请求 `RedeemCreditCodeRequest { code: string }`。
+- Admin API: `POST /api/admin/redemption-codes`，请求 `AdminCreateRedemptionCodesRequest { credits: number; count: number; expiresAt?: string }`。
+- Response: `RedeemCreditCodeResponse { user; transaction; redemption }`，其中 `redemption.codeShort` 是短码展示值。
+
+### 3. Contracts
+
+- 码值格式固定为 `CC-XXXX-XXXX-XXXX`。
+- 字符集排除易混淆字符：不使用 `O`、`0`、`I`、`1`。
+- 码值生成和用户输入校验都必须引用 shared 的 `REDEMPTION_CODE_PREFIX`，不得在 Web/API 各自散落硬编码前缀。
+- 用户侧积分流水只展示短码；后台兑换码列表可展示完整码。
+- 兑换成功必须同事务更新用户积分、写入 `credit_transactions(reason=redemption_code)`、写入 `credit_redemptions`、回写兑换码兑换状态。
+
+### 4. Validation & Error Matrix
+
+- 空码或格式不符合 `CC-XXXX-XXXX-XXXX` -> `400 invalid_redemption_code`。
+- 不存在 -> `404 redemption_code_not_found`。
+- 已停用 -> `400 redemption_code_disabled`。
+- 已过期 -> `400 redemption_code_expired`。
+- 已被任意用户兑换 -> `409 redemption_code_redeemed`。
+- 创建数量不在 `1..200` 或积分不在 `1..10000` -> `400 invalid_admin_redemption_code`。
+
+### 5. Good/Base/Bad Cases
+
+- Good: 后台生成 `CC-ABCD-EFGH-JKLM`，用户输入小写或带空格时服务端 `trim().toUpperCase()` 后兑换。
+- Base: 管理员批量生成多个未过期 active 码，用户成功兑换一个码后余额和流水同时刷新。
+- Bad: 后端生成 `CC-`，但 Web 占位符仍提示旧前缀，用户会按错误格式输入。
+
+### 6. Tests Required
+
+- API smoke: 生成码以 `REDEMPTION_CODE_PREFIX` 开头，格式匹配。
+- API smoke: 非 `CC-` 前缀返回 `invalid_redemption_code`。
+- API integration: 成功兑换后余额、`credit_transactions`、`credit_redemptions` 和 `redemption_codes.redeemed_at` 同步落库。
+- Web check: 后台生成结果和积分中心占位符都显示 `CC-XXXX-XXXX-XXXX`。
+- Typecheck/build: shared、API、Web 全部通过。
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const REDEMPTION_CODE_PATTERN = /^GIC-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/u;
+```
+
+#### Correct
+
+```ts
+const REDEMPTION_CODE_PATTERN = new RegExp(`^${REDEMPTION_CODE_PREFIX}-...$`, "u");
+```
+
 ## 向后兼容
 
 - 旧字段需要保留读兼容时，API/Web 都要接受 legacy 形态。例：edit request 同时支持 `referenceImage` 和 `referenceImages`、`referenceAssetId` 和 `referenceAssetIds`。
