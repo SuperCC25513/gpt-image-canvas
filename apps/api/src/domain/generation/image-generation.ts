@@ -18,6 +18,7 @@ import type {
 import type { CurrentUser } from "../contracts.js";
 import { markInterruptedGenerationAuditsFailed, updateGenerationAuditFromRecord } from "../admin/audit-store.js";
 import { refundGenerationCreditsForFailures, refundInterruptedGenerationCredits } from "../credits/credit-store.js";
+import { redactSensitiveText } from "../security/redaction.js";
 import {
   ProviderError,
   type EditImageProviderInput,
@@ -27,6 +28,8 @@ import {
 } from "../../infrastructure/providers/image-provider.js";
 import {
   assetStorageSignedUrlExpiresInSeconds,
+  deleteStoredAssetBytes,
+  ossObjectExists,
   readStoredAssetBytes,
   resolveLocalAssetPath,
   storedAssetAccessUrl,
@@ -196,12 +199,20 @@ export async function finishTextToImageGeneration(
   signal?: AbortSignal,
   user?: CurrentUser
 ): Promise<GenerationRecord> {
-  const outputs = await mapWithConcurrency(
-    Array.from({ length: input.count }, (_, index) => index),
-    BATCH_CONCURRENCY,
-    async () => generateSingleOutput(input, provider, signal)
-  );
-  throwIfAborted(signal);
+  let outputs: BatchOutputResult[] = [];
+  try {
+    outputs = await mapWithConcurrency(
+      Array.from({ length: input.count }, (_, index) => index),
+      BATCH_CONCURRENCY,
+      async () => generateSingleOutput(input, provider, signal)
+    );
+    throwIfAborted(signal);
+  } catch (error) {
+    if (isAbortError(error) || signal?.aborted) {
+      await cleanupUnpersistedOutputAssets(outputs);
+    }
+    throw error;
+  }
 
   return completeGenerationRecord(
     generationId,
@@ -221,12 +232,20 @@ export async function finishReferenceImageGeneration(
   signal?: AbortSignal,
   user?: CurrentUser
 ): Promise<GenerationRecord> {
-  const outputs = await mapWithConcurrency(
-    Array.from({ length: input.count }, (_, index) => index),
-    BATCH_CONCURRENCY,
-    async () => editSingleOutput(input, provider, signal)
-  );
-  throwIfAborted(signal);
+  let outputs: BatchOutputResult[] = [];
+  try {
+    outputs = await mapWithConcurrency(
+      Array.from({ length: input.count }, (_, index) => index),
+      BATCH_CONCURRENCY,
+      async () => editSingleOutput(input, provider, signal)
+    );
+    throwIfAborted(signal);
+  } catch (error) {
+    if (isAbortError(error) || signal?.aborted) {
+      await cleanupUnpersistedOutputAssets(outputs);
+    }
+    throw error;
+  }
 
   return completeGenerationRecord(
     generationId,
@@ -264,7 +283,7 @@ export async function cancelGenerationRecord(generationId: string, user?: Curren
   const record = await updateGenerationRecordStatus(generationId, "cancelled", CANCELLED_GENERATION_ERROR, user);
   if (record?.status === "cancelled") {
     await refundGenerationCreditsForFailures(generationId, record.count, record.count, user?.id);
-    await updateGenerationAuditSafely(record);
+    await updateGenerationAuditSafely(record, user);
   }
   return record;
 }
@@ -281,7 +300,7 @@ export async function failGenerationRecord(generationId: string, error: string, 
   const record = await updateGenerationRecordStatus(generationId, "failed", sanitizeGenerationErrorMessage(error), user);
   if (record?.status === "failed") {
     await refundGenerationCreditsForFailures(generationId, record.count, record.count, user?.id);
-    await updateGenerationAuditSafely(record);
+    await updateGenerationAuditSafely(record, user);
   }
   return record;
 }
@@ -438,7 +457,16 @@ export async function readStoredAssetMetadata(assetId: string): Promise<AssetMet
     return undefined;
   }
 
-  if (!usesOssAssetStorage() && !(await readStoredAsset(assetId))) {
+  const file = await getStoredAssetFile(assetId);
+  if (!file) {
+    return undefined;
+  }
+
+  if (usesOssAssetStorage()) {
+    if (!(await ossObjectExists(file.relativePath))) {
+      return undefined;
+    }
+  } else if (!(await readStoredAsset(assetId))) {
     return undefined;
   }
 
@@ -455,6 +483,13 @@ export async function getStoredAssetAccessUrl(
 ): Promise<AssetAccessUrlResponse | undefined> {
   const asset = await findAssetById(assetId);
   if (!asset) {
+    return undefined;
+  }
+  const file = await getStoredAssetFile(assetId);
+  if (!file) {
+    return undefined;
+  }
+  if (usesOssAssetStorage() && !(await ossObjectExists(file.relativePath))) {
     return undefined;
   }
 
@@ -551,7 +586,8 @@ async function editSingleOutput(input: EditImageProviderInput, provider: ImagePr
   }
 }
 
-async function saveProviderImage(image: ProviderImage, input: ImageProviderInput, _signal?: AbortSignal): Promise<SavedProviderImage> {
+async function saveProviderImage(image: ProviderImage, input: ImageProviderInput, signal?: AbortSignal): Promise<SavedProviderImage> {
+  throwIfAborted(signal);
   const assetId = randomUUID();
   const fileName = `${assetId}.${input.outputFormat === "jpeg" ? "jpg" : input.outputFormat}`;
   const relativePath = storedAssetRelativePathForFileName(fileName);
@@ -564,6 +600,12 @@ async function saveProviderImage(image: ProviderImage, input: ImageProviderInput
   }
 
   await writeStoredAssetBytes(relativePath, bytes, mimeType);
+  try {
+    throwIfAborted(signal);
+  } catch (error) {
+    await deleteStoredAssetBytes(relativePath);
+    throw error;
+  }
 
   return {
     asset: {
@@ -576,6 +618,24 @@ async function saveProviderImage(image: ProviderImage, input: ImageProviderInput
       relativePath
     }
   };
+}
+
+async function deleteUnpersistedOutputAsset(output: BatchOutputResult): Promise<void> {
+  if (output.status !== "succeeded" || !output.asset?.relativePath) {
+    return;
+  }
+
+  await deleteStoredAssetBytes(output.asset.relativePath);
+}
+
+async function cleanupUnpersistedOutputAssets(outputs: BatchOutputResult[]): Promise<void> {
+  await Promise.all(
+    outputs.map((output) =>
+      deleteUnpersistedOutputAsset(output).catch((error: unknown) => {
+        console.warn(`Failed to clean up cancelled generation asset: ${errorToMessage(error)}`);
+      })
+    )
+  );
 }
 
 async function readImageSize(bytes: Buffer): Promise<ImageSize | undefined> {
@@ -691,7 +751,7 @@ async function completeGenerationRecord(
     createdAt: existing?.createdAt ?? new Date().toISOString(),
     outputs: outputs.map((output) => toGenerationOutput(generationOutputWithVisibility(output, input)))
   };
-  await updateGenerationAuditSafely(completedRecord);
+  await updateGenerationAuditSafely(completedRecord, user);
 
   return completedRecord;
 }
@@ -750,7 +810,7 @@ async function saveCompletedGenerationRecord(
     createdAt,
     outputs: outputs.map((output) => toGenerationOutput(generationOutputWithVisibility(output, input)))
   };
-  await updateGenerationAuditSafely(completedRecord);
+  await updateGenerationAuditSafely(completedRecord, user);
 
   return completedRecord;
 }
@@ -779,9 +839,9 @@ async function updateGenerationRecordStatus(
   return readGenerationRecord(generationId);
 }
 
-async function updateGenerationAuditSafely(record: GenerationRecord): Promise<void> {
+async function updateGenerationAuditSafely(record: GenerationRecord, user?: CurrentUser): Promise<void> {
   try {
-    await updateGenerationAuditFromRecord(record);
+    await updateGenerationAuditFromRecord(record, user);
   } catch (error) {
     console.warn(`Generation audit update failed: ${errorToMessage(error)}`);
   }
@@ -859,11 +919,7 @@ function errorToMessage(error: unknown): string {
 }
 
 function sanitizeGenerationErrorMessage(message: string): string {
-  return message
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/giu, "Bearer [redacted]")
-    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/gu, "sk-[redacted]")
-    .trim()
-    .slice(0, 1200);
+  return redactSensitiveText(message) ?? "图像生成失败，请重试。";
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {

@@ -37,6 +37,7 @@ import { createSessionToken, hashPassword, hashSessionToken, verifyPassword } fr
 
 const APP_SETTINGS_ID = "default";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const SESSION_TOUCH_INTERVAL_MS = 10 * 60 * 1000;
 
 interface UserRow {
   id: string;
@@ -209,7 +210,9 @@ export async function currentUserFromToken(token: string | undefined): Promise<C
     return undefined;
   }
 
-  await touchSession(tokenHash);
+  if (shouldTouchSession(session.lastSeenAt)) {
+    await touchSession(tokenHash);
+  }
   return toCurrentUser(user);
 }
 
@@ -597,6 +600,15 @@ async function touchSession(tokenHash: string): Promise<void> {
   }
 
   await getMySqlPool().execute("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?", [lastSeenAt, tokenHash]);
+}
+
+function shouldTouchSession(lastSeenAt: string | null): boolean {
+  if (!lastSeenAt) {
+    return true;
+  }
+
+  const lastSeenMs = Date.parse(lastSeenAt);
+  return !Number.isFinite(lastSeenMs) || Date.now() - lastSeenMs >= SESSION_TOUCH_INTERVAL_MS;
 }
 
 async function deleteSession(tokenHash: string): Promise<void> {

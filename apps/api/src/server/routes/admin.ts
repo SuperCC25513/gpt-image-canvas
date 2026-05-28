@@ -27,7 +27,8 @@ export function registerAdminRoutes(app: Hono): void {
     return c.json(
       await listAdminUsers({
         query: c.req.query("q"),
-        limit: parseLimit(c.req.query("limit"))
+        limit: parseLimit(c.req.query("limit")),
+        cursor: c.req.query("cursor")
       })
     );
   });
@@ -118,7 +119,8 @@ export function registerAdminRoutes(app: Hono): void {
 
     return c.json(
       await listGenerationAudits({
-        limit: parseLimit(c.req.query("limit"))
+        limit: parseLimit(c.req.query("limit")),
+        cursor: c.req.query("cursor")
       })
     );
   });

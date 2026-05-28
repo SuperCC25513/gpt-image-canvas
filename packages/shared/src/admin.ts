@@ -7,6 +7,7 @@ export interface AdminUserSummary extends CurrentUser {}
 
 export interface AdminUsersResponse {
   users: AdminUserSummary[];
+  nextCursor?: string;
 }
 
 export interface AdminUserUpdateRequest {
@@ -79,4 +80,5 @@ export interface AdminGenerationAuditRecord {
 
 export interface AdminGenerationAuditsResponse {
   items: AdminGenerationAuditRecord[];
+  nextCursor?: string;
 }

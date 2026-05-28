@@ -1,5 +1,6 @@
 import type { RowDataPacket } from "mysql2/promise";
 import type { CurrentUser, GenerationOutput, GenerationRecord, GenerationStatus } from "../contracts.js";
+import { redactSensitiveText } from "../security/redaction.js";
 import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import { generationAudits } from "../../infrastructure/schema.js";
 import { eq, inArray } from "drizzle-orm";
@@ -109,14 +110,20 @@ export async function recordGenerationAuditStart(input: {
   );
 }
 
-export async function updateGenerationAuditFromRecord(record: GenerationRecord): Promise<void> {
+export async function updateGenerationAuditFromRecord(record: GenerationRecord, user?: CurrentUser): Promise<void> {
   const existing = await findAuditRow(record.id);
-  if (!existing) {
+  if (!existing && user) {
+    await recordGenerationAuditStart({
+      record,
+      user,
+      isPublic: record.outputs.some((output) => output.isPublic === true)
+    });
+  } else if (!existing) {
     return;
   }
 
   const outputIsPublic = record.outputs.some((output) => output.isPublic === true);
-  const nextIsPublic = existing.isPublic === 1 || outputIsPublic;
+  const nextIsPublic = existing?.isPublic === 1 || outputIsPublic;
   const updatedAt = nowIso();
   const errorSummary = sanitizeAuditError(record.error ?? firstOutputError(record.outputs));
   const outputsJson = JSON.stringify(outputRefs(record.outputs));
@@ -220,13 +227,7 @@ function firstOutputError(outputs: GenerationOutput[]): string | undefined {
 }
 
 function sanitizeAuditError(message: string | undefined): string | null {
-  const sanitized = message
-    ?.replace(/\bBearer\s+[A-Za-z0-9._~+/=-]+/giu, "Bearer [redacted]")
-    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/gu, "sk-[redacted]")
-    .trim()
-    .slice(0, 1200);
-
-  return sanitized || null;
+  return redactSensitiveText(message) ?? null;
 }
 
 function auditIdForGeneration(generationId: string): string {

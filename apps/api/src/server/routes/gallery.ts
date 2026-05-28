@@ -14,6 +14,9 @@ import { downloadFileName, errorResponse } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 import { parseGalleryVisibilityPayload } from "../http/validation.js";
 
+const MAX_GALLERY_EXPORT_OUTPUTS = 50;
+const MAX_GALLERY_EXPORT_BYTES = 512 * 1024 * 1024;
+
 export function registerGalleryRoutes(app: Hono): void {
   app.get("/api/gallery", async (c) => {
     const auth = await requireAuth(c);
@@ -45,10 +48,15 @@ export function registerGalleryRoutes(app: Hono): void {
     }
 
     const zipInputs: ZipFileInput[] = [];
+    let totalBytes = 0;
     for (const [index, exportAsset] of exportAssets.entries()) {
       const asset = await readStoredAsset(exportAsset.assetId);
       if (!asset) {
         return c.json(errorResponse("gallery_export_asset_unavailable", "One or more Gallery assets are unavailable."), 404);
+      }
+      totalBytes += asset.bytes.byteLength;
+      if (totalBytes > MAX_GALLERY_EXPORT_BYTES) {
+        return c.json(errorResponse("gallery_export_too_large", "Gallery export is too large. Export fewer images."), 413);
       }
 
       zipInputs.push({
@@ -160,6 +168,13 @@ async function parseGalleryExportRequest(request: Request): Promise<GalleryExpor
       ok: false,
       code: "gallery_export_empty",
       message: "Gallery export requires at least one image."
+    };
+  }
+  if (outputIds.length > MAX_GALLERY_EXPORT_OUTPUTS) {
+    return {
+      ok: false,
+      code: "gallery_export_too_many_images",
+      message: `Gallery export supports up to ${MAX_GALLERY_EXPORT_OUTPUTS} images at a time.`
     };
   }
 

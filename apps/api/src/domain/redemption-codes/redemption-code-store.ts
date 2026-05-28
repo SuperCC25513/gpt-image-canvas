@@ -1,5 +1,5 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import type {
   AdminCreateRedemptionCodesRequest,
@@ -78,8 +78,9 @@ export class RedemptionCodeDomainError extends Error {
   }
 }
 
-export async function listAdminRedemptionCodes(options: { limit?: number } = {}): Promise<RedemptionCodeListResponse> {
+export async function listAdminRedemptionCodes(options: { limit?: number; cursor?: string } = {}): Promise<RedemptionCodeListResponse> {
   const limit = redemptionCodeLimit(options.limit);
+  const cursor = parseListCursor(options.cursor);
   if (databaseDriver === "sqlite") {
     const rows = db
       .select({
@@ -98,24 +99,37 @@ export async function listAdminRedemptionCodes(options: { limit?: number } = {})
       })
       .from(redemptionCodes)
       .leftJoin(users, eq(redemptionCodes.redeemedByUserId, users.id))
+      .where(
+        cursor
+          ? or(
+              lt(redemptionCodes.createdAt, cursor.createdAt),
+              and(eq(redemptionCodes.createdAt, cursor.createdAt), lt(redemptionCodes.id, cursor.id))
+            )
+          : undefined
+      )
       .orderBy(desc(redemptionCodes.createdAt), desc(redemptionCodes.id))
-      .limit(limit)
+      .limit(limit + 1)
       .all();
+    const pageRows = rows.slice(0, limit);
 
     return {
-      items: rows.map(redemptionCodeResponse)
+      items: pageRows.map(redemptionCodeResponse),
+      nextCursor: rows.length > limit ? cursorForRow(pageRows[pageRows.length - 1]) : undefined
     };
   }
 
   const [rows] = await getMySqlPool().execute<RedemptionCodePacket[]>(
     `${redemptionCodeSelectSql()}
+     ${cursor ? "WHERE redemption_codes.created_at < ? OR (redemption_codes.created_at = ? AND redemption_codes.id < ?)" : ""}
      ORDER BY redemption_codes.created_at DESC, redemption_codes.id DESC
      LIMIT ?`,
-    [limit]
+    cursor ? [cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [limit + 1]
   );
+  const pageRows = rows.slice(0, limit);
 
   return {
-    items: rows.map(redemptionCodeResponse)
+    items: pageRows.map(redemptionCodeResponse),
+    nextCursor: rows.length > limit ? cursorForRow(pageRows[pageRows.length - 1]) : undefined
   };
 }
 
@@ -332,7 +346,7 @@ export async function redeemCreditCode(user: CurrentUser, input: RedeemCreditCod
     return db.transaction((tx) => {
       const code = tx.select().from(redemptionCodes).where(eq(redemptionCodes.code, normalizedCode)).get();
       if (!code) {
-        throw new RedemptionCodeDomainError("redemption_code_not_found", "找不到该兑换码。", 404);
+        throw unavailableRedemptionCodeError();
       }
       assertRedeemableCode(code, now);
 
@@ -400,7 +414,7 @@ export async function redeemCreditCode(user: CurrentUser, input: RedeemCreditCod
     );
     const code = codeRows[0];
     if (!code) {
-      throw new RedemptionCodeDomainError("redemption_code_not_found", "找不到该兑换码。", 404);
+      throw unavailableRedemptionCodeError();
     }
     assertRedeemableCode(code, now);
 
@@ -477,14 +491,18 @@ function assertRedeemableCode(
   now: string
 ): void {
   if (code.status !== "active") {
-    throw new RedemptionCodeDomainError("redemption_code_disabled", "该兑换码已停用。", 400);
+    throw unavailableRedemptionCodeError();
   }
   if (code.expiresAt && Date.parse(code.expiresAt) <= Date.parse(now)) {
-    throw new RedemptionCodeDomainError("redemption_code_expired", "该兑换码已过期。", 400);
+    throw unavailableRedemptionCodeError();
   }
   if (code.redeemedByUserId || code.redeemedAt) {
-    throw new RedemptionCodeDomainError("redemption_code_redeemed", "该兑换码已被使用。", 409);
+    throw unavailableRedemptionCodeError();
   }
+}
+
+function unavailableRedemptionCodeError(): RedemptionCodeDomainError {
+  return new RedemptionCodeDomainError("redemption_code_unavailable", "兑换码不可用或已失效。", 400);
 }
 
 async function generateUniqueRedemptionCodes(count: number): Promise<string[]> {
@@ -655,6 +673,43 @@ function redemptionCodeLimit(value: number | undefined): number {
 
 function positiveOrDefault(value: number | undefined, fallback: number): number {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+interface ListCursor {
+  createdAt: string;
+  id: string;
+}
+
+function parseListCursor(value: string | undefined): ListCursor | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed) ||
+      typeof (parsed as { createdAt?: unknown }).createdAt !== "string" ||
+      typeof (parsed as { id?: unknown }).id !== "string"
+    ) {
+      return undefined;
+    }
+    return {
+      createdAt: (parsed as { createdAt: string }).createdAt,
+      id: (parsed as { id: string }).id
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function cursorForRow(row: { createdAt: string; id: string } | undefined): string | undefined {
+  if (!row) {
+    return undefined;
+  }
+  return Buffer.from(JSON.stringify({ createdAt: row.createdAt, id: row.id })).toString("base64url");
 }
 
 function normalizeRedemptionCode(value: string): string {

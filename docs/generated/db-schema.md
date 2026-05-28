@@ -2,7 +2,7 @@
 
 本文档记录当前持久化表结构。SQLite schema 定义在 `apps/api/src/infrastructure/schema.ts`，MySQL 建表 SQL 定义在 `apps/api/src/infrastructure/mysql-database.ts`。
 
-最后检查：2026-05-22。
+最后检查：2026-05-28。
 
 ## 驱动行为
 
@@ -18,7 +18,8 @@
 - SQLite 文本列使用 `text`，MySQL 对主键和索引字段使用 `VARCHAR`，对快照、prompt、JSON 内容使用 `TEXT`/`LONGTEXT`。
 - SQLite 布尔值使用 `integer` 的 `0/1`，MySQL 使用 `TINYINT` 的 `0/1`。
 - 两种驱动都用 ISO 字符串保存时间，排序依赖 ISO 字符串的字典序。
-- 两种驱动都包含用户、会话、系统设置、积分流水、每日签到、生成审计和私有数据 `user_id` 归属字段。
+- 两种驱动都包含用户、会话、系统设置、积分流水、每日签到、兑换码、生成审计和私有数据 `user_id` 归属字段。
+- `provider_configs` 和 `agent_llm_configs` 当前只在 SQLite 本地模式启用；MySQL 模式使用环境变量图片 provider，暂不创建这两张配置表。
 
 ## `users`
 
@@ -76,10 +77,11 @@ Stores the immutable audit trail for every credit balance change.
 | `id` | text | Primary key. |
 | `user_id` | text | Required owner user ID. |
 | `delta` | integer | Required signed balance change. |
-| `reason` | text | Required reason (`registration_bonus`, `daily_checkin`, `generation_charge`, `generation_refund`, or `admin_adjustment`). |
+| `reason` | text | Required reason (`registration_bonus`, `daily_checkin`, `generation_charge`, `generation_refund`, `redemption_code`, or `admin_adjustment`). |
 | `related_generation_id` | text | Optional generation id for charge/refund entries. |
 | `related_output_id` | text | Optional output id reserved for per-output adjustments. |
 | `related_checkin_date` | text | Optional local date key for check-in entries. |
+| `related_redemption_code_id` | text | Optional redemption code ID for code redemption entries. |
 | `admin_note` | text | Optional administrator note for manual adjustments. |
 | `created_at` | text | Required ISO timestamp. |
 
@@ -97,6 +99,38 @@ Stores daily check-in rewards.
 | `created_at` | text | Required ISO timestamp. |
 
 主键或唯一约束：`user_id + checkin_date`，保证同一用户每天只能签到一次。
+
+## `redemption_codes`
+
+Stores admin-created credit redemption codes and their lifecycle state.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | text | Primary key. |
+| `code` | text | Required unique redemption code. |
+| `credits` | integer | Required credits awarded when redeemed. |
+| `status` | text | Required code status (`active` or `disabled`). |
+| `expires_at` | text | Optional ISO expiry timestamp. |
+| `redeemed_by_user_id` | text | Optional user ID that redeemed the code. |
+| `redeemed_at` | text | Optional ISO redemption timestamp. |
+| `created_by_admin_id` | text | Optional admin user ID that created the code. |
+| `created_at` | text | Required ISO timestamp. |
+| `updated_at` | text | Required ISO timestamp. |
+
+唯一索引：`redemption_codes_code_idx` 覆盖 `code`，保证码值唯一。常用索引覆盖 `status`、`redeemed_by_user_id` 和 `created_at`。
+
+## `credit_redemptions`
+
+Stores immutable redemption audit records linked to credit transactions.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | text | Primary key. |
+| `code_id` | text | Required reference to `redemption_codes.id`; unique. |
+| `user_id` | text | Required redeeming user ID. |
+| `credits_awarded` | integer | Required credits granted by this redemption. |
+| `transaction_id` | text | Required reference to `credit_transactions.id`. |
+| `created_at` | text | Required ISO timestamp. |
 
 ## `projects`
 
@@ -128,7 +162,7 @@ Stores generated and reference asset metadata.
 
 ## `provider_configs`
 
-Stores image provider source order and local OpenAI-compatible settings.
+Stores image provider source order and local OpenAI-compatible settings. This table is SQLite-only in the current runtime.
 
 | Column | Type | Notes |
 | --- | --- | --- |
@@ -143,7 +177,7 @@ Stores image provider source order and local OpenAI-compatible settings.
 
 ## `agent_llm_configs`
 
-Stores Agent planning model configuration.
+Stores Agent planning model configuration. This table is SQLite-only in the current runtime.
 
 | Column | Type | Notes |
 | --- | --- | --- |
@@ -335,3 +369,6 @@ Stores multiple reference assets used by one generation.
 - `generation_reference_assets.generation_id` references `generation_records.id` with cascade delete.
 - `generation_reference_assets.asset_id` references `assets.id`.
 - `credit_transactions.user_id` and `user_checkins.user_id` reference the owner user for balance audit and daily reward enforcement.
+- `credit_transactions.related_redemption_code_id` links redemption balance changes to `redemption_codes.id`.
+- `credit_redemptions.code_id` references `redemption_codes.id` and is unique so one code can be redeemed once.
+- `credit_redemptions.transaction_id` references the credit ledger entry created by redemption.

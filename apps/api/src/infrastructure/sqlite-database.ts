@@ -356,7 +356,10 @@ CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites
   ensureColumn(sqlite, "generation_outputs", "published_at", "published_at TEXT");
   ensureColumn(sqlite, "generation_outputs", "public_title", "public_title TEXT");
   sqlite.exec("CREATE INDEX IF NOT EXISTS generation_outputs_public_idx ON generation_outputs(is_public, published_at)");
-  ensureColumn(sqlite, "generation_audits", "generation_id", "generation_id TEXT NOT NULL DEFAULT ''");
+  ensureColumn(sqlite, "generation_audits", "generation_id", "generation_id TEXT");
+  sqlite
+    .prepare("UPDATE generation_audits SET generation_id = id WHERE generation_id IS NULL OR generation_id = ''")
+    .run();
   ensureColumn(sqlite, "generation_audits", "user_id", "user_id TEXT");
   ensureColumn(sqlite, "generation_audits", "user_name", "user_name TEXT");
   ensureColumn(sqlite, "generation_audits", "user_email", "user_email TEXT");

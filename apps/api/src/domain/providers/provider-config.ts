@@ -245,11 +245,15 @@ function resolveLocalConfigForSave(
 function resolveLocalApiKey(input: SaveLocalOpenAIProviderConfig, existing: ProviderConfigRow | undefined): string | null {
   if (typeof input.apiKey === "string") {
     const trimmed = input.apiKey.trim();
+    const existingSecret = trimToUndefined(existing?.localApiKey);
+    if (trimmed && existingSecret && trimmed === maskSecret(existingSecret)) {
+      return existingSecret;
+    }
     if (trimmed) {
       return trimmed;
     }
 
-    return input.preserveApiKey === true ? (existing?.localApiKey ?? null) : null;
+    return input.preserveApiKey === true ? (existingSecret ?? null) : null;
   }
 
   return existing?.localApiKey ?? null;

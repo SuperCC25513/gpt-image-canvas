@@ -11,7 +11,8 @@ export function registerCreditRoutes(app: Hono): void {
 
     return c.json(
       await listCreditTransactionsForUser(auth.user.id, {
-        limit: parseCreditTransactionLimit(c.req.query("limit"))
+        limit: parseCreditTransactionLimit(c.req.query("limit")),
+        cursor: c.req.query("cursor")
       })
     );
   });

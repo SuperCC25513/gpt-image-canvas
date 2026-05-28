@@ -115,11 +115,15 @@ function resolveApiKeyForSave(
 ): string | null {
   if (typeof input.apiKey === "string") {
     const trimmed = input.apiKey.trim();
+    const existingSecret = trimToUndefined(existing?.apiKey);
+    if (trimmed && existingSecret && trimmed === maskSecret(existingSecret)) {
+      return existingSecret;
+    }
     if (trimmed) {
       return trimmed;
     }
 
-    return input.preserveApiKey === true ? (trimToUndefined(existing?.apiKey) ?? null) : null;
+    return input.preserveApiKey === true ? (existingSecret ?? null) : null;
   }
 
   if (input.preserveApiKey === true) {

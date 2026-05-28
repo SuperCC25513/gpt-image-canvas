@@ -1,13 +1,13 @@
 import type { Hono } from "hono";
 import { getProviderConfig, saveProviderConfig } from "../../domain/providers/provider-config.js";
-import { requireAuth } from "../http/auth.js";
+import { requireAdmin } from "../http/auth.js";
 import { errorResponse, errorToMessage } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 import { parseProviderConfigPayload } from "../http/validation.js";
 
 export function registerProviderConfigRoutes(app: Hono): void {
   app.get("/api/provider-config", async (c) => {
-    const auth = await requireAuth(c);
+    const auth = await requireAdmin(c);
     if (!auth.ok) {
       return auth.response;
     }
@@ -16,7 +16,7 @@ export function registerProviderConfigRoutes(app: Hono): void {
   });
 
   app.put("/api/provider-config", async (c) => {
-    const auth = await requireAuth(c);
+    const auth = await requireAdmin(c);
     if (!auth.ok) {
       return auth.response;
     }

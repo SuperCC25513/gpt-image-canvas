@@ -1181,13 +1181,14 @@ function resolveStoredPlanForExecution(
     };
   }
 
-  if (!message.plan || message.plan.id !== message.planId || !isExecutableGenerationPlan(message.plan)) {
+  const selectedReferences = Array.isArray(message.selectedReferences) ? message.selectedReferences : [];
+  if (!message.plan || message.plan.id !== message.planId || !isExecutableGenerationPlan(message.plan, selectedReferences)) {
     return undefined;
   }
 
   const restoredPlan: StoredAgentGenerationPlan = {
     plan: message.plan,
-    selectedReferences: Array.isArray(message.selectedReferences) ? message.selectedReferences : []
+    selectedReferences
   };
   session.plans.set(message.planId, restoredPlan);
   return restoredPlan;

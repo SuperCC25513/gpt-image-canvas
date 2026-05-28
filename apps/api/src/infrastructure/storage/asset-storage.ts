@@ -182,6 +182,20 @@ export async function readStoredAssetBytes(relativePath: string): Promise<Buffer
   return localAssetStorage.getObject({ filePath });
 }
 
+export async function deleteStoredAssetBytes(relativePath: string): Promise<void> {
+  if (usesOssAssetStorage()) {
+    await getOssAssetStorage().deleteObject({ objectKey: relativePath });
+    return;
+  }
+
+  const filePath = resolveLocalAssetPath(relativePath);
+  if (!filePath) {
+    throw new Error("Invalid local asset path.");
+  }
+
+  await localAssetStorage.deleteObject({ filePath });
+}
+
 export function resolveLocalAssetPath(relativePath: string): string | undefined {
   if (usesOssAssetStorage()) {
     return undefined;

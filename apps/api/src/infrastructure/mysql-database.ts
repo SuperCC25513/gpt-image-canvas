@@ -199,36 +199,6 @@ const mySqlSchema: MySqlTableDefinition[] = [
     constraints: ["KEY assets_user_id_idx (user_id)"]
   },
   {
-    name: "provider_configs",
-    comment: "图片生成提供方顺序和本地 OpenAI 兼容配置",
-    columns: [
-      { name: "id", definition: "VARCHAR(191) PRIMARY KEY NOT NULL", comment: "配置行唯一标识，当前为 active" },
-      { name: "source_order_json", definition: "TEXT NOT NULL", comment: "提供方来源顺序 JSON" },
-      { name: "local_api_key", definition: "TEXT", comment: "本地 OpenAI 兼容 API Key" },
-      { name: "local_base_url", definition: "TEXT", comment: "本地 OpenAI 兼容 Base URL" },
-      { name: "local_model", definition: "TEXT", comment: "本地图片生成模型" },
-      { name: "local_timeout_ms", definition: "INT", comment: "本地提供方超时时间毫秒" },
-      { name: "created_at", definition: "VARCHAR(32) NOT NULL", comment: "创建时间 ISO 字符串" },
-      { name: "updated_at", definition: "VARCHAR(32) NOT NULL", comment: "更新时间 ISO 字符串" }
-    ],
-    constraints: []
-  },
-  {
-    name: "agent_llm_configs",
-    comment: "Agent 规划模型连接配置",
-    columns: [
-      { name: "id", definition: "VARCHAR(191) PRIMARY KEY NOT NULL", comment: "配置行唯一标识，当前为 active" },
-      { name: "api_key", definition: "TEXT", comment: "Agent LLM API Key" },
-      { name: "base_url", definition: "TEXT NOT NULL", comment: "Agent LLM OpenAI 兼容 Base URL" },
-      { name: "model", definition: "TEXT NOT NULL", comment: "Agent 规划模型名称" },
-      { name: "timeout_ms", definition: "INT NOT NULL", comment: "Agent LLM 请求超时时间毫秒" },
-      { name: "supports_vision", definition: "TINYINT NOT NULL", comment: "模型是否支持视觉输入" },
-      { name: "created_at", definition: "VARCHAR(32) NOT NULL", comment: "创建时间 ISO 字符串" },
-      { name: "updated_at", definition: "VARCHAR(32) NOT NULL", comment: "更新时间 ISO 字符串" }
-    ],
-    constraints: []
-  },
-  {
     name: "agent_conversations",
     comment: "Agent 对话历史和可恢复上下文",
     columns: [
@@ -381,7 +351,7 @@ const mySqlSchema: MySqlTableDefinition[] = [
     comment: "管理员查看的生成请求审计快照",
     columns: [
       { name: "id", definition: "VARCHAR(191) PRIMARY KEY NOT NULL", comment: "审计记录唯一标识" },
-      { name: "generation_id", definition: "VARCHAR(191) NOT NULL", comment: "关联生成请求 ID" },
+      { name: "generation_id", definition: "VARCHAR(191) NOT NULL", addDefinition: "VARCHAR(191)", comment: "关联生成请求 ID" },
       { name: "user_id", definition: "VARCHAR(191)", comment: "请求用户 ID 快照" },
       { name: "user_name", definition: "TEXT", comment: "请求用户名称快照" },
       { name: "user_email", definition: "VARCHAR(254)", comment: "请求用户邮箱快照" },
@@ -486,8 +456,6 @@ async function migrateMySql(pool: Pool): Promise<void> {
   await ensureOwnerColumns(pool);
   await ensureMySqlSchemaComments(pool);
   await backfillGenerationReferenceAssets(pool);
-  await ensureProviderConfigRow(pool);
-  await ensureAgentLlmConfigRow(pool);
   await ensureAppSettingsRow(pool);
   await ensurePromptFavoriteDefaultGroup(pool);
 }
@@ -526,6 +494,7 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlColumn(pool, "generation_outputs", "published_at");
   await ensureMySqlColumn(pool, "generation_outputs", "public_title");
   await ensureMySqlColumn(pool, "generation_audits", "generation_id");
+  await backfillGenerationAuditIds(pool);
   await ensureMySqlColumn(pool, "generation_audits", "user_id");
   await ensureMySqlColumn(pool, "generation_audits", "user_name");
   await ensureMySqlColumn(pool, "generation_audits", "user_email");
@@ -572,6 +541,10 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlIndex(pool, "prompt_favorite_groups", "prompt_favorite_groups_user_id_idx", "user_id");
   await ensureMySqlIndex(pool, "prompt_favorites", "prompt_favorites_user_id_idx", "user_id");
   await ensurePromptFavoritesUserSourceIndex(pool);
+}
+
+async function backfillGenerationAuditIds(pool: Pool): Promise<void> {
+  await pool.execute("UPDATE generation_audits SET generation_id = id WHERE generation_id IS NULL OR generation_id = ''");
 }
 
 async function ensureMySqlColumn(pool: Pool, tableName: string, columnName: string): Promise<void> {
@@ -726,25 +699,6 @@ async function backfillGenerationReferenceAssets(pool: Pool): Promise<void> {
         WHERE generation_reference_assets.generation_id = generation_records.id
       )
   `);
-}
-
-async function ensureProviderConfigRow(pool: Pool): Promise<void> {
-  const now = new Date().toISOString();
-  await pool.execute(
-    `INSERT IGNORE INTO provider_configs (id, source_order_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?)`,
-    ["active", JSON.stringify(["env-openai", "local-openai", "codex"]), now, now]
-  );
-}
-
-async function ensureAgentLlmConfigRow(pool: Pool): Promise<void> {
-  const now = new Date().toISOString();
-  await pool.execute(
-    `INSERT IGNORE INTO agent_llm_configs
-      (id, api_key, base_url, model, timeout_ms, supports_vision, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ["active", null, "", "", 60000, 0, now, now]
-  );
 }
 
 async function ensureAppSettingsRow(pool: Pool): Promise<void> {

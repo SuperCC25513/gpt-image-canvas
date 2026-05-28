@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import type {
   CheckinResponse,
@@ -91,33 +91,55 @@ export async function getCheckinStatus(userId: string): Promise<CheckinStatus> {
 
 export async function listCreditTransactionsForUser(
   userId: string,
-  options: { limit?: number } = {}
+  options: { limit?: number; cursor?: string } = {}
 ): Promise<CreditTransactionListResponse> {
   const limit = creditTransactionLimit(options.limit);
+  const cursor = parseListCursor(options.cursor);
   if (databaseDriver === "sqlite") {
     const rows = db
       .select()
       .from(creditTransactions)
-      .where(eq(creditTransactions.userId, userId))
+      .where(
+        cursor
+          ? and(
+              eq(creditTransactions.userId, userId),
+              or(
+                lt(creditTransactions.createdAt, cursor.createdAt),
+                and(eq(creditTransactions.createdAt, cursor.createdAt), lt(creditTransactions.id, cursor.id))
+              )
+            )
+          : eq(creditTransactions.userId, userId)
+      )
       .orderBy(desc(creditTransactions.createdAt), desc(creditTransactions.id))
-      .limit(limit)
+      .limit(limit + 1)
       .all();
+    const pageRows = rows.slice(0, limit);
 
     return {
-      items: rows.map(storedCreditTransactionResponse)
+      items: pageRows.map(storedCreditTransactionResponse),
+      nextCursor: rows.length > limit ? cursorForRow(pageRows[pageRows.length - 1]) : undefined
     };
   }
 
+  const cursorWhere = cursor ? "AND (created_at < ? OR (created_at = ? AND id < ?))" : "";
+  const params: Array<string | number> = [userId];
+  if (cursor) {
+    params.push(cursor.createdAt, cursor.createdAt, cursor.id);
+  }
+  params.push(limit + 1);
   const [rows] = await getMySqlPool().execute<CreditTransactionRow[]>(
     `${creditTransactionSelectSql()}
      WHERE user_id = ?
+       ${cursorWhere}
      ORDER BY created_at DESC, id DESC
      LIMIT ?`,
-    [userId, limit]
+    params
   );
+  const pageRows = rows.slice(0, limit);
 
   return {
-    items: rows.map(storedCreditTransactionResponse)
+    items: pageRows.map(storedCreditTransactionResponse),
+    nextCursor: rows.length > limit ? cursorForRow(pageRows[pageRows.length - 1]) : undefined
   };
 }
 
@@ -246,6 +268,24 @@ export async function checkInUser(user: CurrentUser): Promise<CheckinResponse> {
     };
   } catch (error) {
     await connection.rollback();
+    if (isMySqlDuplicateEntry(error)) {
+      const currentUser = (await selectMySqlCurrentUser(user.id, connection)) ?? user;
+      const [existingRows] = await connection.execute<Array<RowDataPacket & { creditsAwarded: number }>>(
+        `SELECT credits_awarded AS creditsAwarded
+         FROM user_checkins
+         WHERE user_id = ? AND checkin_date = ?
+         LIMIT 1`,
+        [user.id, checkinDate]
+      );
+      return {
+        user: currentUser,
+        checkin: {
+          checkedInToday: true,
+          checkinDate,
+          creditAward: existingRows[0]?.creditsAwarded ?? settings.checkinCredit
+        }
+      };
+    }
     throw error;
   } finally {
     connection.release();
@@ -731,6 +771,47 @@ function nonNegativeOrDefault(value: number | undefined, fallback: number): numb
 
 function creditTransactionLimit(value: number | undefined): number {
   return Math.min(positiveOrDefault(value, DEFAULT_CREDIT_TRANSACTION_LIMIT), MAX_CREDIT_TRANSACTION_LIMIT);
+}
+
+interface ListCursor {
+  createdAt: string;
+  id: string;
+}
+
+function parseListCursor(value: string | undefined): ListCursor | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      Array.isArray(parsed) ||
+      typeof (parsed as { createdAt?: unknown }).createdAt !== "string" ||
+      typeof (parsed as { id?: unknown }).id !== "string"
+    ) {
+      return undefined;
+    }
+    return {
+      createdAt: (parsed as { createdAt: string }).createdAt,
+      id: (parsed as { id: string }).id
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function cursorForRow(row: { createdAt: string; id: string } | undefined): string | undefined {
+  if (!row) {
+    return undefined;
+  }
+  return Buffer.from(JSON.stringify({ createdAt: row.createdAt, id: row.id })).toString("base64url");
+}
+
+function isMySqlDuplicateEntry(error: unknown): boolean {
+  return (error as { code?: unknown })?.code === "ER_DUP_ENTRY";
 }
 
 function localDateKey(date = new Date()): string {

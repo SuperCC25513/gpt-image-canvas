@@ -27,6 +27,7 @@ export interface RedemptionCodeSummary {
 
 export interface RedemptionCodeListResponse {
   items: RedemptionCodeSummary[];
+  nextCursor?: string;
 }
 
 export interface AdminCreateRedemptionCodesRequest {

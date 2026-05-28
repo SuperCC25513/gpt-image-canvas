@@ -24,6 +24,7 @@ import { userCanReadAsset } from "../storage/store.js";
 import type { ImageProvider, ImageProviderInput } from "../../infrastructure/providers/image-provider.js";
 
 export const AGENT_EXECUTION_TOOL_ALLOWLIST = ["generate_canvas_image_job"] as const;
+const AGENT_JOB_CONCURRENCY = 2;
 
 export interface StoredAgentGenerationPlan {
   plan: GenerationPlan;
@@ -53,7 +54,7 @@ interface ResolvedJobReferences {
   referenceAssetIds: string[];
 }
 
-export function isExecutableGenerationPlan(value: unknown): value is GenerationPlan {
+export function isExecutableGenerationPlan(value: unknown, selectedReferences: AgentSelectedCanvasReference[] = []): value is GenerationPlan {
   if (!isRecord(value)) {
     return false;
   }
@@ -75,6 +76,7 @@ export function isExecutableGenerationPlan(value: unknown): value is GenerationP
     Array.isArray(value.edges) &&
     edges.every(isDependencyEdge) &&
     executionPlanWithinBounds(jobs as GenerationJob[], edges as Array<{ fromJobId: string; toJobId: string }>) &&
+    executionPlanGraphIsValid(jobs as GenerationJob[], edges as Array<{ fromJobId: string; toJobId: string }>, selectedReferences) &&
     value.createdBy === "agent" &&
     typeof value.createdAt === "string" &&
     typeof value.updatedAt === "string"
@@ -134,8 +136,7 @@ export async function executeGenerationPlan(input: AgentPlanExecutionInput): Pro
       break;
     }
 
-    await Promise.all(
-      runnableJobs.map((job) =>
+    await mapWithConcurrency(runnableJobs, AGENT_JOB_CONCURRENCY, (job) =>
         executeGenerationJob({
           ...input,
           plan,
@@ -143,7 +144,6 @@ export async function executeGenerationPlan(input: AgentPlanExecutionInput): Pro
           provider,
           selectedReferencesByKey
         })
-      )
     );
   }
 
@@ -700,6 +700,100 @@ function executionPlanWithinBounds(jobs: GenerationJob[], edges: Array<{ fromJob
   }
 
   return jobs.every((job) => !sourceJobIds.has(job.id) || job.count === 1);
+}
+
+function executionPlanGraphIsValid(
+  jobs: GenerationJob[],
+  edges: Array<{ fromJobId: string; toJobId: string }>,
+  selectedReferences: AgentSelectedCanvasReference[]
+): boolean {
+  const jobsById = new Map<string, GenerationJob>();
+  for (const job of jobs) {
+    if (jobsById.has(job.id)) {
+      return false;
+    }
+    jobsById.set(job.id, job);
+  }
+
+  for (const edge of edges) {
+    if (!jobsById.has(edge.fromJobId) || !jobsById.has(edge.toJobId)) {
+      return false;
+    }
+  }
+
+  const selectedReferenceKeys = new Set(selectedReferences.flatMap((reference) => [reference.id, reference.assetId]));
+  for (const job of jobs) {
+    for (const reference of job.references) {
+      if (reference.kind === "selected_canvas_image") {
+        if (!reference.assetId || (selectedReferences.length > 0 && !selectedReferenceKeys.has(reference.assetId))) {
+          return false;
+        }
+        continue;
+      }
+
+      if (!reference.jobId || !jobsById.has(reference.jobId)) {
+        return false;
+      }
+      if (!edges.some((edge) => edge.fromJobId === reference.jobId && edge.toJobId === job.id)) {
+        return false;
+      }
+    }
+  }
+
+  return !hasDependencyCycle(jobs, edges);
+}
+
+function hasDependencyCycle(jobs: GenerationJob[], edges: Array<{ fromJobId: string; toJobId: string }>): boolean {
+  const graph = new Map<string, string[]>();
+  for (const job of jobs) {
+    graph.set(job.id, []);
+  }
+  for (const edge of edges) {
+    graph.get(edge.fromJobId)?.push(edge.toJobId);
+  }
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (jobId: string): boolean => {
+    if (visiting.has(jobId)) {
+      return true;
+    }
+    if (visited.has(jobId)) {
+      return false;
+    }
+    visiting.add(jobId);
+    for (const downstreamJobId of graph.get(jobId) ?? []) {
+      if (visit(downstreamJobId)) {
+        return true;
+      }
+    }
+    visiting.delete(jobId);
+    visited.add(jobId);
+    return false;
+  };
+
+  return jobs.some((job) => visit(job.id));
+}
+
+async function mapWithConcurrency<T, TResult>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<TResult>
+): Promise<TResult[]> {
+  const results = new Array<TResult>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
 }
 
 function isGenerationReference(value: unknown): value is GenerationReference {

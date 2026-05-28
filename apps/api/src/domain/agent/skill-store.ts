@@ -22,7 +22,7 @@ import type {
 import { databaseDriver, db } from "../../infrastructure/database.js";
 import { agentSkills } from "../../infrastructure/schema.js";
 
-const MAX_SKILL_UPLOAD_BYTES = 2 * 1024 * 1024;
+export const MAX_SKILL_UPLOAD_BYTES = 2 * 1024 * 1024;
 const MAX_SKILL_TOTAL_TEXT_BYTES = 768 * 1024;
 const MAX_SKILL_FILE_TEXT_BYTES = 256 * 1024;
 const MAX_SKILL_FILES = 64;

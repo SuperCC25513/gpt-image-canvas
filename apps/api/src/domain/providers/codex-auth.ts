@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type {
   AuthStatusResponse,
   CodexDevicePollResponse,
@@ -23,6 +23,7 @@ const DEFAULT_CODEX_RESPONSES_BASE_URL = "https://chatgpt.com/backend-api/codex"
 const DEFAULT_CODEX_AUTH_TIMEOUT_MS = 30_000;
 const TOKEN_REFRESH_SKEW_MS = 5 * 60 * 1000;
 const TOKEN_REFRESH_INTERVAL_MS = 8 * 24 * 60 * 60 * 1000;
+let activeRefreshPromise: Promise<CodexTokenRow | undefined> | undefined;
 
 type CodexTokenRow = typeof codexOAuthTokens.$inferSelect;
 
@@ -32,7 +33,7 @@ export interface CodexAccessSession {
   expiresAt?: string;
 }
 
-export function getAuthStatus(): AuthStatusResponse {
+export function getAuthStatus(options: { includeCodexDetails?: boolean } = {}): AuthStatusResponse {
   const providerConfig = getProviderConfig();
   const codex = providerConfig.sources.find((source) => source.id === "codex")?.details.codex ?? codexSessionView(getCodexTokenRow());
   const openaiConfigured = providerConfig.sources.some(
@@ -42,7 +43,7 @@ export function getAuthStatus(): AuthStatusResponse {
   return {
     provider: providerConfig.activeSource?.provider ?? "none",
     openaiConfigured,
-    codex,
+    codex: options.includeCodexDetails ? codex : publicCodexSessionView(codex),
     activeSource: providerConfig.activeSource
   };
 }
@@ -133,7 +134,7 @@ export async function pollCodexDeviceLogin(
 
   return {
     status: "authorized",
-    auth: getAuthStatus()
+    auth: getAuthStatus({ includeCodexDetails: true })
   };
 }
 
@@ -141,7 +142,7 @@ export function logoutCodex(): CodexLogoutResponse {
   if (databaseDriver !== "sqlite") {
     return {
       ok: true,
-      auth: getAuthStatus()
+      auth: getAuthStatus({ includeCodexDetails: true })
     };
   }
 
@@ -149,7 +150,7 @@ export function logoutCodex(): CodexLogoutResponse {
 
   return {
     ok: true,
-    auth: getAuthStatus()
+    auth: getAuthStatus({ includeCodexDetails: true })
   };
 }
 
@@ -159,7 +160,7 @@ export async function getValidCodexSession(signal?: AbortSignal): Promise<CodexA
     return undefined;
   }
 
-  const sessionRow = shouldRefreshCodexToken(row) ? await refreshCodexToken(row, signal) : row;
+  const sessionRow = shouldRefreshCodexToken(row) ? await refreshCodexTokenSingleFlight(row, signal) : row;
   if (!hasUsableTokenMaterial(sessionRow)) {
     return undefined;
   }
@@ -268,7 +269,7 @@ async function refreshCodexToken(row: CodexTokenRow, signal?: AbortSignal): Prom
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     if (classifyCodexRefreshFailure(response.status, body) === "permanent") {
-      markCodexSessionUnavailable("refresh_rejected");
+      markCodexSessionUnavailable("refresh_rejected", row.refreshToken);
       return undefined;
     }
 
@@ -277,6 +278,17 @@ async function refreshCodexToken(row: CodexTokenRow, signal?: AbortSignal): Prom
 
   const payload = await response.json().catch(() => undefined);
   return storeCodexTokens(payload, row);
+}
+
+async function refreshCodexTokenSingleFlight(row: CodexTokenRow, signal?: AbortSignal): Promise<CodexTokenRow | undefined> {
+  if (activeRefreshPromise) {
+    return activeRefreshPromise;
+  }
+
+  activeRefreshPromise = refreshCodexToken(row, signal).finally(() => {
+    activeRefreshPromise = undefined;
+  });
+  return activeRefreshPromise;
 }
 
 async function exchangeAuthorizationCodeForTokens(
@@ -347,7 +359,7 @@ async function readResponseBody(response: Response): Promise<unknown> {
   return response.text().catch(() => "");
 }
 
-function markCodexSessionUnavailable(reason: string): void {
+function markCodexSessionUnavailable(reason: string, expectedRefreshToken?: string): void {
   if (databaseDriver !== "sqlite") {
     return;
   }
@@ -362,8 +374,19 @@ function markCodexSessionUnavailable(reason: string): void {
       unavailableReason: reason,
       updatedAt: now
     })
-    .where(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID))
+    .where(
+      expectedRefreshToken
+        ? and(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID), eq(codexOAuthTokens.refreshToken, expectedRefreshToken))
+        : eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)
+    )
     .run();
+}
+
+function publicCodexSessionView(codex: AuthStatusResponse["codex"]): AuthStatusResponse["codex"] {
+  return {
+    available: codex.available,
+    unavailableReason: codex.available ? undefined : codex.unavailableReason
+  };
 }
 
 function codexSessionView(row: CodexTokenRow | undefined): AuthStatusResponse["codex"] {

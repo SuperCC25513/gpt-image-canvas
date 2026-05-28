@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import { redactSensitiveText } from "../../domain/security/redaction.js";
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
 
 export interface ErrorResponseBody {
@@ -32,7 +33,7 @@ export function downloadFileName(fileName: string): string {
 }
 
 export function providerErrorJson(_c: Context, error: ProviderError) {
-  const body = errorResponse(error.code, error.message);
+  const body = errorResponse(error.code, redactSensitiveText(error.message) ?? "Provider request failed.");
 
   return new Response(JSON.stringify(body), {
     status: providerHttpStatus(error.status),

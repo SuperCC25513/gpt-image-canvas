@@ -15,6 +15,7 @@ import {
 
 const PREVIEW_WIDTHS = [256, 512, 1024, 2048] as const;
 const MAX_PREVIEW_WIDTH = PREVIEW_WIDTHS[PREVIEW_WIDTHS.length - 1];
+const previewFlights = new Map<string, Promise<StoredAssetPreview | AssetAccessUrlResponse | undefined>>();
 
 export type PreviewWidthResult =
   | {
@@ -84,24 +85,23 @@ export async function readStoredAssetPreview(assetId: string, width: number): Pr
     };
   }
 
-  const bytes = await sharp(asset.bytes)
-    .rotate()
-    .resize({
-      width,
-      withoutEnlargement: true
-    })
-    .webp({
-      effort: 4,
-      quality: 78
-    })
-    .toBuffer();
+  return singleFlightPreview(`local:${asset.file.id}:${width}`, async () => {
+    const cachedAfterWait = await readCachedPreview(previewPath);
+    if (cachedAfterWait) {
+      return {
+        bytes: cachedAfterWait,
+        width
+      };
+    }
 
-  await writeFile(previewPath, bytes);
+    const bytes = await renderPreviewBytes(asset.bytes, width);
+    await writeFile(previewPath, bytes);
 
-  return {
-    bytes,
-    width
-  };
+    return {
+      bytes,
+      width
+    };
+  }) as Promise<StoredAssetPreview | undefined>;
 }
 
 export async function getStoredAssetPreviewAccessUrl(
@@ -123,35 +123,65 @@ export async function getStoredAssetPreviewAccessUrl(
 
   const objectKey = previewObjectKeyForAsset(assetId, width);
   if (!(await ossObjectExists(objectKey))) {
-    const asset = await readStoredAsset(assetId);
-    if (!asset) {
-      return undefined;
-    }
+    return singleFlightPreview(`oss:${assetId}:${width}`, async () => {
+      if (await ossObjectExists(objectKey)) {
+        return signedPreviewAccessUrl(assetId, objectKey, file.id, width);
+      }
 
-    const bytes = await sharp(asset.bytes)
-      .rotate()
-      .resize({
-        width,
-        withoutEnlargement: true
-      })
-      .webp({
-        effort: 4,
-        quality: 78
-      })
-      .toBuffer();
+      const asset = await readStoredAsset(assetId);
+      if (!asset) {
+        return undefined;
+      }
 
-    await writeOssObject(objectKey, bytes, "image/webp");
+      const bytes = await renderPreviewBytes(asset.bytes, width);
+      await writeOssObject(objectKey, bytes, "image/webp");
+      return signedPreviewAccessUrl(assetId, objectKey, file.id, width);
+    }) as Promise<AssetAccessUrlResponse | undefined>;
   }
 
+  return signedPreviewAccessUrl(assetId, objectKey, file.id, width);
+}
+
+async function renderPreviewBytes(bytes: Buffer, width: number): Promise<Buffer> {
+  return sharp(bytes)
+    .rotate()
+    .resize({
+      width,
+      withoutEnlargement: true
+    })
+    .webp({
+      effort: 4,
+      quality: 78
+    })
+    .toBuffer();
+}
+
+function signedPreviewAccessUrl(assetId: string, objectKey: string, fileId: string, width: number): AssetAccessUrlResponse {
   return {
     id: assetId,
     url: signedOssObjectUrl(objectKey, {
       disposition: "inline",
-      fileName: `${file.id}-${width}.webp`
+      fileName: `${fileId}-${width}.webp`
     }),
     width,
     expiresInSeconds: assetStorageSignedUrlExpiresInSeconds()
   };
+}
+
+async function singleFlightPreview<T extends StoredAssetPreview | AssetAccessUrlResponse | undefined>(
+  key: string,
+  run: () => Promise<T>
+): Promise<T> {
+  const existing = previewFlights.get(key) as Promise<T> | undefined;
+  if (existing) {
+    return existing;
+  }
+
+  const promise = run().finally(() => {
+    previewFlights.delete(key);
+  });
+  previewFlights.set(key, promise);
+  return promise;
 }
 
 async function readCachedPreview(filePath: string): Promise<Buffer | undefined> {

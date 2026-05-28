@@ -48,7 +48,8 @@ export function registerRedemptionCodeRoutes(app: Hono): void {
 
     return c.json(
       await listAdminRedemptionCodes({
-        limit: parseLimit(c.req.query("limit"))
+        limit: parseLimit(c.req.query("limit")),
+        cursor: c.req.query("cursor")
       })
     );
   });

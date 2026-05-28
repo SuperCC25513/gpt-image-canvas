@@ -195,11 +195,11 @@ function toProviderError(error: unknown): Error {
   }
 
   if (error instanceof APIError) {
-    return new ProviderError("upstream_failure", error.message || "OpenAI 图像服务请求失败。", providerHttpStatus(error.status));
+    return new ProviderError("upstream_failure", "OpenAI 图像服务请求失败，请稍后重试。", providerHttpStatus(error.status));
   }
 
   if (error instanceof Error && error.message) {
-    return new ProviderError("upstream_failure", error.message, 502);
+    return new ProviderError("upstream_failure", "OpenAI 图像服务请求失败，请稍后重试。", 502);
   }
 
   return new ProviderError("upstream_failure", "OpenAI 图像服务请求失败。", 502);

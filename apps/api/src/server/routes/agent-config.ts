@@ -1,13 +1,13 @@
 import type { Hono } from "hono";
 import { getAgentLlmConfig, saveAgentLlmConfig } from "../../domain/agent/config.js";
-import { requireAuth } from "../http/auth.js";
+import { requireAdmin } from "../http/auth.js";
 import { errorResponse, errorToMessage } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 import { parseAgentLlmConfigPayload } from "../http/validation.js";
 
 export function registerAgentConfigRoutes(app: Hono): void {
   app.get("/api/agent-config", async (c) => {
-    const auth = await requireAuth(c);
+    const auth = await requireAdmin(c);
     if (!auth.ok) {
       return auth.response;
     }
@@ -16,7 +16,7 @@ export function registerAgentConfigRoutes(app: Hono): void {
   });
 
   app.put("/api/agent-config", async (c) => {
-    const auth = await requireAuth(c);
+    const auth = await requireAdmin(c);
     if (!auth.ok) {
       return auth.response;
     }

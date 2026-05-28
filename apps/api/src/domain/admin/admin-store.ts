@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { desc, eq, inArray, like, or } from "drizzle-orm";
+import { and, desc, eq, inArray, like, lt, or } from "drizzle-orm";
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import type {
   AdminCreditAdjustmentRequest,
@@ -109,38 +109,55 @@ export class AdminDomainError extends Error {
   }
 }
 
-export async function listAdminUsers(input: { query?: string; limit?: number } = {}): Promise<AdminUsersResponse> {
+interface ListCursor {
+  createdAt: string;
+  id: string;
+}
+
+export async function listAdminUsers(input: { query?: string; limit?: number; cursor?: string } = {}): Promise<AdminUsersResponse> {
   const limit = clampLimit(input.limit, 100);
   const query = input.query?.trim();
+  const cursor = parseListCursor(input.cursor);
 
   if (databaseDriver === "sqlite") {
     const pattern = query ? `%${query}%` : undefined;
+    const queryWhere = pattern ? or(like(users.name, pattern), like(users.email, pattern), like(users.id, pattern)) : undefined;
+    const cursorWhere = cursor ? or(lt(users.createdAt, cursor.createdAt), and(eq(users.createdAt, cursor.createdAt), lt(users.id, cursor.id))) : undefined;
     const rows = db
       .select()
       .from(users)
-      .where(pattern ? or(like(users.name, pattern), like(users.email, pattern), like(users.id, pattern)) : undefined)
-      .orderBy(desc(users.createdAt))
-      .limit(limit)
+      .where(queryWhere && cursorWhere ? and(queryWhere, cursorWhere) : (queryWhere ?? cursorWhere))
+      .orderBy(desc(users.createdAt), desc(users.id))
+      .limit(limit + 1)
       .all();
+    const pageRows = rows.slice(0, limit);
 
     return {
-      users: rows.map(currentUserFromSqlite)
+      users: pageRows.map(currentUserFromSqlite),
+      nextCursor: rows.length > limit ? cursorForRow(pageRows[pageRows.length - 1]) : undefined
     };
   }
 
   const params: Array<string | number> = [];
-  let where = "";
+  const whereParts: string[] = [];
   if (query) {
-    where = "WHERE name LIKE ? OR email LIKE ? OR id LIKE ?";
+    whereParts.push("(name LIKE ? OR email LIKE ? OR id LIKE ?)");
     params.push(`%${query}%`, `%${query}%`, `%${query}%`);
   }
+  if (cursor) {
+    whereParts.push("(created_at < ? OR (created_at = ? AND id < ?))");
+    params.push(cursor.createdAt, cursor.createdAt, cursor.id);
+  }
+  const where = whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
   const [rows] = await getMySqlPool().execute<AdminUserPacket[]>(
-    `${userSelectSql()} ${where} ORDER BY created_at DESC LIMIT ${limit}`,
+    `${userSelectSql()} ${where} ORDER BY created_at DESC, id DESC LIMIT ${limit + 1}`,
     params
   );
+  const pageRows = rows.slice(0, limit);
 
   return {
-    users: rows.map(currentUserFromPacket)
+    users: pageRows.map(currentUserFromPacket),
+    nextCursor: rows.length > limit ? cursorForRow(pageRows[pageRows.length - 1]) : undefined
   };
 }
 
@@ -325,17 +342,37 @@ export async function updateAdminSettings(input: AdminSettingsUpdateRequest): Pr
   };
 }
 
-export async function listGenerationAudits(input: { limit?: number } = {}): Promise<AdminGenerationAuditsResponse> {
+export async function listGenerationAudits(input: { limit?: number; cursor?: string } = {}): Promise<AdminGenerationAuditsResponse> {
   const limit = clampLimit(input.limit, MAX_ADMIN_AUDIT_LIMIT);
+  const cursor = parseListCursor(input.cursor);
 
   const auditRows =
     databaseDriver === "sqlite"
-      ? db.select().from(generationAudits).orderBy(desc(generationAudits.createdAt)).limit(limit).all()
+      ? db
+          .select()
+          .from(generationAudits)
+          .where(
+            cursor
+              ? or(
+                  lt(generationAudits.createdAt, cursor.createdAt),
+                  and(eq(generationAudits.createdAt, cursor.createdAt), lt(generationAudits.id, cursor.id))
+                )
+              : undefined
+          )
+          .orderBy(desc(generationAudits.createdAt), desc(generationAudits.id))
+          .limit(limit + 1)
+          .all()
       : await getMySqlPool()
-          .execute<AuditPacket[]>(`${auditSelectSql()} ORDER BY created_at DESC LIMIT ${limit}`)
+          .execute<AuditPacket[]>(
+            `${auditSelectSql()} ${
+              cursor ? "WHERE created_at < ? OR (created_at = ? AND id < ?)" : ""
+            } ORDER BY created_at DESC, id DESC LIMIT ${limit + 1}`,
+            cursor ? [cursor.createdAt, cursor.createdAt, cursor.id] : []
+          )
           .then(([rows]) => rows);
+  const pageRows = auditRows.slice(0, limit);
 
-  const generationIds = auditRows.map((row) => row.generationId);
+  const generationIds = pageRows.map((row) => row.generationId);
   const outputRows = await findAuditOutputs(generationIds);
   const outputsByGenerationId = new Map<string, AdminGenerationAuditOutput[]>();
   for (const output of outputRows) {
@@ -345,7 +382,8 @@ export async function listGenerationAudits(input: { limit?: number } = {}): Prom
   }
 
   return {
-    items: auditRows.map((row) => auditRecordFromRow(row, outputsByGenerationId.get(row.generationId) ?? fallbackAuditOutputs(row)))
+    items: pageRows.map((row) => auditRecordFromRow(row, outputsByGenerationId.get(row.generationId) ?? fallbackAuditOutputs(row))),
+    nextCursor: auditRows.length > limit ? cursorForRow(pageRows[pageRows.length - 1]) : undefined
   };
 }
 
@@ -666,6 +704,32 @@ function auditSelectSql(): string {
 
 function placeholders(values: unknown[]): string {
   return values.map(() => "?").join(", ");
+}
+
+function parseListCursor(value: string | undefined): ListCursor | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
+    if (!isRecord(parsed) || typeof parsed.createdAt !== "string" || typeof parsed.id !== "string") {
+      return undefined;
+    }
+    return {
+      createdAt: parsed.createdAt,
+      id: parsed.id
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function cursorForRow(row: { createdAt: string; id: string } | undefined): string | undefined {
+  if (!row) {
+    return undefined;
+  }
+  return Buffer.from(JSON.stringify({ createdAt: row.createdAt, id: row.id })).toString("base64url");
 }
 
 function clampLimit(value: number | undefined, fallback: number): number {

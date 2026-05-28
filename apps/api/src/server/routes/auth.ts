@@ -80,7 +80,7 @@ export function registerAuthRoutes(app: Hono): void {
       return auth.response;
     }
 
-    return c.json(getAuthStatus());
+    return c.json(getAuthStatus({ includeCodexDetails: auth.user.role === "admin" }));
   });
 
   app.post("/api/auth/codex/device/start", async (c) => {

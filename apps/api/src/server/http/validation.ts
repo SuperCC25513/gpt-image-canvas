@@ -249,7 +249,7 @@ export function parseAdminCreditAdjustmentPayload(input: unknown): ParseResult<A
     };
   }
 
-  const amount = parseInteger(input.amount);
+  const amount = parseStrictInteger(input.amount);
   if (amount === undefined || (input.mode === "set" && amount < 0)) {
     return {
       ok: false,
@@ -386,7 +386,7 @@ export function parseAdminSettingsPayload(input: unknown): ParseResult<AdminSett
 
   for (const key of ["defaultCredits", "generationCreditCost", "checkinCredit"] as const) {
     if (Object.hasOwn(input, key)) {
-      const amount = parseInteger(input[key]);
+      const amount = parseStrictInteger(input[key]);
       if (amount === undefined || amount < 0) {
         return {
           ok: false,
@@ -398,7 +398,7 @@ export function parseAdminSettingsPayload(input: unknown): ParseResult<AdminSett
   }
 
   if (Object.hasOwn(input, "maxImagesPerRequest")) {
-    const maxImagesPerRequest = parseInteger(input.maxImagesPerRequest);
+    const maxImagesPerRequest = parseStrictInteger(input.maxImagesPerRequest);
     if (maxImagesPerRequest === undefined || maxImagesPerRequest < 1 || maxImagesPerRequest > Math.max(...GENERATION_COUNTS)) {
       return {
         ok: false,

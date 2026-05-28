@@ -1,6 +1,7 @@
 import type { Hono } from "hono";
 import {
   AgentSkillError,
+  MAX_SKILL_UPLOAD_BYTES,
   createAgentSkill,
   getAgentSkill,
   importAgentSkillFromUpload,
@@ -92,6 +93,10 @@ export function registerAgentSkillRoutes(app: Hono): void {
     if (!contentType.includes("multipart/form-data")) {
       return c.json(errorResponse("unsupported_media_type", "Agent skill import requires multipart/form-data."), 415);
     }
+    const contentLength = parseContentLength(c.req.header("content-length"));
+    if (contentLength && contentLength > MAX_SKILL_UPLOAD_BYTES + 64 * 1024) {
+      return c.json(errorResponse("agent_skill_import_failed", "Agent skill upload is too large."), 413);
+    }
 
     let formData: FormData;
     try {
@@ -103,6 +108,9 @@ export function registerAgentSkillRoutes(app: Hono): void {
     const file = formData.get("file") ?? formData.get("skill") ?? formData.get("bundle");
     if (!(file instanceof File)) {
       return c.json(errorResponse("agent_skill_invalid_file", "Upload a SKILL.md file or zip bundle."), 400);
+    }
+    if (file.size > MAX_SKILL_UPLOAD_BYTES) {
+      return c.json(errorResponse("agent_skill_import_failed", "Agent skill upload is too large."), 413);
     }
 
     try {
@@ -119,6 +127,11 @@ export function registerAgentSkillRoutes(app: Hono): void {
       return agentSkillErrorJson(error);
     }
   });
+}
+
+function parseContentLength(value: string | undefined): number | undefined {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function agentSkillErrorJson(error: unknown): Response {
