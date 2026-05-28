@@ -22,6 +22,7 @@ import {
   PROVIDER_SOURCE_IDS,
   type AgentLlmConfigView,
   type AuthStatusResponse,
+  type MaskedSecret,
   type ProviderConfigResponse,
   type ProviderSourceId,
   type ProviderSourceView,
@@ -113,9 +114,9 @@ export function ProviderConfigPanel({
   }, [config]);
 
   const activeSourceId = config?.activeSource?.id;
-  const localApiKeyMask = config?.localOpenAI.apiKey.value;
+  const localApiKeyMask = safeMaskedSecretValue(config?.localOpenAI.apiKey);
   const hasSavedLocalKey = Boolean(config?.localOpenAI.apiKey.hasSecret);
-  const agentApiKeyMask = agentConfig?.apiKey.value;
+  const agentApiKeyMask = safeMaskedSecretValue(agentConfig?.apiKey);
   const hasSavedAgentKey = Boolean(agentConfig?.apiKey.hasSecret);
   const codexSource = sourcesById.get("codex");
   const codex = codexSource?.details.codex;
@@ -137,7 +138,10 @@ export function ProviderConfigPanel({
           throw new Error(await readProviderConfigError(response, locale, t));
         }
 
-        const body = (await response.json()) as ProviderConfigResponse;
+        const body = (await response.json()) as unknown;
+        if (!isProviderConfigResponse(body)) {
+          throw new Error(t("providerConfigLoadFailed"));
+        }
         if (signal?.aborted) {
           return null;
         }
@@ -172,7 +176,10 @@ export function ProviderConfigPanel({
           throw new Error(await readProviderConfigError(response, locale, t));
         }
 
-        const body = (await response.json()) as AgentLlmConfigView;
+        const body = (await response.json()) as unknown;
+        if (!isAgentLlmConfigView(body)) {
+          throw new Error(t("agentConfigLoadFailed"));
+        }
         if (signal?.aborted) {
           return null;
         }
@@ -423,7 +430,10 @@ export function ProviderConfigPanel({
         throw new Error(await readProviderConfigError(response, locale, t));
       }
 
-      const savedConfig = (await response.json()) as ProviderConfigResponse;
+      const savedConfig = (await response.json()) as unknown;
+      if (!isProviderConfigResponse(savedConfig)) {
+        throw new Error(t("providerConfigLoadFailed"));
+      }
       applyProviderConfig(savedConfig);
       await onRefreshAuthStatus();
 
@@ -439,7 +449,11 @@ export function ProviderConfigPanel({
         if (!agentResponse.ok) {
           throw new Error(await readProviderConfigError(agentResponse, locale, t));
         }
-        savedAgentConfig = (await agentResponse.json()) as AgentLlmConfigView;
+        const agentPayload = (await agentResponse.json()) as unknown;
+        if (!isAgentLlmConfigView(agentPayload)) {
+          throw new Error(t("agentConfigLoadFailed"));
+        }
+        savedAgentConfig = agentPayload;
       }
 
       if (savedAgentConfig) {
@@ -587,7 +601,7 @@ export function ProviderConfigPanel({
                           className="provider-field__control"
                           data-testid="provider-local-api-key"
                           name="localOpenAIKey"
-                          placeholder={localApiKeyMask ? t("providerLocalApiKeySaved", { mask: localApiKeyMask }) : t("providerLocalApiKeyPlaceholder")}
+                          placeholder={hasSavedLocalKey ? (localApiKeyMask ? t("providerLocalApiKeySaved", { mask: localApiKeyMask }) : t("commonSaved")) : t("providerLocalApiKeyPlaceholder")}
                           type="password"
                           value={localForm.apiKey}
                           onChange={(event) => updateLocalForm({ apiKey: event.target.value })}
@@ -630,7 +644,7 @@ export function ProviderConfigPanel({
                     {hasSavedLocalKey && !localForm.apiKey ? (
                       <div className="provider-secret-pill">
                         <KeyRound className="size-3.5 shrink-0" aria-hidden="true" />
-                        {t("providerLocalApiKeySaved", { mask: localApiKeyMask ?? "" })}
+                        {localApiKeyMask ? t("providerLocalApiKeySaved", { mask: localApiKeyMask }) : t("commonSaved")}
                       </div>
                     ) : null}
                   </section>
@@ -723,7 +737,7 @@ export function ProviderConfigPanel({
                           <MiniRow label={t("providerFieldModel")} value={envSource?.details.model || "gpt-image-2"} />
                           <MiniRow label={t("providerFieldBaseUrl")} value={envSource?.details.baseUrl || t("providerApiOfficial")} />
                           <MiniRow label={t("providerFieldTimeout")} value={formatTimeout(envSource?.details.timeoutMs, t)} />
-                          <MiniRow label="Key" masked value={envSource?.secret.value ?? (envSource?.secret.hasSecret ? t("commonSaved") : t("commonNotSet"))} />
+                          <MiniRow label="Key" masked value={safeMaskedSecretValue(envSource?.secret) ?? (envSource?.secret.hasSecret ? t("commonSaved") : t("commonNotSet"))} />
                         </ProviderSourceMini>
 
                         <ProviderSourceMini
@@ -790,7 +804,7 @@ export function ProviderConfigPanel({
                         className="provider-field__control"
                         data-testid="provider-agent-api-key"
                         name="agentLlmKey"
-                        placeholder={agentApiKeyMask ? t("agentConfigApiKeySaved", { mask: agentApiKeyMask }) : t("agentConfigApiKeyPlaceholder")}
+                        placeholder={hasSavedAgentKey ? (agentApiKeyMask ? t("agentConfigApiKeySaved", { mask: agentApiKeyMask }) : t("commonSaved")) : t("agentConfigApiKeyPlaceholder")}
                         type="password"
                         value={agentForm.apiKey}
                         onChange={(event) => updateAgentForm({ apiKey: event.target.value })}
@@ -843,7 +857,7 @@ export function ProviderConfigPanel({
                   {hasSavedAgentKey && !agentForm.apiKey ? (
                     <div className="provider-secret-pill">
                       <KeyRound className="size-3.5 shrink-0" aria-hidden="true" />
-                      {t("agentConfigApiKeySaved", { mask: agentApiKeyMask ?? "" })}
+                      {agentApiKeyMask ? t("agentConfigApiKeySaved", { mask: agentApiKeyMask }) : t("commonSaved")}
                     </div>
                   ) : null}
                 </section>
@@ -1075,4 +1089,116 @@ async function readProviderConfigError(response: Response, locale: Locale, t: Tr
   } catch {
     return t("providerConfigRequestFailed", { status: response.status });
   }
+}
+
+function safeMaskedSecretValue(secret: MaskedSecret | undefined): string | undefined {
+  const value = secret?.value?.trim();
+  if (!secret?.hasSecret || !value || !isMaskedSecretDisplayValue(value)) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function isMaskedSecretDisplayValue(value: string): boolean {
+  return value.includes("*") || value.includes("…") || value.toLocaleLowerCase().includes("redacted");
+}
+
+function isProviderConfigResponse(value: unknown): value is ProviderConfigResponse {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.sourceOrder) &&
+    value.sourceOrder.every(isProviderSourceId) &&
+    Array.isArray(value.sources) &&
+    value.sources.every(isProviderSourceView) &&
+    isLocalOpenAIProviderConfigView(value.localOpenAI) &&
+    (value.activeSource === undefined || isProviderSourceSummary(value.activeSource))
+  );
+}
+
+function isAgentLlmConfigView(value: unknown): value is AgentLlmConfigView {
+  return (
+    isRecord(value) &&
+    typeof value.configured === "boolean" &&
+    isMaskedSecret(value.apiKey) &&
+    typeof value.baseUrl === "string" &&
+    typeof value.model === "string" &&
+    isFiniteNumber(value.timeoutMs) &&
+    typeof value.supportsVision === "boolean" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+function isProviderSourceView(value: unknown): value is ProviderSourceView {
+  return (
+    isRecord(value) &&
+    isProviderSourceId(value.id) &&
+    (value.kind === "environment" || value.kind === "local" || value.kind === "codex") &&
+    typeof value.label === "string" &&
+    typeof value.available === "boolean" &&
+    (value.status === "available" || value.status === "missing_api_key" || value.status === "missing_codex_session") &&
+    isProviderSourceDetails(value.details) &&
+    isMaskedSecret(value.secret)
+  );
+}
+
+function isProviderSourceSummary(value: unknown): value is NonNullable<ProviderConfigResponse["activeSource"]> {
+  return (
+    isRecord(value) &&
+    isProviderSourceId(value.id) &&
+    (value.kind === "environment" || value.kind === "local" || value.kind === "codex") &&
+    typeof value.label === "string" &&
+    (value.provider === "openai" || value.provider === "codex" || value.provider === "none") &&
+    typeof value.available === "boolean" &&
+    (value.status === "available" || value.status === "missing_api_key" || value.status === "missing_codex_session")
+  );
+}
+
+function isLocalOpenAIProviderConfigView(value: unknown): value is ProviderConfigResponse["localOpenAI"] {
+  return (
+    isRecord(value) &&
+    isMaskedSecret(value.apiKey) &&
+    typeof value.baseUrl === "string" &&
+    typeof value.model === "string" &&
+    isFiniteNumber(value.timeoutMs)
+  );
+}
+
+function isProviderSourceDetails(value: unknown): value is ProviderSourceView["details"] {
+  return (
+    isRecord(value) &&
+    (value.baseUrl === undefined || typeof value.baseUrl === "string") &&
+    (value.model === undefined || typeof value.model === "string") &&
+    (value.timeoutMs === undefined || isFiniteNumber(value.timeoutMs)) &&
+    (value.codex === undefined || isCodexAuthSessionView(value.codex))
+  );
+}
+
+function isCodexAuthSessionView(value: unknown): value is NonNullable<ProviderSourceView["details"]["codex"]> {
+  return (
+    isRecord(value) &&
+    typeof value.available === "boolean" &&
+    (value.email === undefined || typeof value.email === "string") &&
+    (value.accountId === undefined || typeof value.accountId === "string") &&
+    (value.expiresAt === undefined || typeof value.expiresAt === "string") &&
+    (value.refreshedAt === undefined || typeof value.refreshedAt === "string") &&
+    (value.unavailableReason === undefined || typeof value.unavailableReason === "string")
+  );
+}
+
+function isMaskedSecret(value: unknown): value is MaskedSecret {
+  return isRecord(value) && typeof value.hasSecret === "boolean" && (value.value === undefined || typeof value.value === "string");
+}
+
+function isProviderSourceId(value: unknown): value is ProviderSourceId {
+  return typeof value === "string" && (PROVIDER_SOURCE_IDS as readonly string[]).includes(value);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

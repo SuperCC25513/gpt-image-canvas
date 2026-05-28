@@ -57,6 +57,9 @@ interface DialogMessage {
 }
 
 const SKILL_MARKDOWN_FILE = "SKILL.md";
+const MAX_AGENT_SKILL_IMPORT_BYTES = 2 * 1024 * 1024;
+const AGENT_SKILL_IMPORT_EXTENSIONS = [".md", ".zip"] as const;
+const AGENT_SKILL_IMPORT_MIME_TYPES = new Set(["text/markdown", "text/plain", "application/zip", "application/x-zip-compressed"]);
 
 export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
   const { locale, t } = useI18n();
@@ -78,42 +81,56 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
   );
 
   const loadSkill = useCallback(
-    async (id: string) => {
+    async (id: string, signal?: AbortSignal) => {
       setIsDetailLoading(true);
       setMessage(null);
       try {
-        const detail = await fetchAgentSkillDetail(id, locale, t);
+        const detail = await fetchAgentSkillDetail(id, locale, t, signal);
+        if (signal?.aborted) {
+          return;
+        }
         setSelectedSkillId(detail.id);
         setSelectedSkill(detail);
         setForm(formFromSkill(detail));
         setMode("detail");
       } catch (error) {
-        setMessage({ tone: "error", text: errorToText(error, t("agentSkillsLoadFailed")) });
+        if (!signal?.aborted) {
+          setMessage({ tone: "error", text: errorToText(error, t("agentSkillsLoadFailed")) });
+        }
       } finally {
-        setIsDetailLoading(false);
+        if (!signal?.aborted) {
+          setIsDetailLoading(false);
+        }
       }
     },
     [locale, t]
   );
 
   const refreshSkills = useCallback(
-    async (preferredSkillId?: string) => {
+    async (preferredSkillId?: string, signal?: AbortSignal) => {
       setIsLoading(true);
       try {
-        const nextSkills = await fetchAgentSkillList(locale, t);
+        const nextSkills = await fetchAgentSkillList(locale, t, signal);
+        if (signal?.aborted) {
+          return;
+        }
         setSkills(nextSkills);
         const nextSelectedId = preferredSkillId ?? selectedSkillId ?? nextSkills[0]?.id ?? null;
         if (nextSelectedId) {
-          await loadSkill(nextSelectedId);
+          await loadSkill(nextSelectedId, signal);
         } else {
           setSelectedSkillId(null);
           setSelectedSkill(null);
           setForm(emptyFormState());
         }
       } catch (error) {
-        setMessage({ tone: "error", text: errorToText(error, t("agentSkillsLoadFailed")) });
+        if (!signal?.aborted) {
+          setMessage({ tone: "error", text: errorToText(error, t("agentSkillsLoadFailed")) });
+        }
       } finally {
-        setIsLoading(false);
+        if (!signal?.aborted) {
+          setIsLoading(false);
+        }
       }
     },
     [loadSkill, locale, selectedSkillId, t]
@@ -121,12 +138,13 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
 
   useEffect(() => {
     let isActive = true;
+    const controller = new AbortController();
 
     async function loadInitialSkills(): Promise<void> {
       setIsLoading(true);
       try {
-        const nextSkills = await fetchAgentSkillList(locale, t);
-        if (!isActive) {
+        const nextSkills = await fetchAgentSkillList(locale, t, controller.signal);
+        if (!isActive || controller.signal.aborted) {
           return;
         }
         setSkills(nextSkills);
@@ -138,19 +156,19 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
           return;
         }
 
-        const detail = await fetchAgentSkillDetail(firstSkillId, locale, t);
-        if (!isActive) {
+        const detail = await fetchAgentSkillDetail(firstSkillId, locale, t, controller.signal);
+        if (!isActive || controller.signal.aborted) {
           return;
         }
         setSelectedSkillId(detail.id);
         setSelectedSkill(detail);
         setForm(formFromSkill(detail));
       } catch (error) {
-        if (isActive) {
+        if (isActive && !controller.signal.aborted) {
           setMessage({ tone: "error", text: errorToText(error, t("agentSkillsLoadFailed")) });
         }
       } finally {
-        if (isActive) {
+        if (isActive && !controller.signal.aborted) {
           setIsLoading(false);
         }
       }
@@ -159,6 +177,7 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
     void loadInitialSkills();
     return () => {
       isActive = false;
+      controller.abort();
     };
   }, [locale, t]);
 
@@ -186,7 +205,10 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
         throw new Error(await readAgentSkillError(response, locale, t));
       }
 
-      const payload = (await response.json()) as SaveAgentSkillResponse;
+      const payload = (await response.json()) as unknown;
+      if (!isSaveAgentSkillResponse(payload)) {
+        throw new Error(t("agentSkillsSaveFailed"));
+      }
       setSelectedSkill(payload.skill);
       setSelectedSkillId(payload.skill.id);
       setForm(formFromSkill(payload.skill));
@@ -223,7 +245,10 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
           throw new Error(await readAgentSkillError(response, locale, t));
         }
 
-        const payload = (await response.json()) as SaveAgentSkillResponse;
+        const payload = (await response.json()) as unknown;
+        if (!isSaveAgentSkillResponse(payload)) {
+          throw new Error(t("agentSkillsSaveFailed"));
+        }
         setMessage({ tone: "success", text: payload.skill.enabled ? t("agentSkillsEnabledToast") : t("agentSkillsDisabledToast") });
         await refreshSkills(payload.skill.id);
       } catch (error) {
@@ -236,6 +261,15 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
   const importSkill = useCallback(
     async (file: File | undefined) => {
       if (!file) {
+        return;
+      }
+
+      const validationError = validateAgentSkillImportFile(file, locale);
+      if (validationError) {
+        setMessage({ tone: "error", text: validationError });
+        if (uploadInputRef.current) {
+          uploadInputRef.current.value = "";
+        }
         return;
       }
 
@@ -252,7 +286,10 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
           throw new Error(await readAgentSkillError(response, locale, t));
         }
 
-        const payload = (await response.json()) as ImportAgentSkillResponse;
+        const payload = (await response.json()) as unknown;
+        if (!isImportAgentSkillResponse(payload)) {
+          throw new Error(t("agentSkillsImportFailed"));
+        }
         setMessage({ tone: "success", text: t("agentSkillsImportDone") });
         await refreshSkills(payload.skill.id);
       } catch (error) {
@@ -289,7 +326,10 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
         throw new Error(await readAgentSkillError(response, locale, t));
       }
 
-      const payload = (await response.json()) as SaveAgentSkillResponse;
+      const payload = (await response.json()) as unknown;
+      if (!isSaveAgentSkillResponse(payload)) {
+        throw new Error(t("agentSkillsSaveFailed"));
+      }
       setMessage({ tone: "success", text: t("agentSkillsResetDone") });
       await refreshSkills(payload.skill.id);
     } catch (error) {
@@ -674,23 +714,29 @@ function triggerStatusLabel(skill: AgentSkillSummary, t: Translate): string {
   return skill.triggerKeywords.length > 0 ? t("agentSkillsTriggerKeywordReady") : t("agentSkillsTriggerAutoReady");
 }
 
-async function fetchAgentSkillList(locale: Locale, t: Translate): Promise<AgentSkillSummary[]> {
-  const response = await fetch("/api/agent-skills");
+async function fetchAgentSkillList(locale: Locale, t: Translate, signal?: AbortSignal): Promise<AgentSkillSummary[]> {
+  const response = await fetch("/api/agent-skills", { signal });
   if (!response.ok) {
     throw new Error(await readAgentSkillError(response, locale, t));
   }
 
-  const body = (await response.json()) as AgentSkillListResponse;
+  const body = (await response.json()) as unknown;
+  if (!isAgentSkillListResponse(body)) {
+    throw new Error(t("agentSkillsLoadFailed"));
+  }
   return body.skills;
 }
 
-async function fetchAgentSkillDetail(id: string, locale: Locale, t: Translate): Promise<AgentSkillDetail> {
-  const response = await fetch(`/api/agent-skills/${encodeURIComponent(id)}`);
+async function fetchAgentSkillDetail(id: string, locale: Locale, t: Translate, signal?: AbortSignal): Promise<AgentSkillDetail> {
+  const response = await fetch(`/api/agent-skills/${encodeURIComponent(id)}`, { signal });
   if (!response.ok) {
     throw new Error(await readAgentSkillError(response, locale, t));
   }
 
-  const body = (await response.json()) as { skill: AgentSkillDetail };
+  const body = (await response.json()) as unknown;
+  if (!isAgentSkillDetailResponse(body)) {
+    throw new Error(t("agentSkillsLoadFailed"));
+  }
   return body.skill;
 }
 
@@ -711,4 +757,74 @@ async function readAgentSkillError(response: Response, locale: Locale, t: Transl
 
 function errorToText(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function validateAgentSkillImportFile(file: File, locale: Locale): string | null {
+  const name = file.name.toLocaleLowerCase();
+  const hasAllowedExtension = AGENT_SKILL_IMPORT_EXTENSIONS.some((extension) => name.endsWith(extension));
+  const hasAllowedMime = !file.type || AGENT_SKILL_IMPORT_MIME_TYPES.has(file.type.toLocaleLowerCase());
+  if (!hasAllowedExtension || !hasAllowedMime) {
+    return locale === "zh-CN" ? "只能上传 SKILL.md 或 zip Skill 包。" : "Upload a SKILL.md file or zip skill bundle.";
+  }
+
+  if (file.size > MAX_AGENT_SKILL_IMPORT_BYTES) {
+    return locale === "zh-CN" ? "Skill 导入文件不能超过 2 MB。" : "Skill import files must be 2 MB or smaller.";
+  }
+
+  return null;
+}
+
+function isAgentSkillListResponse(value: unknown): value is AgentSkillListResponse {
+  return isRecord(value) && Array.isArray(value.skills) && value.skills.every(isAgentSkillSummary);
+}
+
+function isSaveAgentSkillResponse(value: unknown): value is SaveAgentSkillResponse {
+  return isAgentSkillDetailResponse(value);
+}
+
+function isImportAgentSkillResponse(value: unknown): value is ImportAgentSkillResponse {
+  return isAgentSkillDetailResponse(value);
+}
+
+function isAgentSkillDetailResponse(value: unknown): value is { skill: AgentSkillDetail } {
+  return isRecord(value) && isAgentSkillDetail(value.skill);
+}
+
+function isAgentSkillDetail(value: unknown): value is AgentSkillDetail {
+  const detail = value as Partial<AgentSkillDetail>;
+  return isAgentSkillSummary(value) && Array.isArray(detail.files) && detail.files.every(isAgentSkillFile);
+}
+
+function isAgentSkillSummary(value: unknown): value is AgentSkillSummary {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.slug === "string" &&
+    typeof value.name === "string" &&
+    typeof value.description === "string" &&
+    (value.version === undefined || typeof value.version === "string") &&
+    (value.source === undefined || typeof value.source === "string") &&
+    typeof value.enabled === "boolean" &&
+    typeof value.builtIn === "boolean" &&
+    typeof value.required === "boolean" &&
+    (value.triggerMode === "always" || value.triggerMode === "auto") &&
+    Array.isArray(value.triggerKeywords) &&
+    value.triggerKeywords.every((keyword) => typeof keyword === "string") &&
+    isFiniteNumber(value.fileCount) &&
+    typeof value.hasLocalChanges === "boolean" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+function isAgentSkillFile(value: unknown): value is AgentSkillFile {
+  return isRecord(value) && typeof value.path === "string" && typeof value.content === "string";
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

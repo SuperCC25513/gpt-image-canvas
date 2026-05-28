@@ -103,8 +103,8 @@ export function PromptPoolPage({ onUsePrompt }: PromptPoolPageProps) {
           throw new Error(t("poolRequestFailed", { status: response.status }));
         }
 
-        const body = (await response.json()) as PromptPoolResponse;
-        if (!Array.isArray(body.items) || !body.summary) {
+        const body = (await response.json()) as unknown;
+        if (!isPromptPoolResponse(body)) {
           throw new Error(t("poolServiceInvalidData"));
         }
 
@@ -180,6 +180,12 @@ export function PromptPoolPage({ onUsePrompt }: PromptPoolPageProps) {
   }, [selectedItem]);
 
   const modelOptions = useMemo(() => modelFilterOptions(items), [items]);
+  useEffect(() => {
+    if (modelFilter !== "all" && !modelOptions.some((option) => option.model === modelFilter)) {
+      setModelFilter("all");
+    }
+  }, [modelFilter, modelOptions]);
+
   const filteredItems = useMemo(
     () => filterPromptPoolItems(items, deferredQuery, mediaFilter, modelFilter, sortMode),
     [deferredQuery, items, mediaFilter, modelFilter, sortMode]
@@ -983,4 +989,71 @@ async function writeClipboardText(text: string): Promise<void> {
   } finally {
     textArea.remove();
   }
+}
+
+function isPromptPoolResponse(value: unknown): value is PromptPoolResponse {
+  return (
+    isRecord(value) &&
+    typeof value.available === "boolean" &&
+    Array.isArray(value.items) &&
+    value.items.every(isPromptPoolItem) &&
+    isPromptPoolSummary(value.summary) &&
+    (value.errorCode === undefined || value.errorCode === "prompt_pool_missing" || value.errorCode === "prompt_pool_invalid")
+  );
+}
+
+function isPromptPoolItem(value: unknown): value is PromptPoolItem {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.title === "string" &&
+    typeof value.prompt === "string" &&
+    (value.mediaType === "image" || value.mediaType === "video") &&
+    typeof value.model === "string" &&
+    (value.postedAt === undefined || typeof value.postedAt === "string") &&
+    typeof value.promptReady === "boolean" &&
+    typeof value.assetUrl === "string" &&
+    isFiniteNumber(value.imageCount) &&
+    (value.imageWidth === undefined || isFiniteNumber(value.imageWidth)) &&
+    (value.imageHeight === undefined || isFiniteNumber(value.imageHeight)) &&
+    (value.aspectRatio === undefined || typeof value.aspectRatio === "string") &&
+    (value.author === undefined || isPromptPoolAuthor(value.author)) &&
+    isPromptPoolStats(value.stats) &&
+    (value.sourceUrl === undefined || typeof value.sourceUrl === "string")
+  );
+}
+
+function isPromptPoolSummary(value: unknown): value is PromptPoolResponse["summary"] {
+  return (
+    isRecord(value) &&
+    (value.builtAt === undefined || typeof value.builtAt === "string") &&
+    (value.scrapedAt === undefined || typeof value.scrapedAt === "string") &&
+    (value.siteUrl === undefined || typeof value.siteUrl === "string") &&
+    isFiniteNumber(value.promptCount) &&
+    isFiniteNumber(value.imagePromptCount) &&
+    isFiniteNumber(value.videoPromptCount) &&
+    isFiniteNumber(value.assetCount)
+  );
+}
+
+function isPromptPoolAuthor(value: unknown): value is NonNullable<PromptPoolItem["author"]> {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    (value.username === undefined || typeof value.username === "string") &&
+    typeof value.verified === "boolean" &&
+    (value.profileUrl === undefined || typeof value.profileUrl === "string")
+  );
+}
+
+function isPromptPoolStats(value: unknown): value is PromptPoolItem["stats"] {
+  return isRecord(value) && isFiniteNumber(value.likes) && isFiniteNumber(value.views) && isFiniteNumber(value.retweets);
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

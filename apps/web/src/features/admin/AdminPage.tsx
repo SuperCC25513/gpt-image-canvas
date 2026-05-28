@@ -16,6 +16,7 @@ import {
   Trash2
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { CREDIT_TRANSACTION_REASONS } from "@gpt-image-canvas/shared";
 import type {
   AdminCreditAdjustmentMode,
   AdminCreditAdjustmentResponse,
@@ -128,6 +129,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
         }
         params.set("limit", "100");
         const body = await adminRequest<AdminUsersResponse>(`/api/admin/users?${params.toString()}`, {
+          guard: isAdminUsersResponse,
           locale,
           t
         });
@@ -145,7 +147,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
     setLoading((value) => ({ ...value, settings: true }));
     setError("");
     try {
-      const body = await adminRequest<AdminSettingsResponse>("/api/admin/settings", { locale, t });
+      const body = await adminRequest<AdminSettingsResponse>("/api/admin/settings", { guard: isAdminSettingsResponse, locale, t });
       setSettings(body.settings);
     } catch (requestError) {
       setError(errorMessage(requestError, t("adminSettingsLoadFailed")));
@@ -159,6 +161,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
     setError("");
     try {
       const body = await adminRequest<AdminGenerationAuditsResponse>("/api/admin/generation-requests?limit=200", {
+        guard: isAdminGenerationAuditsResponse,
         locale,
         t
       });
@@ -205,6 +208,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
     try {
       const body = await adminRequest<AdminUserResponse>(`/api/admin/users/${encodeURIComponent(user.id)}`, {
         body: JSON.stringify(patch),
+        guard: isAdminUserResponse,
         locale,
         method: "PATCH",
         t
@@ -238,6 +242,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
             amount,
             note: form.note
           }),
+          guard: isAdminCreditAdjustmentResponse,
           locale,
           method: "POST",
           t
@@ -267,6 +272,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
     try {
       const body = await adminRequest<AdminSettingsResponse>("/api/admin/settings", {
         body: JSON.stringify(settings),
+        guard: isAdminSettingsResponse,
         locale,
         method: "PATCH",
         t
@@ -1115,6 +1121,7 @@ async function writeClipboardText(text: string): Promise<void> {
 async function adminRequest<T>(
   url: string,
   options: RequestInit & {
+    guard?: (value: unknown) => value is T;
     locale: Locale;
     t: Translate;
   }
@@ -1134,7 +1141,136 @@ async function adminRequest<T>(
     throw new Error(await readAdminError(response, options.locale, options.t));
   }
 
-  return (await response.json()) as T;
+  const body = (await response.json()) as unknown;
+  if (options.guard && !options.guard(body)) {
+    throw new Error(options.t("adminRequestFailed"));
+  }
+
+  return body as T;
+}
+
+function isAdminUsersResponse(value: unknown): value is AdminUsersResponse {
+  return isRecord(value) && Array.isArray(value.users) && value.users.every(isAdminUserSummary);
+}
+
+function isAdminUserResponse(value: unknown): value is AdminUserResponse {
+  return isRecord(value) && isAdminUserSummary(value.user);
+}
+
+function isAdminCreditAdjustmentResponse(value: unknown): value is AdminCreditAdjustmentResponse {
+  return isRecord(value) && isAdminUserSummary(value.user) && isCreditTransaction(value.transaction);
+}
+
+function isAdminSettingsResponse(value: unknown): value is AdminSettingsResponse {
+  return isRecord(value) && isAdminSettings(value.settings);
+}
+
+function isAdminGenerationAuditsResponse(value: unknown): value is AdminGenerationAuditsResponse {
+  return isRecord(value) && Array.isArray(value.items) && value.items.every(isAdminGenerationAuditRecord);
+}
+
+function isAdminUserSummary(value: unknown): value is AdminUserSummary {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.name === "string" &&
+    typeof value.email === "string" &&
+    (value.role === "admin" || value.role === "user") &&
+    (value.status === "active" || value.status === "pending" || value.status === "disabled") &&
+    isFiniteNumber(value.credits) &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+function isAdminSettings(value: unknown): value is AdminSettings {
+  return (
+    isRecord(value) &&
+    typeof value.allowRegistration === "boolean" &&
+    typeof value.requireApproval === "boolean" &&
+    isFiniteNumber(value.defaultCredits) &&
+    isFiniteNumber(value.generationCreditCost) &&
+    isFiniteNumber(value.checkinCredit) &&
+    isFiniteNumber(value.maxImagesPerRequest) &&
+    Array.isArray(value.allowedRegistrationEmailDomains) &&
+    value.allowedRegistrationEmailDomains.every((domain) => typeof domain === "string")
+  );
+}
+
+function isAdminGenerationAuditRecord(value: unknown): value is AdminGenerationAuditRecord {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.generationId === "string" &&
+    (value.user === undefined || isAdminGenerationAuditUser(value.user)) &&
+    (value.mode === "generate" || value.mode === "edit") &&
+    typeof value.prompt === "string" &&
+    typeof value.isPublic === "boolean" &&
+    isGenerationStatus(value.status) &&
+    (value.errorSummary === undefined || typeof value.errorSummary === "string") &&
+    (value.ipAddress === undefined || typeof value.ipAddress === "string") &&
+    (value.userAgent === undefined || typeof value.userAgent === "string") &&
+    Array.isArray(value.outputs) &&
+    value.outputs.every(isAdminGenerationAuditOutput) &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+function isAdminGenerationAuditUser(value: unknown): value is NonNullable<AdminGenerationAuditRecord["user"]> {
+  return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && typeof value.email === "string";
+}
+
+function isAdminGenerationAuditOutput(value: unknown): value is AdminGenerationAuditRecord["outputs"][number] {
+  return (
+    isRecord(value) &&
+    typeof value.outputId === "string" &&
+    (value.status === "succeeded" || value.status === "failed") &&
+    (value.asset === undefined || isGeneratedAsset(value.asset)) &&
+    (value.error === undefined || typeof value.error === "string") &&
+    typeof value.isPublic === "boolean"
+  );
+}
+
+function isCreditTransaction(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.userId === "string" &&
+    isFiniteNumber(value.delta) &&
+    typeof value.reason === "string" &&
+    (CREDIT_TRANSACTION_REASONS as readonly string[]).includes(value.reason) &&
+    (value.relatedGenerationId === undefined || typeof value.relatedGenerationId === "string") &&
+    (value.relatedOutputId === undefined || typeof value.relatedOutputId === "string") &&
+    (value.relatedCheckinDate === undefined || typeof value.relatedCheckinDate === "string") &&
+    (value.relatedRedemptionCodeId === undefined || typeof value.relatedRedemptionCodeId === "string") &&
+    (value.adminNote === undefined || typeof value.adminNote === "string") &&
+    typeof value.createdAt === "string"
+  );
+}
+
+function isGeneratedAsset(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.url === "string" &&
+    typeof value.fileName === "string" &&
+    typeof value.mimeType === "string" &&
+    isFiniteNumber(value.width) &&
+    isFiniteNumber(value.height)
+  );
+}
+
+function isGenerationStatus(value: unknown): boolean {
+  return value === "pending" || value === "running" || value === "succeeded" || value === "partial" || value === "failed" || value === "cancelled";
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function readAdminError(response: Response, locale: Locale, t: Translate): Promise<string> {

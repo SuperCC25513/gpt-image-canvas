@@ -59,6 +59,7 @@ const SIMPLE_DEFAULT_SIZE_PRESET = SIZE_PRESETS.find((preset) => preset.id === S
 const SIMPLE_RESULT_LIMIT = 8;
 const SIMPLE_RESULT_PREVIEW_WIDTH = 512;
 const GENERATION_POLL_INTERVAL_MS = 1500;
+const GENERATION_POLL_TIMEOUT_MS = 20 * 60 * 1000;
 const SIMPLE_QUICK_SIZE_IDS = ["square-1k", "poster-portrait", "poster-landscape", "story-9-16", "video-16-9"] as const;
 const simpleQuickSizePresets = SIZE_PRESETS.filter((preset) => SIMPLE_QUICK_SIZE_IDS.includes(preset.id as (typeof SIMPLE_QUICK_SIZE_IDS)[number]));
 const MAX_REFERENCE_IMAGE_BYTES = 50 * 1024 * 1024;
@@ -448,7 +449,8 @@ export function SimpleGenerationPage({
   }
 
   async function pollGenerationUntilComplete(recordId: string, signal: AbortSignal): Promise<GenerationRecord> {
-    while (true) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < GENERATION_POLL_TIMEOUT_MS) {
       await waitForGenerationPollInterval(signal);
       const response = await fetch(`/api/generations/${encodeURIComponent(recordId)}`, { signal });
       if (!response.ok) {
@@ -464,6 +466,8 @@ export function SimpleGenerationPage({
         return body.record;
       }
     }
+
+    throw new Error(t("generationPollingTimedOut"));
   }
 
   function finishGeneration(record: GenerationRecord): void {
@@ -1294,15 +1298,26 @@ function normalizeDimension(value: string): number {
 }
 
 async function waitForGenerationPollInterval(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    throw new DOMException("Generation polling aborted.", "AbortError");
+  }
+
   await new Promise<void>((resolve, reject) => {
-    const timer = window.setTimeout(resolve, GENERATION_POLL_INTERVAL_MS);
-    signal.addEventListener(
-      "abort",
-      () => {
-        window.clearTimeout(timer);
-        reject(new DOMException("Generation polling aborted.", "AbortError"));
-      },
-      { once: true }
-    );
+    const timer = window.setTimeout(() => {
+      cleanup();
+      resolve();
+    }, GENERATION_POLL_INTERVAL_MS);
+
+    function cleanup(): void {
+      window.clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+    }
+
+    function abort(): void {
+      cleanup();
+      reject(new DOMException("Generation polling aborted.", "AbortError"));
+    }
+
+    signal.addEventListener("abort", abort, { once: true });
   });
 }

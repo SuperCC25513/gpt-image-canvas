@@ -8,6 +8,7 @@ import {
   type AdminCreateRedemptionCodesResponse,
   type GalleryImageItem,
   type GalleryResponse,
+  type GalleryVisibilityResponse,
   type GeneratedAsset,
   type GenerationOutput,
   type GenerationRecord,
@@ -68,6 +69,16 @@ export function isGenerationRecord(value: unknown): value is GenerationRecord {
 
 export function isGalleryResponse(value: unknown): value is GalleryResponse | PublicGalleryResponse {
   return isRecord(value) && Array.isArray(value.items) && value.items.every(isGalleryImageItem);
+}
+
+export function isGalleryVisibilityResponse(value: unknown): value is GalleryVisibilityResponse {
+  return (
+    isRecord(value) &&
+    typeof value.outputId === "string" &&
+    typeof value.isPublic === "boolean" &&
+    (value.publishedAt === undefined || typeof value.publishedAt === "string") &&
+    (value.publicTitle === undefined || typeof value.publicTitle === "string")
+  );
 }
 
 export function isCreditTransactionListResponse(value: unknown): value is CreditTransactionListResponse {

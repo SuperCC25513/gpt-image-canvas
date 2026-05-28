@@ -35,7 +35,7 @@ import {
 } from "@gpt-image-canvas/shared";
 import { useI18n, type Translate } from "../../shared/i18n";
 import { assetDownloadUrl, assetPreviewUrl } from "../../shared/api/assets";
-import { isGalleryResponse, readApiErrorMessage } from "../../shared/api/generation";
+import { isGalleryResponse, isGalleryVisibilityResponse, readApiErrorMessage } from "../../shared/api/generation";
 
 interface GalleryPageProps {
   variant?: "private" | "public";
@@ -359,7 +359,10 @@ export function GalleryPage({ variant = "private", onDeleted, onReuse }: Gallery
         throw new Error(await readApiErrorMessage(response, locale, t("galleryRequestFailed", { status: response.status })));
       }
 
-      const body = (await response.json()) as GalleryVisibilityResponse;
+      const body = (await response.json()) as unknown;
+      if (!isGalleryVisibilityResponse(body)) {
+        throw new Error(t("galleryServiceInvalidData"));
+      }
       setItems((current) => current.map((galleryItem) => applyVisibility(galleryItem, body)));
       setSelectedItem((current) => (current?.outputId === body.outputId ? applyVisibility(current, body) : current));
       showStatus(body.isPublic ? t("galleryVisibilityPublished") : t("galleryVisibilityPrivateSaved"));
@@ -1031,7 +1034,7 @@ function GalleryDetailDialog({
               alt={item.prompt}
               className="gallery-modal__image"
               height={item.asset.height}
-              src={item.asset.url}
+              src={assetPreviewUrl(item.asset.id, 2048)}
               width={item.asset.width}
             />
           </div>

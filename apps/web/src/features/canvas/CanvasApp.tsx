@@ -131,6 +131,7 @@ import {
 } from "@gpt-image-canvas/shared";
 import { LOCALES, localizedApiErrorMessage, useI18n, type Locale, type Translate } from "../../shared/i18n";
 import { assetDownloadUrl, assetPreviewUrl } from "../../shared/api/assets";
+import { isGenerationResponse } from "../../shared/api/generation";
 import { generationCountsWithinLimit } from "../../shared/generationCounts";
 import { sizeValidationMessage } from "../../shared/imageValidation";
 import {
@@ -148,6 +149,7 @@ const AGENT_SOCKET_RECONNECT_WINDOW_MS = 2 * 60 * 60 * 1000;
 const AGENT_HISTORY_SAVE_DEBOUNCE_MS = 600;
 const HISTORY_COLLAPSED_LIMIT = 3;
 const MAX_REFERENCE_IMAGE_BYTES = 50 * 1024 * 1024;
+const MAX_ASSET_METADATA_CACHE_ENTRIES = 400;
 const MOBILE_DRAWER_MEDIA_QUERY = "(max-width: 1023px)";
 const ASSET_PREVIEW_WIDTHS = [256, 512, 1024, 2048] as const;
 type AssetPreviewWidth = (typeof ASSET_PREVIEW_WIDTHS)[number];
@@ -678,10 +680,6 @@ function pathForRoute(route: AppRoute): string {
 
 function isPersistedSnapshot(value: unknown): value is PersistedSnapshot {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isGenerationResponse(value: unknown): value is GenerationResponse {
-  return typeof value === "object" && value !== null && "record" in value;
 }
 
 function failedOutputMessages(record: GenerationRecord): string[] {
@@ -1912,7 +1910,17 @@ function isUsableImageSize(size: { width?: unknown; height?: unknown; w?: unknow
 
 function rememberAssetMetadata(assetId: string, size: ImageSize): void {
   if (isUsableImageSize(size)) {
+    if (assetMetadataCache.has(assetId)) {
+      assetMetadataCache.delete(assetId);
+    }
     assetMetadataCache.set(assetId, size);
+    while (assetMetadataCache.size > MAX_ASSET_METADATA_CACHE_ENTRIES) {
+      const oldestAssetId = assetMetadataCache.keys().next().value;
+      if (!oldestAssetId) {
+        break;
+      }
+      assetMetadataCache.delete(oldestAssetId);
+    }
   }
 }
 
@@ -3481,6 +3489,12 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
     setRoute("admin");
     setActiveAdminTab(nextTab);
   }, []);
+
+  useEffect(() => {
+    if (route === "admin" && !isAccountLoading && !isCurrentUserAdmin) {
+      navigateToRoute("home", { replace: true });
+    }
+  }, [isAccountLoading, isCurrentUserAdmin, navigateToRoute, route]);
 
   const continueGeneratedAssetsOnCanvas = useCallback(
     (input: { assets: GeneratedAsset[]; prompt: string }): void => {
@@ -6340,7 +6354,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
           />
         </Suspense>
       ) : null}
-      {route === "admin" ? (
+      {route === "admin" && isCurrentUserAdmin ? (
         <Suspense
           fallback={
             <main className="admin-page app-view" data-testid="admin-loading-page">

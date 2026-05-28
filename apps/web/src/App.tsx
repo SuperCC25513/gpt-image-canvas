@@ -134,12 +134,21 @@ export function App() {
 
   async function logout(): Promise<void> {
     setError("");
-    await fetch("/api/auth/logout", {
-      credentials: "same-origin",
-      method: "POST"
-    });
-    setCurrentUser(null);
-    await loadMe();
+    try {
+      const response = await fetch("/api/auth/logout", {
+        credentials: "same-origin",
+        method: "POST"
+      });
+      if (!response.ok) {
+        throw new Error(await readAuthError(response, locale, t("authLogoutFailed")));
+      }
+
+      setCurrentUser(null);
+      await loadMe();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : t("authLogoutFailed"));
+      await loadMe(undefined, { preserveCurrentUserOnError: true });
+    }
   }
 
   if (isLoading) {
