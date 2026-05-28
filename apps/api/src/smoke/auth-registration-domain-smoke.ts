@@ -15,6 +15,7 @@ process.env.DATA_DIR = dataDir;
 process.env.USE_MYSQL = "false";
 process.env.SQLITE_JOURNAL_MODE = "DELETE";
 process.env.SQLITE_LOCKING_MODE = "EXCLUSIVE";
+process.env.GENERATION_QUEUE_DRIVER = "inline";
 process.env.ADMIN_EMAIL = adminEmail;
 process.env.ADMIN_PASSWORD = adminPassword;
 process.env.ADMIN_NAME = "Smoke Admin";

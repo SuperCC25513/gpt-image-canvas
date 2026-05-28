@@ -1,0 +1,108 @@
+feature: 2026-05-28-redis-runtime-foundation
+created: "2026-05-28"
+
+steps:
+  - action: "名词契约：新增 Redis runtime 配置类型、driver 枚举和解析规则"
+    exit_signal: "非法/缺省 env 能得到确定配置，默认 URL 为 redis://127.0.0.1:6379"
+    status: done
+
+  - action: "依赖与 runtime 骨架：加入 Redis client 依赖，提供 singleton client、PING readiness 和关闭入口"
+    exit_signal: "driver 为 redis 时能 PING 本地 Redis，driver 为 inline 时不建立连接"
+    status: done
+
+  - action: "编排接入：把 Redis readiness 接入 API 启动、/api/health 和 shutdown"
+    exit_signal: "Redis 可用时 health 为 200；Redis 不可用且 driver=redis 时 health 为 503 或启动失败"
+    status: done
+
+  - action: "测试替身：为 smoke 测试和最小单元检查设置 inline driver"
+    exit_signal: "不启动 Redis 时现有 smoke/typecheck 路径不会因 Redis 连接阻塞"
+    status: done
+
+  - action: "文档配置：更新 .env.example、Docker Compose、可靠性和安全文档"
+    exit_signal: "本地 Redis 6379 无密码的使用方式和公网暴露风险被明确记录"
+    status: done
+
+  - action: "验证：执行类型检查、构建和 Redis/inline 两种健康检查证据"
+    exit_signal: "pnpm typecheck、pnpm build 通过；inline 和 redis 模式各有可观察结果"
+    status: done
+
+checks:
+  - item: "默认 REDIS_URL 为 redis://127.0.0.1:6379，本地无密码 Redis 可直接使用"
+    source: 名词契约
+    status: passed
+
+  - item: "GENERATION_QUEUE_DRIVER 只接受 redis/inline；非法值按 redis 处理并保守失败"
+    source: 流程级约束
+    status: passed
+
+  - item: "GENERATION_QUEUE_DRIVER=redis 且 Redis 不可用时不静默退回旧的无限并发行为"
+    source: 流程级约束
+    status: passed
+
+  - item: "GENERATION_QUEUE_DRIVER=inline 时 Redis client 不连接"
+    source: 流程级约束
+    status: passed
+
+  - item: "API 关闭时 closeRedisClient 能释放 Redis 连接且重复关闭幂等"
+    source: 流程级约束
+    status: passed
+
+  - item: "API dependency apps/api/package.json 新增 redis package"
+    source: 挂载点
+    status: passed
+
+  - item: "Runtime 配置 REDIS_URL、GENERATION_QUEUE_DRIVER、REDIS_CONNECT_TIMEOUT_MS 已接入"
+    source: 挂载点
+    status: passed
+
+  - item: "createApp 启动阶段调用 Redis readiness"
+    source: 挂载点
+    status: passed
+
+  - item: "GET /api/health 返回 Redis check 和 503 语义"
+    source: 挂载点
+    status: passed
+
+  - item: "closeRedisClient 纳入 shutdown"
+    source: 挂载点
+    status: passed
+
+  - item: "smoke 测试显式设置 GENERATION_QUEUE_DRIVER=inline"
+    source: 挂载点
+    status: passed
+
+  - item: ".env.example、docker-compose.yml、docs/RELIABILITY.md、docs/SECURITY.md 说明 Redis 本地默认和安全边界"
+    source: 挂载点
+    status: passed
+
+  - item: "代码中不出现 provider semaphore、queue worker、retry key 或 generation:queue:* 业务 Redis key 的实现"
+    source: 范围守护
+    status: passed
+
+  - item: "Redis 中不保存 prompt、API key、reference image bytes、generation record、audit 或 credit transaction 的事实数据"
+    source: 范围守护
+    status: passed
+
+  - item: "/api/health 响应不包含 REDIS_URL、密码、Redis 内网地址或原始连接错误"
+    source: 范围守护
+    status: passed
+
+  - item: "未设置 REDIS_URL 且 GENERATION_QUEUE_DRIVER=redis、本地 Redis 可用时 /api/health 返回 checks.redis=ok"
+    source: 验收场景
+    status: passed
+
+  - item: "Redis 未运行且 driver=redis 时 API 启动失败或 /api/health 返回 checks.redis=unavailable"
+    source: 验收场景
+    status: passed
+
+  - item: "GENERATION_QUEUE_DRIVER=inline 且 Redis 未运行时 /api/health 返回 checks.redis=disabled"
+    source: 验收场景
+    status: passed
+
+  - item: "REDIS_CONNECT_TIMEOUT_MS 非法值回退默认 5000ms，不抛出含原始 env 的错误"
+    source: 验收场景
+    status: passed
+
+  - item: "Docker Compose 配置包含 Redis 服务和 API 的 Redis URL，并通过 config 校验"
+    source: 验收场景
+    status: passed

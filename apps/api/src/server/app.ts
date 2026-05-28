@@ -3,6 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
 import { initializeAuthFoundation } from "../domain/auth/auth-store.js";
+import { assertRedisReady } from "../infrastructure/redis-runtime.js";
 import { runtimePaths } from "../infrastructure/runtime.js";
 import { assertAssetStorageConfigured } from "../infrastructure/storage/asset-storage.js";
 import { errorResponse } from "./http/errors.js";
@@ -28,6 +29,7 @@ export const app = await createApp();
 
 export async function createApp(): Promise<Hono> {
   assertAssetStorageConfigured();
+  await assertRedisReady();
   await initializeAuthFoundation();
 
   const app = new Hono();

@@ -8,8 +8,10 @@ import WebSocket, { type RawData } from "ws";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const dataDir = resolve(repoRoot, ".codex-temp", `agent-smoke-${process.pid}-${Date.now()}`);
 process.env.DATA_DIR = dataDir;
+process.env.USE_MYSQL = "false";
 process.env.SQLITE_JOURNAL_MODE = "DELETE";
 process.env.SQLITE_LOCKING_MODE = "EXCLUSIVE";
+process.env.GENERATION_QUEUE_DRIVER = "inline";
 
 mkdirSync(dataDir, { recursive: true });
 

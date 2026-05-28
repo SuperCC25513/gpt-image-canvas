@@ -8,6 +8,14 @@ Use this before changing API routes, provider selection, Agent execution, asset 
 - `apps/web`: Vite React and tldraw client, served by Vite in development and by the built API app in production.
 - `packages/shared`：共享契约、图片预设、验证工具、提供方类型和 Agent 事件类型。
 
+## Redis Runtime
+
+Generation scheduling uses Redis as a required runtime dependency. Local development defaults to `REDIS_URL=redis://127.0.0.1:6379` with no password. Docker Compose runs an internal `redis` service and points the API at `redis://redis:6379`.
+
+`GENERATION_QUEUE_DRIVER=redis` is the normal mode. If Redis is unavailable in this mode, the API must fail readiness instead of silently falling back to unbounded provider concurrency. `GENERATION_QUEUE_DRIVER=inline` is only for tests or explicit local debugging.
+
+Redis stores runtime coordination state such as future queues, locks, attempts, and provider permits. Database tables remain the source of truth for generation records, outputs, audits, assets, and credit transactions.
+
 ## Persistence
 
 `DATA_DIR` defaults to `./data` locally and `/app/data` in Docker. In SQLite mode it contains SQLite state, generated assets, and previews. In MySQL + OSS mode, MySQL stores metadata and OSS stores generated asset bytes; `DATA_DIR` may still hold local runtime files. Treat all of it as private runtime data.

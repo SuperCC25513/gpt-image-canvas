@@ -19,6 +19,7 @@ Secrets may come from:
 - Local provider config stored in SQLite.
 - `USE_MYSQL=true` 时使用的 MySQL 连接凭据。
 - `USE_MYSQL=true` 时用于服务端上传和签名的 OSS AK/SK，来自 `.env` 或 `OSS_*` 运行时环境变量。
+- `REDIS_URL` when it points to a remote Redis or contains credentials.
 - Agent LLM config stored in SQLite.
 - Codex OAuth tokens stored in SQLite.
 
@@ -53,6 +54,7 @@ When adding browser tests that save fake credentials, clear or restore local tes
 - Prefer stable error codes from shared contracts or API helpers.
 - Do not pass raw upstream provider errors directly to clients if they may contain credentials or request internals.
 - Do not expose filesystem paths, shell details, environment contents, or database internals through API responses.
+- `/api/health` may report whether Redis is `ok`, `disabled`, or `unavailable`, but it must not expose `REDIS_URL`, passwords, Redis host topology, or raw connection errors.
 - `/api/admin/*` must require an active admin session. Admin responses may include users, settings, credit adjustments, and generation audit summaries, but must not include raw provider API keys, Agent API keys, OAuth tokens, cookies, database passwords, or unredacted upstream error payloads.
 - Generation audit records store prompt, status, IP/User-Agent summaries, and output linkage for local administration. Treat the audit table as private runtime data alongside generated assets.
 
@@ -65,6 +67,8 @@ docker compose config --quiet --no-env-resolution
 ```
 
 Avoid plain `docker compose config` because it can expand and print env values.
+
+The local unauthenticated Redis default is only suitable for localhost or the private Docker Compose network. Do not expose Redis publicly without ACL/TLS and network controls.
 
 ## Review Checklist
 

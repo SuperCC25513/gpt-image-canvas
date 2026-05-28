@@ -1,4 +1,13 @@
 services:
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   app:
     build:
       context: .
@@ -8,6 +17,9 @@ services:
         NPM_CONFIG_REGISTRY: ${NPM_CONFIG_REGISTRY:-https://registry.npmmirror.com}
         APT_MIRROR: ${APT_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian}
         APT_SECURITY_MIRROR: ${APT_SECURITY_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian-security}
+    depends_on:
+      redis:
+        condition: service_healthy
     env_file:
       - path: .env
         required: false
@@ -18,6 +30,9 @@ services:
       PROMPT_POOL_DIR: ${PROMPT_POOL_DIR:-/app/prompt-pool-data}
       SQLITE_JOURNAL_MODE: ${SQLITE_JOURNAL_MODE:-DELETE}
       SQLITE_LOCKING_MODE: ${SQLITE_LOCKING_MODE:-EXCLUSIVE}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      GENERATION_QUEUE_DRIVER: ${GENERATION_QUEUE_DRIVER:-redis}
+      REDIS_CONNECT_TIMEOUT_MS: ${REDIS_CONNECT_TIMEOUT_MS:-5000}
     ports:
       - "${PORT:-8787}:${PORT:-8787}"
     volumes:

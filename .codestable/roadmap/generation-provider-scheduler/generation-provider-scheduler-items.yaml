@@ -1,0 +1,59 @@
+roadmap: generation-provider-scheduler
+created: "2026-05-28"
+
+items:
+  - slug: redis-runtime-foundation
+    description: 接入 Redis runtime、配置、健康检查和部署文档
+    depends_on: []
+    status: done
+    feature: 2026-05-28-redis-runtime-foundation
+    minimal_loop: false
+    notes: "本地默认 redis://127.0.0.1:6379，无密码；Redis 成为生成调度的运行依赖"
+
+  - slug: provider-global-semaphore
+    description: 所有图片 provider 调用共用 Redis 全局并发闸门
+    depends_on: [redis-runtime-foundation]
+    status: planned
+    feature: null
+    minimal_loop: true
+    notes: "限制整个应用同一时刻打到唯一 provider 的总请求数；先把 100 个任务最高 200 个 provider 并发请求压到配置值"
+
+  - slug: generation-queue-worker
+    description: 手动生成任务进入 Redis 队列，由 worker 消费输出任务
+    depends_on: [provider-global-semaphore]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: provider-retry-policy
+    description: 增加 provider 可恢复错误分类、退避重试和最终失败记录
+    depends_on: [generation-queue-worker]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: agent-generation-scheduler-adapter
+    description: Agent 生成 job 接入同一队列、闸门和重试机制
+    depends_on: [provider-retry-policy]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: generation-cancel-and-recovery
+    description: 完善队列取消、重启恢复、失败收敛和退款幂等
+    depends_on: [generation-queue-worker, provider-retry-policy]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null
+
+  - slug: generation-queue-observability
+    description: 暴露排队、运行、重试、失败摘要给 API、前端和审计
+    depends_on: [generation-cancel-and-recovery, agent-generation-scheduler-adapter]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: null

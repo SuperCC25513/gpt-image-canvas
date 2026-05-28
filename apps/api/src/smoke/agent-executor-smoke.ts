@@ -9,8 +9,10 @@ import { creditTransactions, generationAudits, users } from "../infrastructure/s
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const dataDir = resolve(repoRoot, ".codex-temp", `agent-executor-smoke-${process.pid}-${Date.now()}`);
 process.env.DATA_DIR = dataDir;
+process.env.USE_MYSQL = "false";
 process.env.SQLITE_JOURNAL_MODE = "DELETE";
 process.env.SQLITE_LOCKING_MODE = "EXCLUSIVE";
+process.env.GENERATION_QUEUE_DRIVER = "inline";
 
 mkdirSync(dataDir, { recursive: true });
 

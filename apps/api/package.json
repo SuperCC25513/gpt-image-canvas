@@ -12,6 +12,7 @@
     "smoke:agent": "tsx src/smoke/agent-smoke.ts",
     "smoke:executor": "tsx src/smoke/agent-executor-smoke.ts",
     "smoke:planner": "tsx src/smoke/agent-planner-smoke.ts",
+    "smoke:redis-runtime": "tsx src/smoke/redis-runtime-smoke.ts",
     "typecheck": "pnpm --filter @gpt-image-canvas/shared build && tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js"
   },
@@ -29,6 +30,7 @@
     "hono": "^4.12.23",
     "mysql2": "^3.15.3",
     "openai": "^6.34.0",
+    "redis": "^5.12.1",
     "sharp": "^0.34.5",
     "ws": "^8.21.0"
   },
