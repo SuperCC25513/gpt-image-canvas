@@ -295,9 +295,9 @@ interface ScheduledAgentGenerationInput {
 2. **provider-global-semaphore** — 所有图片 provider 调用共用 Redis 全局并发闸门。
    - 所属模块：provider-scheduler
    - 依赖：`redis-runtime-foundation`
-   - 状态：planned
-   - 对应 feature：未启动
-   - 备注：先把 100 个任务最高 200 个“打到唯一 provider 的并发请求”压到配置值。
+   - 状态：done
+   - 对应 feature：`2026-05-28-provider-global-semaphore`
+   - 备注：所有 `provider.generate` / `provider.edit` 单图调用已通过 `runProviderCall` 进入全局闸门；并发值由 `GENERATION_PROVIDER_GLOBAL_CONCURRENCY` 配置。
 3. **generation-queue-worker** — 手动生成任务进入 Redis 队列，由 worker 消费输出任务。
    - 所属模块：generation-queue、generation-state-bridge
    - 依赖：`provider-global-semaphore`

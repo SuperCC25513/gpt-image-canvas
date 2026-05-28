@@ -26,6 +26,7 @@ import {
   type ImageProviderInput,
   type ProviderImage
 } from "../../infrastructure/providers/image-provider.js";
+import { runProviderCall } from "./provider-scheduler.js";
 import {
   assetStorageSignedUrlExpiresInSeconds,
   deleteStoredAssetBytes,
@@ -110,14 +111,15 @@ export async function runTextToImageGeneration(
   signal?: AbortSignal,
   user?: CurrentUser
 ): Promise<GenerationResponse> {
+  const generationId = input.clientRequestId || randomUUID();
   const outputs = await mapWithConcurrency(
     Array.from({ length: input.count }, (_, index) => index),
     BATCH_CONCURRENCY,
-    async () => generateSingleOutput(input, provider, signal)
+    async (outputIndex) => generateSingleOutput(generationId, outputIndex, input, provider, signal)
   );
 
   const record = await saveCompletedGenerationRecord(
-    randomUUID(),
+    generationId,
     {
       ...input,
       mode: "generate"
@@ -137,6 +139,7 @@ export async function runReferenceImageGeneration(
   signal?: AbortSignal,
   user?: CurrentUser
 ): Promise<GenerationResponse> {
+  const generationId = input.clientRequestId || randomUUID();
   const referenceAssetIds = await ensureReferenceAssetIds(input, user);
   const inputWithReferenceAssets: EditImageProviderInput = {
     ...input,
@@ -147,11 +150,11 @@ export async function runReferenceImageGeneration(
   const outputs = await mapWithConcurrency(
     Array.from({ length: inputWithReferenceAssets.count }, (_, index) => index),
     BATCH_CONCURRENCY,
-    async () => editSingleOutput(inputWithReferenceAssets, provider, signal)
+    async (outputIndex) => editSingleOutput(generationId, outputIndex, inputWithReferenceAssets, provider, signal)
   );
 
   const record = await saveCompletedGenerationRecord(
-    randomUUID(),
+    generationId,
     {
       ...inputWithReferenceAssets,
       mode: "edit"
@@ -204,7 +207,7 @@ export async function finishTextToImageGeneration(
     outputs = await mapWithConcurrency(
       Array.from({ length: input.count }, (_, index) => index),
       BATCH_CONCURRENCY,
-      async () => generateSingleOutput(input, provider, signal)
+      async (outputIndex) => generateSingleOutput(generationId, outputIndex, input, provider, signal)
     );
     throwIfAborted(signal);
   } catch (error) {
@@ -237,7 +240,7 @@ export async function finishReferenceImageGeneration(
     outputs = await mapWithConcurrency(
       Array.from({ length: input.count }, (_, index) => index),
       BATCH_CONCURRENCY,
-      async () => editSingleOutput(input, provider, signal)
+      async (outputIndex) => editSingleOutput(generationId, outputIndex, input, provider, signal)
     );
     throwIfAborted(signal);
   } catch (error) {
@@ -508,18 +511,32 @@ export async function getStoredAssetAccessUrl(
   };
 }
 
-async function generateSingleOutput(input: ImageProviderInput, provider: ImageProvider, signal?: AbortSignal): Promise<BatchOutputResult> {
+async function generateSingleOutput(
+  generationId: string,
+  outputIndex: number,
+  input: ImageProviderInput,
+  provider: ImageProvider,
+  signal?: AbortSignal
+): Promise<BatchOutputResult> {
   const outputId = randomUUID();
 
   try {
     throwIfAborted(signal);
-    const result = await provider.generate(
-      {
-        ...input,
-        count: 1
-      },
-      signal
-    );
+    const result = await runProviderCall({
+      generationId,
+      outputId,
+      outputIndex,
+      mode: "generate",
+      signal,
+      call: (providerSignal) =>
+        provider.generate(
+          {
+            ...input,
+            count: 1
+          },
+          providerSignal
+        )
+    });
     throwIfAborted(signal);
 
     const providerImage = result.images[0];
@@ -547,18 +564,32 @@ async function generateSingleOutput(input: ImageProviderInput, provider: ImagePr
   }
 }
 
-async function editSingleOutput(input: EditImageProviderInput, provider: ImageProvider, signal?: AbortSignal): Promise<BatchOutputResult> {
+async function editSingleOutput(
+  generationId: string,
+  outputIndex: number,
+  input: EditImageProviderInput,
+  provider: ImageProvider,
+  signal?: AbortSignal
+): Promise<BatchOutputResult> {
   const outputId = randomUUID();
 
   try {
     throwIfAborted(signal);
-    const result = await provider.edit(
-      {
-        ...input,
-        count: 1
-      },
-      signal
-    );
+    const result = await runProviderCall({
+      generationId,
+      outputId,
+      outputIndex,
+      mode: "edit",
+      signal,
+      call: (providerSignal) =>
+        provider.edit(
+          {
+            ...input,
+            count: 1
+          },
+          providerSignal
+        )
+    });
     throwIfAborted(signal);
 
     const providerImage = result.images[0];

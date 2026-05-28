@@ -70,6 +70,8 @@ Avoid plain `docker compose config` because it can expand and print env values.
 
 The local unauthenticated Redis default is only suitable for localhost or the private Docker Compose network. Do not expose Redis publicly without ACL/TLS and network controls.
 
+Provider scheduler Redis permit keys must not contain prompts, API keys, reference image bytes, generation records, audit payloads, credit transaction data, or user-provided identifiers. Store only short-lived random permit ids and expiry scores.
+
 ## Review Checklist
 
 - Are all user inputs validated before storage or provider calls?

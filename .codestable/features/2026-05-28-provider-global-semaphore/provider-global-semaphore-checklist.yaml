@@ -1,0 +1,80 @@
+feature: 2026-05-28-provider-global-semaphore
+created: "2026-05-28"
+
+steps:
+  - action: "名词契约：新增 provider scheduler 配置解析、inline semaphore 和公开 runProviderCall API"
+    exit_signal: "非法/缺省 env 能得到确定配置，inline 模式可限制并发"
+    status: done
+
+  - action: "Redis permit：实现 Redis Lua acquire 和 release，复用 redis-runtime.ts"
+    exit_signal: "Redis driver 下 acquire 原子执行，release 使用 permit id 清理"
+    status: done
+
+  - action: "Provider 接入：把 text/edit 两个 provider call 全部包进 runProviderCall"
+    exit_signal: "grep 中不再有未包装的 provider.generate / provider.edit 调用点"
+    status: done
+
+  - action: "配置与文档：更新 env、Docker、可靠性和安全文档"
+    exit_signal: "默认并发数、TTL、inline 限制和 Redis 不保存敏感数据被记录"
+    status: done
+
+  - action: "验证：新增 smoke 并运行 typecheck/build/smoke"
+    exit_signal: "provider scheduler smoke 证明并发不超过配置值；现有 generation/Agent smoke 通过"
+    status: done
+
+checks:
+  - item: "GENERATION_PROVIDER_GLOBAL_CONCURRENCY 默认 2 且可配置"
+    source: 名词契约
+    status: passed
+
+  - item: "GENERATION_PROVIDER_PERMIT_TTL_MS 默认 1800000 且可配置"
+    source: 名词契约
+    status: passed
+
+  - item: "GENERATION_QUEUE_DRIVER=inline 时使用进程内 semaphore 并限制并发"
+    source: 编排层
+    status: passed
+
+  - item: "GENERATION_QUEUE_DRIVER=redis 时 provider call 必须先获得 Redis permit"
+    source: 编排层
+    status: passed
+
+  - item: "Redis acquire 使用原子脚本清理过期 permit、计数并写入新 permit"
+    source: 流程级约束
+    status: passed
+
+  - item: "provider call 完成、失败或取消后释放 permit"
+    source: 流程级约束
+    status: passed
+
+  - item: "等待 permit 时 AbortSignal 取消会抛 AbortError 且不进入 provider"
+    source: 流程级约束
+    status: passed
+
+  - item: "所有 provider.generate / provider.edit 调用都通过 runProviderCall"
+    source: 挂载点
+    status: passed
+
+  - item: ".env.example、docker-compose.yml、docs/RELIABILITY.md、docs/SECURITY.md 说明全局 provider 并发和 permit TTL"
+    source: 挂载点
+    status: passed
+
+  - item: "provider scheduler smoke 覆盖默认并发、配置并发、失败释放和 abort 等待"
+    source: 验收场景
+    status: passed
+
+  - item: "Redis 可用时可验证 redis driver 并发不超过配置值"
+    source: 验收场景
+    status: passed
+
+  - item: "代码中不新增 generation:queue:* ready/delayed/job 队列实现"
+    source: 范围守护
+    status: passed
+
+  - item: "代码中不新增 provider retry、指数退避、错误分类或 delayed retry key"
+    source: 范围守护
+    status: passed
+
+  - item: "Redis 中不保存 prompt、API key、reference image bytes、generation record、audit 或 credit transaction"
+    source: 范围守护
+    status: passed

@@ -12,6 +12,7 @@
     "smoke:agent": "tsx src/smoke/agent-smoke.ts",
     "smoke:executor": "tsx src/smoke/agent-executor-smoke.ts",
     "smoke:planner": "tsx src/smoke/agent-planner-smoke.ts",
+    "smoke:provider-scheduler": "tsx src/smoke/provider-scheduler-smoke.ts",
     "smoke:redis-runtime": "tsx src/smoke/redis-runtime-smoke.ts",
     "typecheck": "pnpm --filter @gpt-image-canvas/shared build && tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js"

@@ -48,7 +48,7 @@ export async function getRedisClient(): Promise<RedisRuntimeClient> {
     throw new RedisRuntimeError("Redis runtime is disabled by GENERATION_QUEUE_DRIVER=inline.");
   }
 
-  if (redisClient?.isOpen) {
+  if (redisClient?.isReady) {
     return redisClient;
   }
   if (redisClientPromise) {
