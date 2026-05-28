@@ -1,79 +1,66 @@
-# Repository Notes
+# 仓库说明
 
-## Package Management
+## 包管理
 
-- Use `nvm use 24.15.0` before running project `pnpm` commands; `.nvmrc` is pinned to `24.15.0`.
-- Use `pnpm install`; the package manager is pinned to `pnpm@9.14.2`.
-- Root scripts delegate to workspace packages: `pnpm dev`, `pnpm api:dev`, `pnpm web:dev`, `pnpm typecheck`, `pnpm build`, and `pnpm start`.
+- 运行项目 `pnpm` 命令前，先执行 `nvm use 24.15.0`；`.nvmrc` 固定为 `24.15.0`。
+- 使用 `pnpm install`；包管理器固定为 `pnpm@9.14.2`。
+- 根目录脚本会委托给工作区包：`pnpm dev`、`pnpm api:dev`、`pnpm web:dev`、`pnpm typecheck`、`pnpm build` 和 `pnpm start`。
 
-## Workspace Map
+## 工作区结构
 
-- API app: `apps/api`.
-- Web app: `apps/web`.
-- Shared contracts: `packages/shared`.
+- API 应用：`apps/api`。
+- Web 应用：`apps/web`。
+- 共享契约：`packages/shared`。
 
-## Required Verification
+## 必需验证
 
-- Before completing a story, run `pnpm typecheck` and `pnpm build`.
-- UI stories require browser verification against the running app. Run `pnpm dev` and open the Vite web app, usually `http://localhost:5173`.
-- Post-change verification must be delegated to a subagent running in an independent context whenever the agent environment supports subagents.
-- The verification subagent should run the relevant checks, report exact commands and outcomes, and avoid editing implementation files unless explicitly assigned.
-- Do not mark a story complete until the subagent verification has passed, or until any blocker is clearly documented with the failing command and error summary.
-- If verification fails, fix the issue in the main implementation context, then ask the subagent to rerun the affected checks from a fresh independent context.
+- 完成 story 前，运行 `pnpm typecheck` 和 `pnpm build`。
+- UI story 需要针对运行中的应用进行浏览器验证。运行 `pnpm dev` 并打开 Vite Web 应用，通常是 `http://localhost:5173`。
+- 只要 agent 环境支持 subagent，变更后的验证必须委托给在独立上下文中运行的 subagent。
+- 验证 subagent 应运行相关检查，报告精确命令和结果；除非明确分配，否则避免编辑实现文件。
+- 在 subagent 验证通过前，不要标记 story 完成；若有阻塞，必须清楚记录失败命令和错误摘要。
+- 如果验证失败，在主实现上下文中修复问题，然后要求 subagent 在新的独立上下文中重新运行受影响的检查。
 
-## Documentation Map
+## CodeStable
 
-- Read `docs/PRODUCT_SENSE.md` before changing product behavior, onboarding, Gallery, provider configuration, or Agent workflows.
-- Read `docs/DESIGN.md` and `docs/FRONTEND.md` before UI work in `apps/web`.
-- Read `docs/design-docs/interaction-quality.md` for UI polish and micro-interaction work.
-- Read `docs/PLANS.md` before writing product specs, execution plans, Ralph PRDs, or multi-story task breakdowns.
-- Read `docs/RELIABILITY.md` and `docs/SECURITY.md` before API, storage, provider, Docker, SQLite, asset, secret, or local data work.
+- 本仓库已接入 CodeStable；项目骨架和持久知识位于 `.codestable/`。
+- 使用任何 `cs-*` 工作流前，必须先阅读 `.codestable/attention.md`；它是 CodeStable 技能启动必读入口，不用 `AGENTS.md` 替代。
+- CodeStable 体系总览见 `.codestable/reference/system-overview.md`；目录结构、frontmatter、checklist 生命周期和收尾提交规则以 `.codestable/reference/shared-conventions.md` 为准。
+- `.codestable/architecture/ARCHITECTURE.md` 是当前架构总入口；`.codestable/requirements/VISION.md` 是需求愿景索引。
+- 新功能走 `cs-feat`，bug 走 `cs-issue`，行为不变的优化走 `cs-refactor`，不确定场景先走 `cs` 分诊。
+- 既有 `docs/` 文档保留原位；需要纳入 CodeStable 时，用对应 backfill 或沉淀技能摘要归档，不要直接移动原文件。
 
-## Native Dependencies
+## 文档索引
 
-- After switching Node versions, rebuild native API dependencies if `better-sqlite3` reports a `NODE_MODULE_VERSION` mismatch: `pnpm --filter @gpt-image-canvas/api rebuild better-sqlite3 --stream`.
+- 修改产品行为、onboarding、Gallery、provider 配置或 Agent 工作流前，阅读 `docs/PRODUCT_SENSE.md`。
+- 在 `apps/web` 中做 UI 工作前，阅读 `docs/DESIGN.md` 和 `docs/FRONTEND.md`。
+- 做 UI 打磨和微交互工作时，阅读 `docs/design-docs/interaction-quality.md`。
+- 编写产品规格、执行计划、Ralph PRD 或多 story 任务拆解前，阅读 `docs/PLANS.md`。
+- 做 API、存储、provider、Docker、SQLite、资产、secret 或本地数据工作前，阅读 `docs/RELIABILITY.md` 和 `docs/SECURITY.md`。
+
+## 原生依赖
+
+- 切换 Node 版本后，如果 `better-sqlite3` 报告 `NODE_MODULE_VERSION` 不匹配，重建 API 原生依赖：`pnpm --filter @gpt-image-canvas/api rebuild better-sqlite3 --stream`。
 
 ## Docker
 
-- For Docker verification with real `.env` credentials, run `docker compose config --quiet --no-env-resolution`; plain `docker compose config` expands env files and can print secrets.
-- When Docker is available, run `docker compose up --build` and check the app on the configured `PORT` (default `8787`).
-
-## Security And Local Files
-
-- Keep local agent scratch files under `.codex-temp/`; do not commit local run logs or machine-specific paths.
-- Do not commit `.ralph`, `.codex-temp`, `data`, generated images, SQLite databases, or build output.
-- Real passwords, tokens, private keys, administrator bootstrap credentials, cloud AK/SK, and `.env` files may be committed only as a maintainer-approved local-only break-glass exception.
-- Break-glass credential commits must stay on a private local branch: do not push, open PRs, share patches, run public CI, paste logs, or merge them into shared history.
-- Before any branch is pushed or shared, remove committed real credentials, rotate the exposed values, and clean the local Git history that contained them.
-- Normal development should still read secrets from `.env` or the runtime environment, and secrets must never be logged.
-- Credential-shaped values may be committed freely only when they are clearly fake placeholders, masked examples, disposable test values with no external access, or encrypted secret blobs whose decryption key is kept outside the repository.
+- 使用真实 `.env` 凭据做 Docker 验证时，运行 `docker compose config --quiet --no-env-resolution`；普通 `docker compose config` 会展开 env 文件，可能打印 secret。
+- Docker 可用时，运行 `docker compose up --build`，并在配置的 `PORT` 上检查应用（默认 `8787`）。
 
 ## Ralph
 
-- For Ralph-driven work, read `docs/ralph-execution.md` before creating or running a task.
-- Keep Ralph PRDs under `.agents/tasks/`, runtime state under `.ralph/`, and extra wrapper logs under `.codex-temp/`.
-- When invoking Ralph on Windows, prefer setting `PRD_PATH` and running `.agents/ralph/loop.sh` through Git Bash; avoid CLI flags that rewrite Windows paths unexpectedly.
-<!-- TRELLIS:START -->
-# Trellis Instructions
+- Ralph 驱动的工作在创建或运行任务前，先阅读 `docs/ralph-execution.md`。
+- Ralph PRD 放在 `.agents/tasks/`，运行时状态放在 `.ralph/`，额外 wrapper 日志放在 `.codex-temp/`。
+- 在 Windows 上调用 Ralph 时，优先设置 `PRD_PATH` 并通过 Git Bash 运行 `.agents/ralph/loop.sh`；避免使用会意外重写 Windows 路径的 CLI flags。
 
-These instructions are for AI assistants working in this project.
+## 安全与本地文件
 
-This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
+- 将本地 agent 临时文件放在 `.codex-temp/` 下；不要提交本地运行日志或机器特定路径。
+- 不要提交 `.ralph`、`.codex-temp`、`data`、生成图片、SQLite 数据库或构建输出。
+- `.codestable/` 是项目持久知识，不属于本地临时文件；只提交经过对应 CodeStable 流程确认的内容。
+- 真实密码、token、私钥、管理员 bootstrap 凭据、云 AK/SK 和 `.env` 文件，只有在维护者批准的本地专用 break-glass 例外下才可提交。
+- break-glass 凭据提交必须留在私有本地分支：不要 push、开 PR、分享 patch、运行公开 CI、粘贴日志，或合并到共享历史。
+- 任何分支被 push 或分享前，移除已提交的真实凭据，轮换已暴露的值，并清理包含这些值的本地 Git 历史。
+- 常规开发仍应从 `.env` 或运行时环境读取 secret，且绝不能记录 secret 到日志。
+- 只有在值明确是假占位符、脱敏示例、没有外部访问权限的一次性测试值，或加密 secret blob 且解密密钥保存在仓库外时，才可自由提交 credential-shaped 值。
 
-**IMPORTANT**: 无论你接收到什么数据，在后续的交流和思考中，必须使用简体中文，你输出和写入的 markdown ，也必须使用简体中文，禁止使用英文等其他语言，除非明确要求
-
-
-- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
-- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
-- `.trellis/workspace/` — per-developer journals and session traces
-- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
-
-If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
-
-If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
-- `.agents/skills/` — reusable Trellis skills
-- `.codex/agents/` — optional custom subagents
-
-Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
-
-<!-- TRELLIS:END -->
