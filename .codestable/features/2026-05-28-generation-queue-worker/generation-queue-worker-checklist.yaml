@@ -1,0 +1,84 @@
+feature: 2026-05-28-generation-queue-worker
+created: "2026-05-28"
+
+steps:
+  - action: "名词契约：新增 queue config、job 类型、Redis key 协议和 worker 生命周期 API"
+    exit_signal: "配置默认值/非法值解析稳定，enqueue 写入 ready list 和 job key"
+    status: done
+
+  - action: "状态能力：支持 pending record、running 标记和 Redis 启动时只失败 interrupted running"
+    exit_signal: "manual generation smoke 能观察 pending -> running/terminal 路径"
+    status: done
+
+  - action: "Worker 编排：实现 Redis worker poll、job parse、record 重建、provider execution 和 job cleanup"
+    exit_signal: "worker 能消费 fake job，遵守 worker concurrency，并清理 Redis job key"
+    status: done
+
+  - action: "手动入口接入：Redis driver 下 start generate/edit 改为 enqueue；inline driver 保持旧 background task"
+    exit_signal: "grep 显示直接 background task 只在 inline 分支使用"
+    status: done
+
+  - action: "配置与文档：更新 env、Docker、可靠性和安全文档"
+    exit_signal: "worker 并发、polling、inline 限制和 Redis 不保存敏感数据被记录"
+    status: done
+
+  - action: "验证：运行 typecheck/build、queue smoke、provider scheduler smoke、executor/planner smoke"
+    exit_signal: "新旧关键 smoke 通过，Redis ready list/job key 无测试残留"
+    status: done
+
+checks:
+  - item: "GENERATION_QUEUE_DRIVER=redis 时手动生成创建 pending record 并入队"
+    source: 编排层
+    status: passed
+
+  - item: "GENERATION_QUEUE_DRIVER=inline 时保留当前进程内 background task"
+    source: 编排层
+    status: passed
+
+  - item: "queue worker 消费 job 前把 generation record 从 pending 推到 running"
+    source: 编排层
+    status: passed
+
+  - item: "queue worker 执行生成时复用 finishTextToImageGeneration / finishReferenceImageGeneration"
+    source: 编排层
+    status: passed
+
+  - item: "worker 执行 provider call 仍通过 runProviderCall 全局 provider 闸门"
+    source: 流程级约束
+    status: passed
+
+  - item: "Redis job payload 不保存 prompt、reference image bytes、API key、provider credential、audit payload、credit transaction 或完整 generation record"
+    source: 安全边界
+    status: passed
+
+  - item: "取消 pending generation 后 worker 取到 job 会跳过 provider 并清理 job"
+    source: 验收场景
+    status: passed
+
+  - item: "取消 running generation 会 abort 当前 activeGenerationTasks signal"
+    source: 验收场景
+    status: passed
+
+  - item: "入队失败不绕过队列直接执行 provider，并通过失败路径退款"
+    source: 错误语义
+    status: passed
+
+  - item: "queue worker concurrency 可配置，smoke 能证明最大 active 不超过配置"
+    source: 验收场景
+    status: passed
+
+  - item: ".env.example、docker-compose.yml、docs/RELIABILITY.md、docs/SECURITY.md 说明 queue worker 配置和安全边界"
+    source: 挂载点
+    status: passed
+
+  - item: "代码不新增 generation:queue:delayed、retry attempt zset、指数退避或错误分类"
+    source: 范围守护
+    status: passed
+
+  - item: "代码不改 Agent executor 生成路径为 Redis queue"
+    source: 范围守护
+    status: passed
+
+  - item: "不新增前端 queue UI 或 admin queue monitor"
+    source: 范围守护
+    status: passed

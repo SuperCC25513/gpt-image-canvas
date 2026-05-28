@@ -1094,23 +1094,27 @@ function refundAmountForCharge(totalCharge: number, failedCount: number, count: 
   return Math.min(totalCharge, unitCost * failedCount);
 }
 
-export async function markInterruptedGenerationRecordsFailed(error: string): Promise<void> {
+export async function markInterruptedGenerationRecordsFailed(
+  error: string,
+  statuses: GenerationStatus[] = ["pending", "running"]
+): Promise<void> {
   if (databaseDriver === "sqlite") {
     db.update(generationRecords)
       .set({
         status: "failed",
         error
       })
-      .where(inArray(generationRecords.status, ["pending", "running"]))
+      .where(inArray(generationRecords.status, statuses))
       .run();
     return;
   }
 
+  const placeholders = statuses.map(() => "?").join(", ");
   await getMySqlPool().execute(
     `UPDATE generation_records
      SET status = ?, error = ?
-     WHERE status IN (?, ?)`,
-    ["failed", error, "pending", "running"]
+     WHERE status IN (${placeholders})`,
+    ["failed", error, ...statuses]
   );
 }
 

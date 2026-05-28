@@ -48,6 +48,7 @@ import {
   markInterruptedGenerationRecordsFailed as markInterruptedGenerationRecordsFailedInStore,
   readGenerationRecord,
   readGenerationRecordOwner,
+  updateGenerationRecordCompletion,
   updateGenerationRecordStatus as updateGenerationRecordStatusInStore
 } from "../storage/store.js";
 
@@ -169,10 +170,17 @@ export async function runReferenceImageGeneration(
 }
 
 export async function createRunningTextToImageGeneration(input: ImageProviderInput, user?: CurrentUser): Promise<GenerationRecord> {
-  return createRunningGenerationRecord({
+  return createGenerationRecord({
     ...input,
     mode: "generate"
-  }, user);
+  }, "running", user);
+}
+
+export async function createPendingTextToImageGeneration(input: ImageProviderInput, user?: CurrentUser): Promise<GenerationRecord> {
+  return createGenerationRecord({
+    ...input,
+    mode: "generate"
+  }, "pending", user);
 }
 
 export async function createRunningReferenceImageGeneration(
@@ -187,10 +195,30 @@ export async function createRunningReferenceImageGeneration(
   };
 
   return {
-    record: await createRunningGenerationRecord({
+    record: await createGenerationRecord({
       ...inputWithReferenceAssets,
       mode: "edit"
-    }, user),
+    }, "running", user),
+    input: inputWithReferenceAssets
+  };
+}
+
+export async function createPendingReferenceImageGeneration(
+  input: EditImageProviderInput,
+  user?: CurrentUser
+): Promise<{ record: GenerationRecord; input: EditImageProviderInput }> {
+  const referenceAssetIds = await ensureReferenceAssetIds(input, user);
+  const inputWithReferenceAssets: EditImageProviderInput = {
+    ...input,
+    referenceAssetIds,
+    referenceAssetId: referenceAssetIds[0]
+  };
+
+  return {
+    record: await createGenerationRecord({
+      ...inputWithReferenceAssets,
+      mode: "edit"
+    }, "pending", user),
     input: inputWithReferenceAssets
   };
 }
@@ -308,10 +336,25 @@ export async function failGenerationRecord(generationId: string, error: string, 
   return record;
 }
 
-export async function markInterruptedGenerationRecordsFailed(): Promise<void> {
-  await refundInterruptedGenerationCredits();
-  await markInterruptedGenerationRecordsFailedInStore(INTERRUPTED_GENERATION_ERROR);
-  await markInterruptedGenerationAuditsFailedSafely(INTERRUPTED_GENERATION_ERROR);
+export async function markGenerationRecordRunning(generationId: string, user?: CurrentUser): Promise<GenerationRecord | undefined> {
+  const existing = await readGenerationRecord(generationId, user);
+  if (!existing) {
+    return undefined;
+  }
+
+  if (isTerminalGenerationStatus(existing.status) || existing.status === "running") {
+    return existing;
+  }
+
+  await updateGenerationRecordCompletion(generationId, "running", null, existing.referenceAssetId ?? null);
+  return readGenerationRecord(generationId, user);
+}
+
+export async function markInterruptedGenerationRecordsFailed(options: { includePending?: boolean } = {}): Promise<void> {
+  const statuses: GenerationStatus[] = options.includePending === false ? ["running"] : ["pending", "running"];
+  await refundInterruptedGenerationCredits(statuses);
+  await markInterruptedGenerationRecordsFailedInStore(INTERRUPTED_GENERATION_ERROR, statuses);
+  await markInterruptedGenerationAuditsFailedSafely(INTERRUPTED_GENERATION_ERROR, statuses);
 }
 
 async function ensureReferenceAssetIds(input: EditImageProviderInput, user?: CurrentUser): Promise<string[]> {
@@ -685,7 +728,11 @@ async function readImageSize(bytes: Buffer): Promise<ImageSize | undefined> {
   }
 }
 
-async function createRunningGenerationRecord(input: PersistedGenerationInput, user?: CurrentUser): Promise<GenerationRecord> {
+async function createGenerationRecord(
+  input: PersistedGenerationInput,
+  status: Extract<GenerationStatus, "pending" | "running">,
+  user?: CurrentUser
+): Promise<GenerationRecord> {
   const createdAt = new Date().toISOString();
   const generationId = input.clientRequestId || randomUUID();
   await ensureGenerationIdAvailableForUser(generationId, user);
@@ -710,7 +757,7 @@ async function createRunningGenerationRecord(input: PersistedGenerationInput, us
       quality: input.quality,
       outputFormat: input.outputFormat,
       count: input.count,
-      status: "running",
+      status,
       error: null,
       referenceAssetId: primaryReferenceAssetId ?? null,
       createdAt
@@ -728,7 +775,7 @@ async function createRunningGenerationRecord(input: PersistedGenerationInput, us
     quality: input.quality,
     outputFormat: input.outputFormat,
     count: input.count,
-    status: "running",
+    status,
     referenceAssetIds: referenceAssetIds.length > 0 ? referenceAssetIds : undefined,
     referenceAssetId: primaryReferenceAssetId,
     createdAt,
@@ -878,9 +925,9 @@ async function updateGenerationAuditSafely(record: GenerationRecord, user?: Curr
   }
 }
 
-async function markInterruptedGenerationAuditsFailedSafely(errorMessage: string): Promise<void> {
+async function markInterruptedGenerationAuditsFailedSafely(errorMessage: string, statuses: GenerationStatus[]): Promise<void> {
   try {
-    await markInterruptedGenerationAuditsFailed(errorMessage);
+    await markInterruptedGenerationAuditsFailed(errorMessage, statuses);
   } catch (error) {
     console.warn(`Generation audit interruption update failed: ${errorToMessage(error)}`);
   }

@@ -301,8 +301,9 @@ interface ScheduledAgentGenerationInput {
 3. **generation-queue-worker** — 手动生成任务进入 Redis 队列，由 worker 消费输出任务。
    - 所属模块：generation-queue、generation-state-bridge
    - 依赖：`provider-global-semaphore`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done
+   - 对应 feature：`2026-05-28-generation-queue-worker`
+   - 备注：Redis 模式下手动生成已先创建 pending record 并入队，由 generation queue worker 消费；per-output job 与 retry 留给后续状态桥/重试 feature。
 4. **provider-retry-policy** — 增加 provider 可恢复错误分类、退避重试和最终失败记录。
    - 所属模块：retry-policy、generation-state-bridge
    - 依赖：`generation-queue-worker`

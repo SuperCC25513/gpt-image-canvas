@@ -1,12 +1,22 @@
 import { randomUUID } from "node:crypto";
-import type { GenerationRecord } from "../contracts.js";
+import { sizeToApiValue, type GenerationRecord, type ReferenceImageInput } from "../contracts.js";
 import type { CurrentUser } from "../contracts.js";
 import { recordGenerationAuditStart, type GenerationAuditRequestContext } from "../admin/audit-store.js";
 import { refundGenerationCreditsForFailures, reserveGenerationCredits } from "../credits/credit-store.js";
 import { createConfiguredImageProvider } from "../providers/image-provider-selection.js";
-import type { EditImageProviderInput, ImageProvider, ImageProviderInput } from "../../infrastructure/providers/image-provider.js";
+import { ProviderError, type EditImageProviderInput, type ImageProvider, type ImageProviderInput } from "../../infrastructure/providers/image-provider.js";
+import {
+  enqueueGenerationJob,
+  generationQueueUsesRedis,
+  removeGenerationJob,
+  startGenerationQueueWorker,
+  stopGenerationQueueWorker,
+  type GenerationQueueJob
+} from "./generation-queue.js";
 import {
   cancelGenerationRecord,
+  createPendingReferenceImageGeneration,
+  createPendingTextToImageGeneration,
   createRunningReferenceImageGeneration,
   createRunningTextToImageGeneration,
   ensureGenerationIdAvailableForUser,
@@ -14,7 +24,9 @@ import {
   finishReferenceImageGeneration,
   finishTextToImageGeneration,
   getGenerationRecord,
-  markInterruptedGenerationRecordsFailed
+  markGenerationRecordRunning,
+  markInterruptedGenerationRecordsFailed,
+  readStoredAsset
 } from "./image-generation.js";
 
 interface ActiveGenerationTask {
@@ -25,7 +37,17 @@ const activeGenerationTasks = new Map<string, ActiveGenerationTask>();
 
 export async function initializeGenerationTaskManager(): Promise<void> {
   activeGenerationTasks.clear();
+  if (generationQueueUsesRedis()) {
+    await markInterruptedGenerationRecordsFailed({ includePending: false });
+    startGenerationQueueWorker(processQueuedGenerationJob);
+    return;
+  }
+
   await markInterruptedGenerationRecordsFailed();
+}
+
+export async function shutdownGenerationTaskManager(): Promise<void> {
+  await stopGenerationQueueWorker();
 }
 
 export async function startTextToImageGenerationTask(
@@ -44,7 +66,9 @@ export async function startTextToImageGenerationTask(
 
   let record: GenerationRecord;
   try {
-    record = await createRunningTextToImageGeneration(inputWithRequestId, user);
+    record = generationQueueUsesRedis()
+      ? await createPendingTextToImageGeneration(inputWithRequestId, user)
+      : await createRunningTextToImageGeneration(inputWithRequestId, user);
   } catch (error) {
     await refundGenerationCreditsForFailures(generationId, input.count, input.count, user.id);
     throw error;
@@ -54,6 +78,16 @@ export async function startTextToImageGenerationTask(
     return record;
   }
   await recordGenerationAuditStartSafely(record, user, inputWithRequestId.isPublic === true, auditContext);
+
+  if (generationQueueUsesRedis()) {
+    try {
+      await enqueueGenerationTask(record, user, "generate", inputWithRequestId.isPublic === true);
+    } catch (error) {
+      await failGenerationRecord(record.id, errorToMessage(error), user);
+      throw error;
+    }
+    return record;
+  }
 
   startBackgroundGenerationTask(record.id, user, async (signal) => {
     const provider = await createConfiguredImageProvider(signal);
@@ -79,7 +113,9 @@ export async function startReferenceImageGenerationTask(
 
   let running: Awaited<ReturnType<typeof createRunningReferenceImageGeneration>>;
   try {
-    running = await createRunningReferenceImageGeneration(inputWithRequestId, user);
+    running = generationQueueUsesRedis()
+      ? await createPendingReferenceImageGeneration(inputWithRequestId, user)
+      : await createRunningReferenceImageGeneration(inputWithRequestId, user);
   } catch (error) {
     await refundGenerationCreditsForFailures(generationId, input.count, input.count, user.id);
     throw error;
@@ -89,6 +125,16 @@ export async function startReferenceImageGenerationTask(
     return running.record;
   }
   await recordGenerationAuditStartSafely(running.record, user, inputWithRequestId.isPublic === true, auditContext);
+
+  if (generationQueueUsesRedis()) {
+    try {
+      await enqueueGenerationTask(running.record, user, "edit", inputWithRequestId.isPublic === true);
+    } catch (error) {
+      await failGenerationRecord(running.record.id, errorToMessage(error), user);
+      throw error;
+    }
+    return running.record;
+  }
 
   startBackgroundGenerationTask(running.record.id, user, async (signal) => {
     const provider = await createConfiguredImageProvider(signal);
@@ -109,7 +155,11 @@ export async function cancelGenerationTask(generationId: string, user: CurrentUs
   }
 
   activeGenerationTasks.get(generationId)?.controller.abort();
-  return cancelGenerationRecord(generationId, user);
+  const cancelled = await cancelGenerationRecord(generationId, user);
+  if (cancelled?.status === "cancelled") {
+    await removeGenerationJob(generationId);
+  }
+  return cancelled;
 }
 
 export async function runTextToImageGenerationTask(
@@ -214,6 +264,108 @@ function startBackgroundGenerationTask(generationId: string, user: CurrentUser, 
       }
     }
   })();
+}
+
+async function enqueueGenerationTask(
+  record: GenerationRecord,
+  user: CurrentUser,
+  mode: GenerationQueueJob["mode"],
+  isPublic: boolean
+): Promise<void> {
+  if (record.status !== "pending") {
+    return;
+  }
+
+  await enqueueGenerationJob({
+    jobId: randomUUID(),
+    generationId: record.id,
+    userId: user.id,
+    mode,
+    isPublic,
+    attempt: 1,
+    maxAttempts: 1,
+    enqueuedAt: new Date().toISOString()
+  });
+}
+
+async function processQueuedGenerationJob(job: GenerationQueueJob, workerSignal: AbortSignal): Promise<void> {
+  const existing = await getGenerationRecord(job.generationId);
+  if (!existing || isTerminalGenerationStatus(existing.status)) {
+    return;
+  }
+
+  const controller = new AbortController();
+  const abortFromWorker = (): void => controller.abort();
+  workerSignal.addEventListener("abort", abortFromWorker, { once: true });
+  activeGenerationTasks.set(job.generationId, { controller });
+
+  try {
+    const runningRecord = await markGenerationRecordRunning(job.generationId);
+    if (!runningRecord || isTerminalGenerationStatus(runningRecord.status)) {
+      return;
+    }
+
+    const provider = await createConfiguredImageProvider(controller.signal);
+    if (job.mode === "edit") {
+      const input = await editInputFromRecord(runningRecord, job.isPublic);
+      await finishReferenceImageGeneration(runningRecord.id, input, provider, controller.signal);
+    } else {
+      await finishTextToImageGeneration(runningRecord.id, textInputFromRecord(runningRecord, job.isPublic), provider, controller.signal);
+    }
+  } catch (error) {
+    if (workerSignal.aborted) {
+      return;
+    }
+    if (controller.signal.aborted) {
+      await cancelGenerationRecord(job.generationId);
+    } else {
+      await failGenerationRecord(job.generationId, errorToMessage(error));
+    }
+  } finally {
+    workerSignal.removeEventListener("abort", abortFromWorker);
+    const activeTask = activeGenerationTasks.get(job.generationId);
+    if (activeTask?.controller === controller) {
+      activeGenerationTasks.delete(job.generationId);
+    }
+  }
+}
+
+function textInputFromRecord(record: GenerationRecord, isPublic: boolean): ImageProviderInput {
+  return {
+    originalPrompt: record.prompt,
+    clientRequestId: record.id,
+    presetId: record.presetId,
+    prompt: record.effectivePrompt,
+    size: record.size,
+    sizeApiValue: sizeToApiValue(record.size),
+    quality: record.quality,
+    outputFormat: record.outputFormat,
+    count: record.count,
+    isPublic
+  };
+}
+
+async function editInputFromRecord(record: GenerationRecord, isPublic: boolean): Promise<EditImageProviderInput> {
+  const referenceAssetIds = record.referenceAssetIds ?? (record.referenceAssetId ? [record.referenceAssetId] : []);
+  const referenceImages: ReferenceImageInput[] = [];
+
+  for (const assetId of referenceAssetIds) {
+    const stored = await readStoredAsset(assetId);
+    if (!stored) {
+      throw new ProviderError("unsupported_provider_behavior", "参考图像资产无法读取。", 400);
+    }
+    referenceImages.push({
+      dataUrl: `data:${stored.file.mimeType};base64,${stored.bytes.toString("base64")}`,
+      fileName: stored.file.fileName
+    });
+  }
+
+  return {
+    ...textInputFromRecord(record, isPublic),
+    referenceImages,
+    referenceAssetIds,
+    referenceAssetId: referenceAssetIds[0]
+  };
 }
 
 async function recordGenerationAuditStartSafely(

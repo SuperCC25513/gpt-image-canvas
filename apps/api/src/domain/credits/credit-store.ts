@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import type {
   CheckinResponse,
@@ -7,7 +7,8 @@ import type {
   CreditTransaction,
   CreditTransactionListResponse,
   CreditTransactionReason,
-  CurrentUser
+  CurrentUser,
+  GenerationStatus
 } from "../contracts.js";
 import {
   DEFAULT_CHECKIN_CREDIT,
@@ -555,18 +556,18 @@ export async function refundGenerationCreditsForFailures(
   }
 }
 
-export async function refundInterruptedGenerationCredits(): Promise<void> {
+export async function refundInterruptedGenerationCredits(statuses: GenerationStatus[] = ["pending", "running"]): Promise<void> {
   const rows =
     databaseDriver === "sqlite"
       ? db
           .select({ id: generationRecords.id, count: generationRecords.count })
           .from(generationRecords)
-          .where(sql`${generationRecords.status} IN ('pending', 'running')`)
+          .where(inArray(generationRecords.status, statuses))
           .all()
       : await getMySqlPool()
           .execute<Array<RowDataPacket & { id: string; count: number }>>(
-            "SELECT id, count FROM generation_records WHERE status IN (?, ?)",
-            ["pending", "running"]
+            `SELECT id, count FROM generation_records WHERE status IN (${statuses.map(() => "?").join(", ")})`,
+            statuses
           )
           .then(([items]) => items);
 

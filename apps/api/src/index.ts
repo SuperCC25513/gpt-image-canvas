@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { serve } from "@hono/node-server";
 import { closeAllAgentSessions } from "./domain/agent/websocket-session.js";
+import { shutdownGenerationTaskManager } from "./domain/generation/generation-tasks.js";
 import { closeDatabase } from "./infrastructure/database.js";
 import { closeRedisClient } from "./infrastructure/redis-runtime.js";
 import { serverConfig } from "./infrastructure/runtime.js";
@@ -34,7 +35,7 @@ if (isMainModule()) {
     shuttingDown = true;
     closeAllAgentSessions("server_shutdown");
     agentWebSocketServer.close();
-    void Promise.allSettled([closeRedisClient(), closeDatabase()]).finally(() => {
+    void Promise.allSettled([shutdownGenerationTaskManager(), closeRedisClient(), closeDatabase()]).finally(() => {
       server.close();
     });
   };

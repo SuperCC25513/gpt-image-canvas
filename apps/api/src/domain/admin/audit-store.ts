@@ -154,10 +154,12 @@ export async function updateGenerationAuditFromRecord(record: GenerationRecord, 
   );
 }
 
-export async function markInterruptedGenerationAuditsFailed(error: string): Promise<void> {
+export async function markInterruptedGenerationAuditsFailed(
+  error: string,
+  statuses: GenerationStatus[] = ["pending", "running"]
+): Promise<void> {
   const updatedAt = nowIso();
   const errorSummary = sanitizeAuditError(error);
-  const runningStatuses: GenerationStatus[] = ["pending", "running"];
 
   if (databaseDriver === "sqlite") {
     db.update(generationAudits)
@@ -166,18 +168,19 @@ export async function markInterruptedGenerationAuditsFailed(error: string): Prom
         errorSummary,
         updatedAt
       })
-      .where(inArray(generationAudits.status, runningStatuses))
+      .where(inArray(generationAudits.status, statuses))
       .run();
     return;
   }
 
+  const placeholders = statuses.map(() => "?").join(", ");
   await getMySqlPool().execute(
     `UPDATE generation_audits
      SET status = ?,
          error_summary = ?,
          updated_at = ?
-     WHERE status IN (?, ?)`,
-    ["failed", errorSummary, updatedAt, "pending", "running"]
+     WHERE status IN (${placeholders})`,
+    ["failed", errorSummary, updatedAt, ...statuses]
   );
 }
 

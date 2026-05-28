@@ -72,6 +72,8 @@ The local unauthenticated Redis default is only suitable for localhost or the pr
 
 Provider scheduler Redis permit keys must not contain prompts, API keys, reference image bytes, generation records, audit payloads, credit transaction data, or user-provided identifiers. Store only short-lived random permit ids and expiry scores.
 
+Generation queue Redis jobs must not contain prompts, API keys, reference image bytes, provider credentials, audit payloads, credit transaction data, or complete generation records. Store only routing metadata such as generation id, user id, mode, visibility flag, attempt counters, and enqueue time; the worker must reload generation facts and reference assets from the database/storage boundary.
+
 ## Review Checklist
 
 - Are all user inputs validated before storage or provider calls?

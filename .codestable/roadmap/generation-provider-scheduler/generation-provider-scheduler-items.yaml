@@ -21,10 +21,10 @@ items:
   - slug: generation-queue-worker
     description: 手动生成任务进入 Redis 队列，由 worker 消费输出任务
     depends_on: [provider-global-semaphore]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-28-generation-queue-worker
     minimal_loop: false
-    notes: null
+    notes: "Redis 模式下手动生成已先创建 pending record 并入队，由 generation queue worker 消费；per-output job 与 retry 留给后续状态桥/重试 feature"
 
   - slug: provider-retry-policy
     description: 增加 provider 可恢复错误分类、退避重试和最终失败记录

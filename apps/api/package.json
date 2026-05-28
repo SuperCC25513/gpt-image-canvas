@@ -11,6 +11,7 @@
     "db:generate": "drizzle-kit generate",
     "smoke:agent": "tsx src/smoke/agent-smoke.ts",
     "smoke:executor": "tsx src/smoke/agent-executor-smoke.ts",
+    "smoke:generation-queue": "tsx src/smoke/generation-queue-smoke.ts",
     "smoke:planner": "tsx src/smoke/agent-planner-smoke.ts",
     "smoke:provider-scheduler": "tsx src/smoke/provider-scheduler-smoke.ts",
     "smoke:redis-runtime": "tsx src/smoke/redis-runtime-smoke.ts",

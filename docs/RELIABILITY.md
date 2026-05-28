@@ -20,6 +20,8 @@ Redis stores runtime coordination state such as future queues, locks, attempts, 
 
 All `provider.generate` and `provider.edit` calls must go through the provider scheduler. `GENERATION_QUEUE_DRIVER=inline` uses an in-process semaphore for tests/debugging only; it does not provide cross-process global concurrency.
 
+`GENERATION_QUEUE_WORKER_CONCURRENCY` controls how many manual generation jobs each API process consumes from Redis at once. The default is `2`. `GENERATION_QUEUE_POLL_INTERVAL_MS` controls the ready-queue polling interval; the default is `250` ms. These worker settings are not provider API concurrency limits; provider calls are still capped by `GENERATION_PROVIDER_GLOBAL_CONCURRENCY`.
+
 ## Persistence
 
 `DATA_DIR` defaults to `./data` locally and `/app/data` in Docker. In SQLite mode it contains SQLite state, generated assets, and previews. In MySQL + OSS mode, MySQL stores metadata and OSS stores generated asset bytes; `DATA_DIR` may still hold local runtime files. Treat all of it as private runtime data.
@@ -57,6 +59,7 @@ Provider errors should become stable API errors where possible. Avoid exposing r
 - Reference image inputs are size and MIME checked.
 - Batch generation uses bounded concurrency.
 - Provider API calls are additionally guarded by the global provider scheduler, so multiple concurrent generation tasks cannot multiply the upstream provider concurrency beyond `GENERATION_PROVIDER_GLOBAL_CONCURRENCY`.
+- In Redis mode, manual image generation enters the generation queue first; the HTTP route returns after creating a pending generation record and enqueueing a Redis job.
 - Individual output failures should be represented in output status instead of erasing the whole record when partial results exist.
 - 生成图片成功后必须能从当前资产存储读取；本地或 OSS 写入失败时不能记录成成功资产。
 - 生成前先按 `count * generation_credit_cost` 预扣积分。全部失败按本次输出数退款，部分失败只退失败输出对应积分；退款流水按 generation id 保持幂等。
