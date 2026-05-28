@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="CC favicon">
+  <rect width="64" height="64" rx="14" fill="#0f172a"/>
+  <rect x="2" y="2" width="60" height="60" rx="12" fill="none" stroke="#334155" stroke-width="2"/>
+  <path
+    d="M30.5 21.5C27.8 18.9 24.2 17.5 20.2 17.5C12.2 17.5 5.8 24 5.8 32C5.8 40 12.2 46.5 20.2 46.5C24.2 46.5 27.8 45.1 30.5 42.5"
+    fill="none"
+    stroke="#2dd4bf"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M54.2 21.5C51.5 18.9 47.9 17.5 43.9 17.5C35.9 17.5 29.5 24 29.5 32C29.5 40 35.9 46.5 43.9 46.5C47.9 46.5 51.5 45.1 54.2 42.5"
+    fill="none"
+    stroke="#f8fafc"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <circle cx="32" cy="32" r="3" fill="#bef264"/>
+</svg>

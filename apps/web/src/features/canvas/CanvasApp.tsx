@@ -2545,7 +2545,7 @@ function showGenerationCompleteNotification(record: GenerationRecord, insertedCo
 
   new Notification(isPartial ? t("generationNotificationPartialTitle") : t("generationNotificationTitle"), {
     body,
-    icon: "/favicon.png",
+    icon: "/icon-192.png",
     tag: `generation-${record.id}`
   });
 }
