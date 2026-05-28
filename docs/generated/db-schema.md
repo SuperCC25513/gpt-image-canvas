@@ -63,6 +63,7 @@ Stores minimal registration settings.
 | `generation_credit_cost` | integer | Required credits charged per requested output; defaults to `1`. |
 | `checkin_credit` | integer | Required daily check-in reward; defaults to `1`. |
 | `max_images_per_request` | integer | Required per-request generation count limit; defaults to `16`. |
+| `allowed_registration_email_domains_json` | text | Optional JSON array of email domains allowed for self-service registration; `NULL` falls back to the default allowlist. |
 | `created_at` | text | Required ISO timestamp. |
 | `updated_at` | text | Required ISO timestamp. |
 

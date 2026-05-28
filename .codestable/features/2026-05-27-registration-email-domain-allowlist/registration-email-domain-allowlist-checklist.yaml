@@ -1,0 +1,78 @@
+feature: 2026-05-27-registration-email-domain-allowlist
+created: "2026-05-27"
+
+steps:
+  - action: "名词契约：扩展 shared auth/admin 类型、默认域名常量和错误码"
+    exit_signal: "shared typecheck 通过，前后端能引用同一字段名"
+    status: done
+  - action: "持久化骨架：给 SQLite/MySQL 的 app_settings 增加 JSON 字段和默认/迁移填充值"
+    exit_signal: "新库初始化和旧库 ensureColumn 后都能读出默认白名单；MySQL 不依赖 TEXT DEFAULT"
+    status: done
+  - action: "后端计算节点：实现域名列表规范化、设置读写归一化、注册时域名匹配"
+    exit_signal: "支持域名注册继续原流程，不支持域名在创建用户前失败"
+    status: done
+  - action: "API 校验与错误语义：扩展 admin settings payload 校验和 auth 错误码映射"
+    exit_signal: "无效白名单 PATCH 返回 invalid_admin_settings，不支持注册域名返回 email_domain_not_allowed"
+    status: done
+  - action: "前端后台设置：系统设置页增加域名列表编辑控件，保存后回显规范化结果"
+    exit_signal: "管理员可添加、删除、粘贴多行域名并保存"
+    status: done
+  - action: "前端注册反馈：注册页展示支持域名提示，错误码本地化"
+    exit_signal: "注册页能看到支持域名，不支持域名失败文案明确"
+    status: done
+  - action: "验证：补充可执行检查和浏览器验证"
+    exit_signal: "pnpm typecheck、pnpm build 通过；后台设置和注册失败路径浏览器可见"
+    status: done
+
+checks:
+  - item: "AuthSettings 和 AdminSettings 暴露 allowedRegistrationEmailDomains: string[]"
+    source: 名词契约
+    status: passed
+  - item: "app_settings 持久化 allowed_registration_email_domains_json，旧库缺失或解析失败时回退默认 7 项"
+    source: 名词契约
+    status: passed
+  - item: "注册域名不支持时返回 403 + email_domain_not_allowed"
+    source: 流程级约束
+    status: passed
+  - item: "无效白名单 PATCH 返回 400 + invalid_admin_settings，原设置不被破坏"
+    source: 流程级约束
+    status: passed
+  - item: "域名检查发生在邮箱查重之前，避免暴露不支持域名邮箱是否已注册"
+    source: 编排骨架
+    status: passed
+  - item: "数据库设置字段 app_settings.allowed_registration_email_domains_json 已接入"
+    source: 挂载点
+    status: passed
+  - item: "共享契约字段 AuthSettings/AdminSettings.allowedRegistrationEmailDomains 已接入"
+    source: 挂载点
+    status: passed
+  - item: "registerUser 读取设置后执行邮箱域名白名单检查"
+    source: 挂载点
+    status: passed
+  - item: "/api/admin/settings GET/PATCH 支持白名单数组"
+    source: 挂载点
+    status: passed
+  - item: "后台系统设置页新增邮箱后缀列表编辑控件"
+    source: 挂载点
+    status: passed
+  - item: "注册页展示支持域名提示，API 错误码映射本地化文案"
+    source: 挂载点
+    status: passed
+  - item: "不影响已有用户登录、管理员账号 bootstrap、Codex OAuth、provider 账号邮箱"
+    source: 范围守护
+    status: passed
+  - item: "不新增邮箱验证码、MX 查询、一次性邮箱检测或企业域名自动审批"
+    source: 范围守护
+    status: passed
+  - item: "不支持通配符、正则、子域继承"
+    source: 范围守护
+    status: passed
+  - item: "管理员显式保存空白名单时，任意格式合法邮箱仍可注册"
+    source: 验收场景
+    status: passed
+  - item: "allowRegistration=false 时，不管邮箱域名是否支持，都返回 registration_disabled"
+    source: 验收场景
+    status: passed
+  - item: "旧库缺失 allowed_registration_email_domains_json 或字段值无法解析时，/api/auth/me 和注册校验都按默认 7 项列表执行"
+    source: 验收场景
+    status: passed

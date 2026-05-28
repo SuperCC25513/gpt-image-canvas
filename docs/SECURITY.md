@@ -8,6 +8,8 @@
 
 The app now requires local account sign-in before creative, Gallery, asset, provider, Agent, and prompt-favorite APIs can be used. This is a local-workstation auth boundary, not a complete public-internet hardening layer; do not expose the app publicly without additional network controls, TLS, operational monitoring, and a reviewed deployment model.
 
+自助注册邮箱后缀支持列表只限制新用户通过注册页创建本地账号，不影响已有用户登录、管理员账号 bootstrap、Codex OAuth 或提供方账号邮箱。管理员显式保存空列表表示不限制邮箱域名；`allowRegistration=false` 仍会关闭全部自助注册。设置缺失、`NULL` 或无法解析时按默认支持列表执行，避免坏数据把注册入口意外放开。
+
 ## Secrets
 
 Secrets may come from:
