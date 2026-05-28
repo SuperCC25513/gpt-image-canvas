@@ -34,6 +34,7 @@ export type AgentSkillErrorCode =
   | "agent_skill_invalid_file"
   | "agent_skill_not_found"
   | "agent_skill_required"
+  | "agent_skill_unsupported_storage"
   | "invalid_agent_skill";
 
 export interface AgentSkillFile {

@@ -314,6 +314,10 @@ async function smokeAgentGenerationBusinessRules(
   );
   expect(ownerRecord.status === "succeeded", "owner fixture generation succeeds");
   const ownerCreditsAfterGeneration = readUserCredits(db, ownerUser.id);
+  const cancelledSucceededRecord = await generationTasks.cancelGenerationTask(ownerRecord.id, ownerUser);
+  expect(cancelledSucceededRecord?.status === "succeeded", "cancelling a succeeded generation leaves status unchanged");
+  expect(readUserCredits(db, ownerUser.id) === ownerCreditsAfterGeneration, "cancelling a succeeded generation does not refund credits");
+  expect(countCreditTransactions(db, ownerUser.id, "generation_refund") === 0, "cancelling a succeeded generation writes no refund");
   const otherProvider = new FakeImageProvider();
   let conflictCode = "";
   try {

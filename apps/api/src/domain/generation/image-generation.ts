@@ -253,8 +253,16 @@ export async function ensureGenerationIdAvailableForUser(generationId: string, u
 }
 
 export async function cancelGenerationRecord(generationId: string, user?: CurrentUser): Promise<GenerationRecord | undefined> {
+  const owner = await readGenerationRecordOwner(generationId);
+  if (!owner || (user && owner.userId !== user.id && user.role !== "admin")) {
+    return undefined;
+  }
+  if (isTerminalGenerationStatus(owner.status)) {
+    return readGenerationRecord(generationId, user);
+  }
+
   const record = await updateGenerationRecordStatus(generationId, "cancelled", CANCELLED_GENERATION_ERROR, user);
-  if (record) {
+  if (record?.status === "cancelled") {
     await refundGenerationCreditsForFailures(generationId, record.count, record.count, user?.id);
     await updateGenerationAuditSafely(record);
   }
@@ -262,8 +270,16 @@ export async function cancelGenerationRecord(generationId: string, user?: Curren
 }
 
 export async function failGenerationRecord(generationId: string, error: string, user?: CurrentUser): Promise<GenerationRecord | undefined> {
+  const owner = await readGenerationRecordOwner(generationId);
+  if (!owner || (user && owner.userId !== user.id && user.role !== "admin")) {
+    return undefined;
+  }
+  if (isTerminalGenerationStatus(owner.status)) {
+    return readGenerationRecord(generationId, user);
+  }
+
   const record = await updateGenerationRecordStatus(generationId, "failed", sanitizeGenerationErrorMessage(error), user);
-  if (record) {
+  if (record?.status === "failed") {
     await refundGenerationCreditsForFailures(generationId, record.count, record.count, user?.id);
     await updateGenerationAuditSafely(record);
   }

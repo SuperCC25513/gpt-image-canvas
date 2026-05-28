@@ -111,7 +111,7 @@ export interface StoredGenerationOutputInput {
 export interface GenerationRecordOwner {
   id: string;
   userId: string | null;
-  status: string;
+  status: GenerationStatus;
   count: number;
 }
 
@@ -1136,7 +1136,7 @@ export async function readGenerationRecordOwner(generationId: string): Promise<G
     ? {
         id: record.id,
         userId: record.userId,
-        status: record.status,
+        status: record.status as GenerationStatus,
         count: record.count
       }
     : undefined;

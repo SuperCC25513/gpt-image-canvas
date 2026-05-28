@@ -4,6 +4,7 @@ import {
   createAgentSkill,
   getAgentSkill,
   importAgentSkillFromUpload,
+  isAgentSkillStorageWritable,
   listAgentSkills,
   saveAgentSkill
 } from "../../domain/agent/skill-store.js";
@@ -41,6 +42,9 @@ export function registerAgentSkillRoutes(app: Hono): void {
     if (!auth.ok) {
       return auth.response;
     }
+    if (!isAgentSkillStorageWritable()) {
+      return c.json(errorResponse("agent_skill_unsupported_storage", "Agent skill editing is not supported in MySQL mode."), 501);
+    }
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
@@ -59,6 +63,9 @@ export function registerAgentSkillRoutes(app: Hono): void {
     if (!auth.ok) {
       return auth.response;
     }
+    if (!isAgentSkillStorageWritable()) {
+      return c.json(errorResponse("agent_skill_unsupported_storage", "Agent skill editing is not supported in MySQL mode."), 501);
+    }
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
@@ -76,6 +83,9 @@ export function registerAgentSkillRoutes(app: Hono): void {
     const auth = await requireAuth(c);
     if (!auth.ok) {
       return auth.response;
+    }
+    if (!isAgentSkillStorageWritable()) {
+      return c.json(errorResponse("agent_skill_unsupported_storage", "Agent skill editing is not supported in MySQL mode."), 501);
     }
 
     const contentType = c.req.header("content-type")?.toLowerCase() ?? "";
@@ -136,6 +146,9 @@ function agentSkillHttpStatus(code: string): number {
 
   if (code === "unsupported_media_type") {
     return 415;
+  }
+  if (code === "agent_skill_unsupported_storage") {
+    return 501;
   }
 
   return 400;

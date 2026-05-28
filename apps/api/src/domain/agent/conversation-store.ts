@@ -9,7 +9,7 @@ import {
   type CurrentUser,
   type GenerationPlan
 } from "../contracts.js";
-import { db } from "../../infrastructure/database.js";
+import { databaseDriver, db } from "../../infrastructure/database.js";
 import { agentConversations } from "../../infrastructure/schema.js";
 
 const AGENT_CONVERSATION_HISTORY_LIMIT = 20;
@@ -32,7 +32,15 @@ const emptyContext: AgentConversationContextSnapshot = {
   previousOutputs: []
 };
 
+export function isAgentConversationStorageAvailable(): boolean {
+  return databaseDriver === "sqlite";
+}
+
 export function getAgentConversationSummaries(user?: CurrentUser): AgentConversationSummary[] {
+  if (!isAgentConversationStorageAvailable()) {
+    return [];
+  }
+
   const userId = conversationUserId(user);
   return db
     .select()
@@ -47,11 +55,19 @@ export function getAgentConversationSummaries(user?: CurrentUser): AgentConversa
 }
 
 export function getAgentConversation(conversationId: string, user?: CurrentUser): AgentConversation | undefined {
+  if (!isAgentConversationStorageAvailable()) {
+    return undefined;
+  }
+
   const row = getAgentConversationRow(conversationId, conversationUserId(user));
   return row ? toAgentConversation(row) : undefined;
 }
 
 export function getAgentConversationContext(conversationId: string | undefined, user?: CurrentUser): AgentConversationContextSnapshot | undefined {
+  if (!isAgentConversationStorageAvailable()) {
+    return undefined;
+  }
+
   const id = normalizeConversationId(conversationId);
   if (!id) {
     return undefined;
@@ -66,6 +82,10 @@ export function saveAgentConversation(input: {
   title?: string;
   messages: AgentConversationMessage[];
 }, user?: CurrentUser): AgentConversation {
+  if (!isAgentConversationStorageAvailable()) {
+    throw new Error("Agent conversation storage is not supported in MySQL mode.");
+  }
+
   const id = normalizeConversationId(input.id);
   if (!id) {
     throw new Error("Agent conversation id is required.");
@@ -118,6 +138,10 @@ export function saveAgentConversationContext(
   context: AgentConversationContextSnapshot | undefined,
   user?: CurrentUser
 ): void {
+  if (!isAgentConversationStorageAvailable()) {
+    return;
+  }
+
   const id = normalizeConversationId(conversationId);
   if (!id || !context) {
     return;

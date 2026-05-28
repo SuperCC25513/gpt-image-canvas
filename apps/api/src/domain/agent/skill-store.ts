@@ -19,7 +19,7 @@ import type {
   SaveAgentSkillRequest,
   SaveAgentSkillResponse
 } from "../contracts.js";
-import { db } from "../../infrastructure/database.js";
+import { databaseDriver, db } from "../../infrastructure/database.js";
 import { agentSkills } from "../../infrastructure/schema.js";
 
 const MAX_SKILL_UPLOAD_BYTES = 2 * 1024 * 1024;
@@ -67,7 +67,17 @@ export class AgentSkillError extends Error {
   }
 }
 
+export function isAgentSkillStorageWritable(): boolean {
+  return databaseDriver === "sqlite";
+}
+
 export function listAgentSkills(): AgentSkillListResponse {
+  if (!isAgentSkillStorageWritable()) {
+    return {
+      skills: builtInSkillDefinitions().map(toBuiltInAgentSkillSummary)
+    };
+  }
+
   ensureBuiltInAgentSkills();
   return {
     skills: db
@@ -80,12 +90,17 @@ export function listAgentSkills(): AgentSkillListResponse {
 }
 
 export function getAgentSkill(idOrSlug: string): AgentSkillDetail | undefined {
+  if (!isAgentSkillStorageWritable()) {
+    return getBuiltInAgentSkill(idOrSlug);
+  }
+
   ensureBuiltInAgentSkills();
   const row = getAgentSkillRow(idOrSlug);
   return row ? toAgentSkillDetail(row) : undefined;
 }
 
 export function createAgentSkill(input: SaveAgentSkillRequest): SaveAgentSkillResponse {
+  ensureAgentSkillStorageWritable();
   ensureBuiltInAgentSkills();
   const now = new Date().toISOString();
   const normalized = normalizeSaveInput(input, undefined);
@@ -114,6 +129,7 @@ export function createAgentSkill(input: SaveAgentSkillRequest): SaveAgentSkillRe
 }
 
 export function saveAgentSkill(idOrSlug: string, input: SaveAgentSkillRequest): SaveAgentSkillResponse {
+  ensureAgentSkillStorageWritable();
   ensureBuiltInAgentSkills();
   const existing = getRequiredAgentSkillRow(idOrSlug);
 
@@ -153,6 +169,7 @@ export function saveAgentSkill(idOrSlug: string, input: SaveAgentSkillRequest): 
 }
 
 export function importAgentSkillFromUpload(input: ImportUploadInput): ImportAgentSkillResponse {
+  ensureAgentSkillStorageWritable();
   ensureBuiltInAgentSkills();
   if (input.bytes.byteLength > MAX_SKILL_UPLOAD_BYTES) {
     throw new AgentSkillError("agent_skill_import_failed", "Agent skill upload is too large.");
@@ -178,6 +195,18 @@ export function importAgentSkillFromUpload(input: ImportUploadInput): ImportAgen
 }
 
 export function resolvePlanningSkillLoadoutForRequest(userText: string): PlanningSkillLoadout {
+  if (!isAgentSkillStorageWritable()) {
+    return {
+      skills: builtInSkillDefinitions().flatMap((definition) => {
+        if (definition.required || (definition.enabled && (definition.triggerMode === "always" || shouldTriggerBuiltInSkill(definition, userText)))) {
+          return [toBuiltInPlanningSkill(definition)];
+        }
+
+        return [];
+      })
+    };
+  }
+
   ensureBuiltInAgentSkills();
   const rows = db.select().from(agentSkills).orderBy(desc(agentSkills.required), desc(agentSkills.builtIn), asc(agentSkills.name)).all();
   const skills = rows.flatMap((row) => {
@@ -197,6 +226,12 @@ export function resolvePlanningSkillLoadoutForRequest(userText: string): Plannin
   });
 
   return { skills };
+}
+
+function ensureAgentSkillStorageWritable(): void {
+  if (!isAgentSkillStorageWritable()) {
+    throw new AgentSkillError("agent_skill_unsupported_storage", "Agent skill editing is not supported in MySQL mode.");
+  }
 }
 
 export function ensureBuiltInAgentSkills(): void {
@@ -463,6 +498,20 @@ function toPlanningSkill(row: AgentSkillRow): PlanningSkillLoadoutSkill {
   };
 }
 
+function toBuiltInPlanningSkill(definition: BuiltInAgentSkillDefinition): PlanningSkillLoadoutSkill {
+  return {
+    slug: definition.slug,
+    name: definition.name,
+    version: normalizedText(definition.version),
+    required: definition.required,
+    triggerMode: normalizeTriggerMode(definition.triggerMode),
+    files: filesToList(definition.files).map((file) => ({
+      path: `/skills/${definition.slug}/${file.path}`,
+      content: file.content
+    }))
+  };
+}
+
 function shouldTriggerSkill(row: AgentSkillRow, userText: string): boolean {
   if (row.slug === "ecommerce-visual-copywriting" && hasEcommercePlanningIntent(userText)) {
     return true;
@@ -474,6 +523,19 @@ function shouldTriggerSkill(row: AgentSkillRow, userText: string): boolean {
   }
 
   return parseKeywordsJson(row.triggerKeywordsJson).some((keyword) => text.includes(keyword.toLowerCase()));
+}
+
+function shouldTriggerBuiltInSkill(definition: BuiltInAgentSkillDefinition, userText: string): boolean {
+  if (definition.slug === "ecommerce-visual-copywriting" && hasEcommercePlanningIntent(userText)) {
+    return true;
+  }
+
+  const text = userText.trim().toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  return definition.triggerKeywords.some((keyword) => text.includes(keyword.toLowerCase()));
 }
 
 function toAgentSkillSummary(row: AgentSkillRow): AgentSkillSummary {
@@ -497,11 +559,46 @@ function toAgentSkillSummary(row: AgentSkillRow): AgentSkillSummary {
   };
 }
 
+function toBuiltInAgentSkillSummary(definition: BuiltInAgentSkillDefinition): AgentSkillSummary {
+  return {
+    id: `agent-skill-${definition.slug}`,
+    slug: definition.slug,
+    name: definition.name,
+    description: definition.description,
+    version: normalizedText(definition.version),
+    source: normalizedText(definition.source),
+    enabled: definition.enabled,
+    builtIn: true,
+    required: definition.required,
+    triggerMode: normalizeTriggerMode(definition.triggerMode),
+    triggerKeywords: definition.triggerKeywords,
+    fileCount: Object.keys(definition.files).length,
+    hasLocalChanges: false,
+    createdAt: "",
+    updatedAt: ""
+  };
+}
+
 function toAgentSkillDetail(row: AgentSkillRow): AgentSkillDetail {
   return {
     ...toAgentSkillSummary(row),
     files: filesToList(parseFilesJson(row.filesJson))
   };
+}
+
+function getBuiltInAgentSkill(idOrSlug: string): AgentSkillDetail | undefined {
+  const trimmed = idOrSlug.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  const definition = builtInSkillDefinitions().find((item) => item.slug === trimmed || `agent-skill-${item.slug}` === trimmed);
+  return definition
+    ? {
+        ...toBuiltInAgentSkillSummary(definition),
+        files: filesToList(definition.files)
+      }
+    : undefined;
 }
 
 function hasLocalChanges(row: AgentSkillRow): boolean {

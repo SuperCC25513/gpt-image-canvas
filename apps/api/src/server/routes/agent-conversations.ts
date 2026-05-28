@@ -3,6 +3,7 @@ import type { AgentConversationMessage, SaveAgentConversationRequest } from "../
 import {
   getAgentConversation,
   getAgentConversationSummaries,
+  isAgentConversationStorageAvailable,
   saveAgentConversation
 } from "../../domain/agent/conversation-store.js";
 import { requireAuth } from "../http/auth.js";
@@ -17,6 +18,9 @@ export function registerAgentConversationRoutes(app: Hono): void {
     if (!auth.ok) {
       return auth.response;
     }
+    if (!isAgentConversationStorageAvailable()) {
+      return c.json(agentConversationStorageUnavailable(), 501);
+    }
 
     return c.json({ conversations: getAgentConversationSummaries(auth.user) });
   });
@@ -25,6 +29,9 @@ export function registerAgentConversationRoutes(app: Hono): void {
     const auth = await requireAuth(c);
     if (!auth.ok) {
       return auth.response;
+    }
+    if (!isAgentConversationStorageAvailable()) {
+      return c.json(agentConversationStorageUnavailable(), 501);
     }
 
     const conversation = getAgentConversation(c.req.param("id"), auth.user);
@@ -39,6 +46,9 @@ export function registerAgentConversationRoutes(app: Hono): void {
     const auth = await requireAuth(c);
     if (!auth.ok) {
       return auth.response;
+    }
+    if (!isAgentConversationStorageAvailable()) {
+      return c.json(agentConversationStorageUnavailable(), 501);
     }
 
     const payload = await readJson(c.req.raw);
@@ -57,6 +67,10 @@ export function registerAgentConversationRoutes(app: Hono): void {
       return c.json(errorResponse("invalid_agent_conversation", "Agent conversation could not be saved."), 400);
     }
   });
+}
+
+function agentConversationStorageUnavailable(): ErrorResponseBody {
+  return errorResponse("agent_conversation_unsupported_storage", "Agent conversation storage is not supported in MySQL mode.");
 }
 
 function parseSaveAgentConversationPayload(input: unknown):
