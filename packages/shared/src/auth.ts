@@ -6,6 +6,89 @@ export type UserRole = (typeof USER_ROLES)[number];
 export const USER_STATUSES = ["active", "pending", "disabled"] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];
 
+export const DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS = [
+  "126.com",
+  "139.com",
+  "163.com",
+  "189.cn",
+  "aliyun.com",
+  "gmail.com",
+  "qq.com"
+] as const;
+
+const DOMAIN_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
+
+export function normalizeRegistrationEmailDomain(input: string): string | undefined {
+  const trimmed = input.trim().toLowerCase();
+  const domain = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+  if (!domain || domain.length > 253) {
+    return undefined;
+  }
+
+  const labels = domain.split(".");
+  if (labels.length < 2) {
+    return undefined;
+  }
+  if (labels.some((label) => !DOMAIN_LABEL_PATTERN.test(label))) {
+    return undefined;
+  }
+
+  return domain;
+}
+
+export function normalizeAllowedRegistrationEmailDomains(input: readonly string[]): string[] | undefined {
+  const domains: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of input) {
+    if (item.trim().length === 0) {
+      continue;
+    }
+
+    const domain = normalizeRegistrationEmailDomain(item);
+    if (!domain) {
+      return undefined;
+    }
+    if (!seen.has(domain)) {
+      domains.push(domain);
+      seen.add(domain);
+    }
+  }
+
+  return domains;
+}
+
+export function parseAllowedRegistrationEmailDomainsJson(value: string | null | undefined): string[] {
+  if (typeof value !== "string") {
+    return [...DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS];
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string")) {
+      return [...DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS];
+    }
+
+    return normalizeAllowedRegistrationEmailDomains(parsed) ?? [...DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS];
+  } catch {
+    return [...DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS];
+  }
+}
+
+export function isRegistrationEmailDomainAllowed(email: string, allowedDomains: readonly string[]): boolean {
+  if (allowedDomains.length === 0) {
+    return true;
+  }
+
+  const atIndex = email.lastIndexOf("@");
+  if (atIndex < 0) {
+    return false;
+  }
+
+  const domain = normalizeRegistrationEmailDomain(email.slice(atIndex + 1));
+  return domain ? allowedDomains.includes(domain) : false;
+}
+
 export interface CurrentUser {
   id: string;
   name: string;
@@ -24,6 +107,7 @@ export interface AuthSettings {
   generationCreditCost: number;
   checkinCredit: number;
   maxImagesPerRequest: number;
+  allowedRegistrationEmailDomains: string[];
   adminConfigured: boolean;
 }
 
@@ -60,6 +144,7 @@ export type AuthErrorCode =
   | "account_inactive"
   | "email_already_registered"
   | "forbidden"
+  | "email_domain_not_allowed"
   | "invalid_auth_request"
   | "invalid_credentials"
   | "generation_limit_exceeded"

@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
+import { DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS } from "@gpt-image-canvas/shared";
 import { ensureRuntimeStorage, runtimePaths, sqliteConfig } from "./runtime.js";
 import * as schema from "./schema.js";
 
@@ -7,6 +8,7 @@ const DEFAULT_REGISTRATION_CREDITS = 10;
 const DEFAULT_GENERATION_CREDIT_COST = 1;
 const DEFAULT_CHECKIN_CREDIT = 1;
 const DEFAULT_MAX_IMAGES_PER_REQUEST = 16;
+const DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS_JSON = JSON.stringify(DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS);
 
 export type SqliteDatabase = ReturnType<typeof drizzle<typeof schema>>;
 
@@ -123,6 +125,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
   generation_credit_cost INTEGER NOT NULL DEFAULT 1,
   checkin_credit INTEGER NOT NULL DEFAULT 1,
   max_images_per_request INTEGER NOT NULL DEFAULT 16,
+  allowed_registration_email_domains_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -373,6 +376,10 @@ CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites
   ensureColumn(sqlite, "app_settings", "generation_credit_cost", `generation_credit_cost INTEGER NOT NULL DEFAULT ${DEFAULT_GENERATION_CREDIT_COST}`);
   ensureColumn(sqlite, "app_settings", "checkin_credit", `checkin_credit INTEGER NOT NULL DEFAULT ${DEFAULT_CHECKIN_CREDIT}`);
   ensureColumn(sqlite, "app_settings", "max_images_per_request", `max_images_per_request INTEGER NOT NULL DEFAULT ${DEFAULT_MAX_IMAGES_PER_REQUEST}`);
+  ensureColumn(sqlite, "app_settings", "allowed_registration_email_domains_json", "allowed_registration_email_domains_json TEXT");
+  sqlite
+    .prepare("UPDATE app_settings SET allowed_registration_email_domains_json = ? WHERE allowed_registration_email_domains_json IS NULL")
+    .run(DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS_JSON);
   ensureColumn(sqlite, "credit_transactions", "related_redemption_code_id", "related_redemption_code_id TEXT");
   sqlite.exec("CREATE INDEX IF NOT EXISTS credit_transactions_user_id_idx ON credit_transactions(user_id)");
   sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS credit_transactions_generation_reason_idx ON credit_transactions(related_generation_id, reason)");
@@ -486,8 +493,8 @@ function ensureAppSettingsRow(sqlite: Database.Database): void {
   sqlite
     .prepare(
       `INSERT OR IGNORE INTO app_settings
-        (id, allow_registration, require_approval, default_credits, generation_credit_cost, checkin_credit, max_images_per_request, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        (id, allow_registration, require_approval, default_credits, generation_credit_cost, checkin_credit, max_images_per_request, allowed_registration_email_domains_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       "default",
@@ -497,6 +504,7 @@ function ensureAppSettingsRow(sqlite: Database.Database): void {
       DEFAULT_GENERATION_CREDIT_COST,
       DEFAULT_CHECKIN_CREDIT,
       DEFAULT_MAX_IMAGES_PER_REQUEST,
+      DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS_JSON,
       now,
       now
     );

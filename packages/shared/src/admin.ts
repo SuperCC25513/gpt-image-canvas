@@ -38,6 +38,7 @@ export interface AdminSettings {
   generationCreditCost: number;
   checkinCredit: number;
   maxImagesPerRequest: number;
+  allowedRegistrationEmailDomains: string[];
 }
 
 export type AdminSettingsUpdateRequest = Partial<AdminSettings>;

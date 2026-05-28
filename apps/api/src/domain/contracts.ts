@@ -1,5 +1,6 @@
 export {
   CUSTOM_SIZE_PRESET_ID,
+  DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS,
   DEFAULT_CHECKIN_CREDIT,
   DEFAULT_GENERATION_CREDIT_COST,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
@@ -27,6 +28,10 @@ export {
   USER_ROLES,
   USER_STATUSES,
   composePrompt,
+  isRegistrationEmailDomainAllowed,
+  normalizeAllowedRegistrationEmailDomains,
+  normalizeRegistrationEmailDomain,
+  parseAllowedRegistrationEmailDomainsJson,
   sizeToApiValue,
   validateImageSize,
   validateSceneImageSize

@@ -1,4 +1,5 @@
 import mysql, { type Pool, type RowDataPacket } from "mysql2/promise";
+import { DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS } from "@gpt-image-canvas/shared";
 import { ensureRuntimeStorage } from "./runtime.js";
 import type { MySqlDatabaseConfig } from "./database-config.js";
 
@@ -13,6 +14,7 @@ const DEFAULT_REGISTRATION_CREDITS = 10;
 const DEFAULT_GENERATION_CREDIT_COST = 1;
 const DEFAULT_CHECKIN_CREDIT = 1;
 const DEFAULT_MAX_IMAGES_PER_REQUEST = 16;
+const DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS_JSON = JSON.stringify(DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS);
 
 interface MySqlColumnDefinition {
   name: string;
@@ -77,6 +79,11 @@ const mySqlSchema: MySqlTableDefinition[] = [
         name: "max_images_per_request",
         definition: `INT NOT NULL DEFAULT ${DEFAULT_MAX_IMAGES_PER_REQUEST}`,
         comment: "单次生成请求最大图片数量"
+      },
+      {
+        name: "allowed_registration_email_domains_json",
+        definition: "TEXT",
+        comment: "允许自助注册的邮箱后缀 JSON；NULL 时按默认列表读取"
       },
       { name: "created_at", definition: "VARCHAR(32) NOT NULL", comment: "创建时间 ISO 字符串" },
       { name: "updated_at", definition: "VARCHAR(32) NOT NULL", comment: "更新时间 ISO 字符串" }
@@ -535,6 +542,7 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlColumn(pool, "app_settings", "generation_credit_cost");
   await ensureMySqlColumn(pool, "app_settings", "checkin_credit");
   await ensureMySqlColumn(pool, "app_settings", "max_images_per_request");
+  await ensureMySqlColumn(pool, "app_settings", "allowed_registration_email_domains_json");
   await ensureMySqlColumn(pool, "credit_transactions", "related_redemption_code_id");
   await ensureMySqlColumn(pool, "agent_conversations", "user_id");
   await ensureMySqlColumn(pool, "prompt_favorite_groups", "user_id");
@@ -743,8 +751,8 @@ async function ensureAppSettingsRow(pool: Pool): Promise<void> {
   const now = new Date().toISOString();
   await pool.execute(
     `INSERT IGNORE INTO app_settings
-      (id, allow_registration, require_approval, default_credits, generation_credit_cost, checkin_credit, max_images_per_request, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (id, allow_registration, require_approval, default_credits, generation_credit_cost, checkin_credit, max_images_per_request, allowed_registration_email_domains_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       "default",
       1,
@@ -753,9 +761,16 @@ async function ensureAppSettingsRow(pool: Pool): Promise<void> {
       DEFAULT_GENERATION_CREDIT_COST,
       DEFAULT_CHECKIN_CREDIT,
       DEFAULT_MAX_IMAGES_PER_REQUEST,
+      DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS_JSON,
       now,
       now
     ]
+  );
+  await pool.execute(
+    `UPDATE app_settings
+     SET allowed_registration_email_domains_json = ?
+     WHERE id = ? AND allowed_registration_email_domains_json IS NULL`,
+    [DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS_JSON, "default"]
   );
 }
 

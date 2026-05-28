@@ -22,7 +22,13 @@ import type {
   UserRole,
   UserStatus
 } from "../contracts.js";
-import { DEFAULT_CHECKIN_CREDIT, DEFAULT_GENERATION_CREDIT_COST, DEFAULT_MAX_IMAGES_PER_REQUEST, DEFAULT_REGISTRATION_CREDITS } from "../contracts.js";
+import {
+  DEFAULT_CHECKIN_CREDIT,
+  DEFAULT_GENERATION_CREDIT_COST,
+  DEFAULT_MAX_IMAGES_PER_REQUEST,
+  DEFAULT_REGISTRATION_CREDITS,
+  normalizeAllowedRegistrationEmailDomains
+} from "../contracts.js";
 import { getAuthSettings } from "../auth/auth-store.js";
 import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import { appSettings, assets, creditTransactions, generationAudits, generationOutputs, users } from "../../infrastructure/schema.js";
@@ -260,7 +266,8 @@ export async function readAdminSettings(): Promise<AdminSettingsResponse> {
       defaultCredits: settings.defaultCredits,
       generationCreditCost: settings.generationCreditCost,
       checkinCredit: settings.checkinCredit,
-      maxImagesPerRequest: settings.maxImagesPerRequest
+      maxImagesPerRequest: settings.maxImagesPerRequest,
+      allowedRegistrationEmailDomains: settings.allowedRegistrationEmailDomains
     }
   };
 }
@@ -282,6 +289,7 @@ export async function updateAdminSettings(input: AdminSettingsUpdateRequest): Pr
         generationCreditCost: settings.generationCreditCost,
         checkinCredit: settings.checkinCredit,
         maxImagesPerRequest: settings.maxImagesPerRequest,
+        allowedRegistrationEmailDomainsJson: JSON.stringify(settings.allowedRegistrationEmailDomains),
         updatedAt
       })
       .where(eq(appSettings.id, APP_SETTINGS_ID))
@@ -295,6 +303,7 @@ export async function updateAdminSettings(input: AdminSettingsUpdateRequest): Pr
            generation_credit_cost = ?,
            checkin_credit = ?,
            max_images_per_request = ?,
+           allowed_registration_email_domains_json = ?,
            updated_at = ?
        WHERE id = ?`,
       [
@@ -304,6 +313,7 @@ export async function updateAdminSettings(input: AdminSettingsUpdateRequest): Pr
         settings.generationCreditCost,
         settings.checkinCredit,
         settings.maxImagesPerRequest,
+        JSON.stringify(settings.allowedRegistrationEmailDomains),
         updatedAt,
         APP_SETTINGS_ID
       ]
@@ -407,13 +417,19 @@ async function insertMySqlCreditTransaction(
 }
 
 function normalizeSettings(input: AdminSettings): AdminSettings {
+  const allowedRegistrationEmailDomains = normalizeAllowedRegistrationEmailDomains(input.allowedRegistrationEmailDomains);
+  if (!allowedRegistrationEmailDomains) {
+    throw new AdminDomainError("invalid_admin_settings", "邮箱后缀支持列表包含无效域名。", 400);
+  }
+
   const settings = {
     allowRegistration: input.allowRegistration === true,
     requireApproval: input.requireApproval === true,
     defaultCredits: nonNegativeInteger(input.defaultCredits, DEFAULT_REGISTRATION_CREDITS),
     generationCreditCost: nonNegativeInteger(input.generationCreditCost, DEFAULT_GENERATION_CREDIT_COST),
     checkinCredit: nonNegativeInteger(input.checkinCredit, DEFAULT_CHECKIN_CREDIT),
-    maxImagesPerRequest: positiveInteger(input.maxImagesPerRequest, DEFAULT_MAX_IMAGES_PER_REQUEST)
+    maxImagesPerRequest: positiveInteger(input.maxImagesPerRequest, DEFAULT_MAX_IMAGES_PER_REQUEST),
+    allowedRegistrationEmailDomains
   };
   if (settings.maxImagesPerRequest > DEFAULT_MAX_IMAGES_PER_REQUEST) {
     throw new AdminDomainError(

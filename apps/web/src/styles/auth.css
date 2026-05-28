@@ -135,6 +135,13 @@
   outline: none;
 }
 
+.auth-domain-hint {
+  margin: -6px 0 0;
+  color: var(--muted-ink);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .auth-message {
   margin: 0;
   color: var(--danger);

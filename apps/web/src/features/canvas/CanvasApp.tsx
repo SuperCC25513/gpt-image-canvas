@@ -77,6 +77,7 @@ import { HomePage } from "../home/HomePage";
 import { SimpleGenerationPage } from "../simple-generation/SimpleGenerationPage";
 import {
   CUSTOM_SIZE_PRESET_ID,
+  DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS,
   DEFAULT_GENERATION_CREDIT_COST,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
   GENERATION_COUNTS,
@@ -4617,6 +4618,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
           generationCreditCost: DEFAULT_GENERATION_CREDIT_COST,
           checkinCredit: body.checkin.creditAward,
           maxImagesPerRequest: DEFAULT_MAX_IMAGES_PER_REQUEST,
+          allowedRegistrationEmailDomains: [...DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS],
           adminConfigured: false
         },
         checkin: body.checkin

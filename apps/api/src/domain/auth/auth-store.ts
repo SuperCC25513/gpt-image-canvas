@@ -11,10 +11,13 @@ import type {
   UserStatus
 } from "../contracts.js";
 import {
+  DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS,
   DEFAULT_CHECKIN_CREDIT,
   DEFAULT_GENERATION_CREDIT_COST,
   DEFAULT_MAX_IMAGES_PER_REQUEST,
-  DEFAULT_REGISTRATION_CREDITS
+  DEFAULT_REGISTRATION_CREDITS,
+  isRegistrationEmailDomainAllowed,
+  parseAllowedRegistrationEmailDomainsJson
 } from "../contracts.js";
 import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import {
@@ -57,6 +60,7 @@ interface AppSettingsRow {
   generationCreditCost: number;
   checkinCredit: number;
   maxImagesPerRequest: number;
+  allowedRegistrationEmailDomainsJson: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -112,6 +116,7 @@ export async function getAuthSettings(): Promise<AuthSettings> {
     generationCreditCost: row.generationCreditCost,
     checkinCredit: row.checkinCredit,
     maxImagesPerRequest: row.maxImagesPerRequest,
+    allowedRegistrationEmailDomains: parseAllowedRegistrationEmailDomainsJson(row.allowedRegistrationEmailDomainsJson),
     adminConfigured: await hasActiveAdminUser()
   };
 }
@@ -123,6 +128,10 @@ export async function registerUser(input: RegisterRequest): Promise<RegisterUser
   }
 
   const email = normalizeEmail(input.email);
+  if (!isRegistrationEmailDomainAllowed(email, settings.allowedRegistrationEmailDomains)) {
+    throw new AuthDomainError("email_domain_not_allowed", "当前邮箱后缀不支持注册。", 403);
+  }
+
   if (await findUserByEmail(email)) {
     throw new AuthDomainError("email_already_registered", "该邮箱已注册。", 409);
   }
@@ -321,6 +330,7 @@ async function ensureAppSettings(): Promise<void> {
         generationCreditCost: DEFAULT_GENERATION_CREDIT_COST,
         checkinCredit: DEFAULT_CHECKIN_CREDIT,
         maxImagesPerRequest: DEFAULT_MAX_IMAGES_PER_REQUEST,
+        allowedRegistrationEmailDomainsJson: JSON.stringify(DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS),
         createdAt: now,
         updatedAt: now
       })
@@ -328,8 +338,8 @@ async function ensureAppSettings(): Promise<void> {
   } else {
     await getMySqlPool().execute(
       `INSERT INTO app_settings
-        (id, allow_registration, require_approval, default_credits, generation_credit_cost, checkin_credit, max_images_per_request, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (id, allow_registration, require_approval, default_credits, generation_credit_cost, checkin_credit, max_images_per_request, allowed_registration_email_domains_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         APP_SETTINGS_ID,
         1,
@@ -338,6 +348,7 @@ async function ensureAppSettings(): Promise<void> {
         DEFAULT_GENERATION_CREDIT_COST,
         DEFAULT_CHECKIN_CREDIT,
         DEFAULT_MAX_IMAGES_PER_REQUEST,
+        JSON.stringify(DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS),
         now,
         now
       ]
@@ -361,6 +372,7 @@ async function getAppSettingsRow(): Promise<AppSettingsRow> {
     generationCreditCost: DEFAULT_GENERATION_CREDIT_COST,
     checkinCredit: DEFAULT_CHECKIN_CREDIT,
     maxImagesPerRequest: DEFAULT_MAX_IMAGES_PER_REQUEST,
+    allowedRegistrationEmailDomainsJson: JSON.stringify(DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS),
     createdAt: now,
     updatedAt: now
   };
@@ -378,6 +390,7 @@ async function getAppSettingsRowOrUndefined(): Promise<AppSettingsRow | undefine
           generationCreditCost: row.generationCreditCost,
           checkinCredit: row.checkinCredit,
           maxImagesPerRequest: row.maxImagesPerRequest,
+          allowedRegistrationEmailDomainsJson: row.allowedRegistrationEmailDomainsJson,
           createdAt: row.createdAt,
           updatedAt: row.updatedAt
         }
@@ -392,6 +405,7 @@ async function getAppSettingsRowOrUndefined(): Promise<AppSettingsRow | undefine
             generation_credit_cost AS generationCreditCost,
             checkin_credit AS checkinCredit,
             max_images_per_request AS maxImagesPerRequest,
+            allowed_registration_email_domains_json AS allowedRegistrationEmailDomainsJson,
             created_at AS createdAt,
             updated_at AS updatedAt
      FROM app_settings

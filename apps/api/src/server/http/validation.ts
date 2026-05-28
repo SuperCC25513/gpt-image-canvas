@@ -15,6 +15,7 @@ import {
   USER_ROLES,
   USER_STATUSES,
   composePrompt,
+  normalizeRegistrationEmailDomain,
   validateSceneImageSize,
   type AdminCreditAdjustmentRequest,
   type AdminCreateRedemptionCodesRequest,
@@ -405,6 +406,17 @@ export function parseAdminSettingsPayload(input: unknown): ParseResult<AdminSett
       };
     }
     value.maxImagesPerRequest = maxImagesPerRequest;
+  }
+
+  if (Object.hasOwn(input, "allowedRegistrationEmailDomains")) {
+    const allowedRegistrationEmailDomains = parseAllowedRegistrationEmailDomains(input.allowedRegistrationEmailDomains);
+    if (!allowedRegistrationEmailDomains) {
+      return {
+        ok: false,
+        error: errorResponse("invalid_admin_settings", "邮箱后缀支持列表包含无效域名。")
+      };
+    }
+    value.allowedRegistrationEmailDomains = allowedRegistrationEmailDomains;
   }
 
   if (Object.keys(value).length === 0) {
@@ -1077,6 +1089,34 @@ function parseAuthEmail(value: unknown): string | undefined {
   }
 
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email) ? email : undefined;
+}
+
+function parseAllowedRegistrationEmailDomains(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const domains: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") {
+      return undefined;
+    }
+    if (item.trim().length === 0) {
+      continue;
+    }
+
+    const domain = normalizeRegistrationEmailDomain(item);
+    if (!domain) {
+      return undefined;
+    }
+    if (!seen.has(domain)) {
+      domains.push(domain);
+      seen.add(domain);
+    }
+  }
+
+  return domains;
 }
 
 function parseAuthPassword(value: unknown): string | undefined {

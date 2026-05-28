@@ -31,6 +31,7 @@ export const appSettings = sqliteTable("app_settings", {
   generationCreditCost: integer("generation_credit_cost").notNull(),
   checkinCredit: integer("checkin_credit").notNull(),
   maxImagesPerRequest: integer("max_images_per_request").notNull(),
+  allowedRegistrationEmailDomainsJson: text("allowed_registration_email_domains_json"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull()
 });

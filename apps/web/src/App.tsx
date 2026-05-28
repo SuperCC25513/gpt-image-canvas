@@ -78,6 +78,8 @@ export function App() {
 
   const canRegister = authStatus?.settings.allowRegistration ?? true;
   const adminConfigured = authStatus?.settings.adminConfigured ?? false;
+  const allowedRegistrationEmailDomains = authStatus?.settings.allowedRegistrationEmailDomains ?? [];
+  const allowedRegistrationEmailDomainsText = allowedRegistrationEmailDomains.join(locale === "zh-CN" ? "、" : ", ");
   const authCopy = useMemo(() => {
     if (!adminConfigured) {
       return t("authAdminUnavailable");
@@ -225,6 +227,9 @@ export function App() {
               value={form.email}
             />
           </label>
+          {mode === "register" ? (
+            <p className="auth-domain-hint">{t("authAllowedEmailDomainsHint", { domains: allowedRegistrationEmailDomainsText })}</p>
+          ) : null}
 
           <label>
             <span>{t("authPasswordLabel")}</span>

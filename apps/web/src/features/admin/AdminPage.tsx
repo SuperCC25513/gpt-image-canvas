@@ -788,6 +788,12 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
                       onChange={(event) => updateSetting("requireApproval", event.target.checked)}
                     />
                   </label>
+                  <DomainListSetting
+                    hint={t("adminSettingAllowedEmailDomainsHint")}
+                    label={t("adminSettingAllowedEmailDomains")}
+                    value={settings.allowedRegistrationEmailDomains}
+                    onChange={(value) => updateSetting("allowedRegistrationEmailDomains", value)}
+                  />
                   <NumberSetting
                     label={t("adminSettingDefaultCredits")}
                     min={0}
@@ -967,6 +973,33 @@ function NumberSetting({
         type="number"
         value={value}
         onChange={(event) => onChange(Number.parseInt(event.target.value, 10) || min)}
+      />
+    </label>
+  );
+}
+
+function DomainListSetting({
+  hint,
+  label,
+  value,
+  onChange
+}: {
+  hint: string;
+  label: string;
+  value: string[];
+  onChange: (value: string[]) => void;
+}) {
+  return (
+    <label className="admin-domain-row">
+      <span>
+        <strong>{label}</strong>
+        <small>{hint}</small>
+      </span>
+      <textarea
+        rows={6}
+        spellCheck={false}
+        value={value.join("\n")}
+        onChange={(event) => onChange(event.target.value.split(/\r?\n/u))}
       />
     </label>
   );

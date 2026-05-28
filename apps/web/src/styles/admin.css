@@ -188,6 +188,7 @@
 .admin-credit-form input,
 .admin-credit-form select,
 .admin-number-row input,
+.admin-domain-row textarea,
 .admin-redemption-form input {
   min-width: 0;
   border: 1px solid var(--line);
@@ -460,7 +461,8 @@
 }
 
 .admin-switch-row,
-.admin-number-row {
+.admin-number-row,
+.admin-domain-row {
   display: flex;
   min-height: 4rem;
   align-items: center;
@@ -472,12 +474,29 @@
   padding: 0.75rem;
 }
 
+.admin-domain-row {
+  grid-column: 1 / -1;
+  display: grid;
+  align-items: stretch;
+  gap: 0.65rem;
+}
+
 .admin-switch-row span {
   display: grid;
   gap: 0.2rem;
 }
 
+.admin-domain-row span {
+  display: grid;
+  gap: 0.2rem;
+}
+
 .admin-switch-row small {
+  color: var(--muted-ink);
+  line-height: 1.35;
+}
+
+.admin-domain-row small {
   color: var(--muted-ink);
   line-height: 1.35;
 }
@@ -491,6 +510,13 @@
 .admin-number-row input {
   width: 8rem;
   text-align: right;
+}
+
+.admin-domain-row textarea {
+  min-height: 9.5rem;
+  padding: 0.55rem;
+  resize: vertical;
+  line-height: 1.45;
 }
 
 .admin-panel-actions {
