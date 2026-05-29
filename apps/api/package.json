@@ -10,6 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "db:generate": "drizzle-kit generate",
     "smoke:agent": "tsx src/smoke/agent-smoke.ts",
+    "smoke:agent-generation-queue": "tsx src/smoke/agent-generation-queue-smoke.ts",
     "smoke:executor": "tsx src/smoke/agent-executor-smoke.ts",
     "smoke:generation-queue": "tsx src/smoke/generation-queue-smoke.ts",
     "smoke:planner": "tsx src/smoke/agent-planner-smoke.ts",

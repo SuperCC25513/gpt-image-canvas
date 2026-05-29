@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: generation-provider-scheduler
 status: active
 created: 2026-05-28
-last_reviewed: 2026-05-28
+last_reviewed: 2026-05-29
 tags: [generation, provider, redis, queue, retry]
 related_requirements: []
 related_architecture: [ARCHITECTURE]
@@ -271,17 +271,27 @@ GENERATION_PROVIDER_RETRY_MAX_MS=30000
 interface ScheduledAgentGenerationInput {
   runId: string;
   jobId: string;
-  generationId: string;
-  userId: string;
-  signal?: AbortSignal;
+  user: CurrentUser;
+  provider?: ImageProvider;
+  signal: AbortSignal;
+  isRunActive: () => boolean;
+  onRunning?: (record: GenerationRecord) => void;
 }
+
+function shouldUseAgentGenerationQueue(provider?: ImageProvider): boolean;
+async function runScheduledAgentTextGeneration(input: ScheduledAgentGenerationInput & { request: ImageProviderInput }): Promise<GenerationRecord>;
+async function runScheduledAgentReferenceGeneration(input: ScheduledAgentGenerationInput & { request: EditImageProviderInput }): Promise<GenerationRecord>;
 ```
 
 **约束**：
 
 - Agent 的 DAG 依赖规则不变；依赖满足后才能入队对应 generation。
-- Agent 不再通过自身 job 并发叠加 provider 并发；provider 并发只由全局闸门决定。
-- Agent UI 至少能区分 `queued`、`running`、`retrying`、`failed`、`cancelled` 语义；如果共享契约暂不加 `retrying` 状态，则用事件 message/metadata 表达重试中。
+- Redis driver 且没有 provider override 时，Agent job 调用 `startTextToImageGenerationTask` / `startReferenceImageGenerationTask` 创建 pending record 并复用现有 generation queue；不新增 Agent 专用 Redis queue key。
+- inline driver 或显式 provider override 时，Agent job 保留 direct `runTextToImageGenerationTask` / `runReferenceImageGenerationTask` 语义，供 smoke 和本地调试注入 fake provider。
+- Agent 不再通过自身 job 并发叠加 provider 并发；`AGENT_JOB_CONCURRENCY` 只限制单个 Agent run 同时提交/等待的 plan jobs，provider 并发只由全局闸门决定。
+- Agent plan job 在 Redis queue path 中保持 `queued`，直到 DB generation record 变为 `running` 或 terminal 后映射为 `running` 并发送 `job_started`。
+- Agent run 取消时通过 `cancelGenerationTask()` 取消对应 generation record；pending Redis job 应被移出 ready list。
+- 不新增 Agent `retrying` 状态或前端 retrying UI；provider retry policy 继续在 generation finish 流程内部收敛。
 - retry_failed 只重跑失败 job，不重跑已成功上游 job。
 
 ## 5. 子 feature 清单
@@ -313,8 +323,9 @@ interface ScheduledAgentGenerationInput {
 5. **agent-generation-scheduler-adapter** — Agent 生成 job 接入同一队列、闸门和重试机制。
    - 所属模块：agent-adapter、generation-queue、provider-scheduler
    - 依赖：`provider-retry-policy`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done
+   - 对应 feature：`2026-05-29-agent-generation-scheduler-adapter`
+   - 备注：Redis/no provider override 下 Agent job 复用现有 generation queue，等待 DB generation record 终态回写 plan；inline/provider override 保留 direct path。
 6. **generation-cancel-and-recovery** — 完善队列取消、重启恢复、失败收敛和退款幂等。
    - 所属模块：generation-state-bridge、generation-queue
    - 依赖：`generation-queue-worker`、`provider-retry-policy`

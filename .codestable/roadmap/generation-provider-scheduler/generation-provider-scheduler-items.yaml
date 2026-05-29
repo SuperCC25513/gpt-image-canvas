@@ -37,10 +37,10 @@ items:
   - slug: agent-generation-scheduler-adapter
     description: Agent 生成 job 接入同一队列、闸门和重试机制
     depends_on: [provider-retry-policy]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-29-agent-generation-scheduler-adapter
     minimal_loop: false
-    notes: null
+    notes: "Redis/no provider override 下 Agent job 复用现有 generation queue 并等待 DB record 终态；inline/provider override 保留 direct path"
 
   - slug: generation-cancel-and-recovery
     description: 完善队列取消、重启恢复、失败收敛和退款幂等

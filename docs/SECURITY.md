@@ -74,6 +74,8 @@ Provider scheduler Redis permit keys must not contain prompts, API keys, referen
 
 Generation queue Redis jobs must not contain prompts, API keys, reference image bytes, provider credentials, audit payloads, credit transaction data, or complete generation records. Store only routing metadata such as generation id, user id, mode, visibility flag, attempt counters, and enqueue time; the worker must reload generation facts and reference assets from the database/storage boundary.
 
+Agent generation in Redis mode must use the same generation queue payload boundary. Do not add Agent-specific Redis jobs that store plan prompts, reference bytes, provider override objects, conversation messages, audit payloads, credit transaction data, or provider credentials. The Agent executor should wait on the database generation record and keep Redis as short-lived routing state only.
+
 Provider retry failures must be summarized with stable application messages before they are written to generation outputs, generation records, audits, logs, or API responses. Do not expose raw upstream error bodies, bearer tokens, OpenAI-style keys, request headers, prompt text, reference image bytes, provider credentials, or credential-bearing URLs through retry errors.
 
 ## Review Checklist

@@ -20,8 +20,10 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - **provider permit**：一次图片 provider API 调用执行前获得的短期租约；完成、失败或取消后释放，进程崩溃时依赖 TTL 自动过期。
 - **provider retry policy**：单图 provider call 失败后的统一错误分类、指数退避和最终失败摘要策略。可恢复错误会重试，不可恢复错误直接失败收敛。
 - **provider attempt**：一次重新进入 `runProviderCall()` 的 provider 调用尝试；retry sleep 期间不持有 provider permit。
-- **generation queue job**：Redis 中的一条手动生成任务运行态，指向 DB 中的 `generation_records.id`。当前为 generation 级 job，不保存 prompt、reference bytes 或完整 provider input。
-- **generation queue worker**：API 进程内后台消费者，从 Redis ready 队列取手动生成 job，重建 provider input，并复用现有 finish 流程完成 outputs、审计和退款。
+- **generation queue job**：Redis 中的一条生成任务运行态，指向 DB 中的 `generation_records.id`。当前为 generation 级 job，不保存 prompt、reference bytes 或完整 provider input。
+- **generation queue worker**：API 进程内后台消费者，从 Redis ready 队列取 generation job，重建 provider input，并复用现有 finish 流程完成 outputs、审计和退款。
+- **Agent generation scheduler adapter**：Agent executor 和 generation queue / provider scheduler 之间的适配层。Redis driver 且没有 provider override 时走 generation queue；inline 或测试 provider override 时走 direct path。
+- **scheduled Agent generation**：Agent plan job 触发的一次 DB generation record。Redis 模式下它先是 `pending` record + queue job，worker 执行后变为 `running` / terminal，再由 Agent executor 回写 plan job。
 
 ## 3. 子系统 / 模块索引
 
@@ -33,9 +35,10 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - **Provider scheduler**：`apps/api/src/domain/generation/provider-scheduler.ts` 负责解析 `GENERATION_PROVIDER_GLOBAL_CONCURRENCY`、`GENERATION_PROVIDER_PERMIT_TTL_MS`，并用 `runProviderCall()` 包住所有 `provider.generate` / `provider.edit` 单图调用。`GENERATION_QUEUE_DRIVER=redis` 时使用 Redis sorted set + Lua 原子 acquire；`inline` 时只使用进程内 semaphore。
 - **Provider retry policy**：`apps/api/src/domain/generation/provider-retry-policy.ts` 负责解析 `GENERATION_PROVIDER_MAX_RETRIES`、`GENERATION_PROVIDER_RETRY_BASE_MS`、`GENERATION_PROVIDER_RETRY_MAX_MS`，并用 `runProviderCallWithRetry()` 包住单图 provider call。429、408、5xx、连接超时和临时网络中断会退避重试，missing provider/API key、400 参数错误、参考图非法和取消不重试。
 - **Generation queue**：`apps/api/src/domain/generation/generation-queue.ts` 负责 `generation:queue:ready` ready list、`generation:job:{generationId}` job payload、worker polling 和 worker 生命周期。`apps/api/src/domain/generation/generation-tasks.ts` 在 Redis driver 下创建 pending record 并入队，inline driver 下保留旧 background task。
+- **Agent generation scheduler adapter**：`apps/api/src/domain/agent/generation-scheduler-adapter.ts` 负责让 Agent 生成在 Redis/no provider override 时调用 `startTextToImageGenerationTask` / `startReferenceImageGenerationTask` 入队，并轮询 DB generation record 到 terminal；inline 或 fake provider path 继续调用 direct `run*GenerationTask`。
 - **API 启动与健康检查**：`apps/api/src/server/app.ts` 在创建 app 时执行 Redis readiness；`apps/api/src/server/routes/core.ts` 的 `/api/health` 返回 `checks.redis=ok|disabled|unavailable`，Redis 不可用时返回 503。
 - **进程生命周期**：`apps/api/src/index.ts` 在 shutdown 中关闭 Agent WebSocket、generation queue worker、Redis client 和数据库连接，避免 dev/watch 或 smoke 测试残留句柄。
-- **生成 Provider 调度规划**：`.codestable/roadmap/generation-provider-scheduler/` 记录 Redis runtime、全局 provider 并发闸门、队列、重试、状态桥和 Agent 接入的拆分；当前已完成 Redis runtime 底座、全局 provider 并发闸门、手动生成 Redis 队列 worker 和 provider retry policy。
+- **生成 Provider 调度规划**：`.codestable/roadmap/generation-provider-scheduler/` 记录 Redis runtime、全局 provider 并发闸门、队列、重试、状态桥和 Agent 接入的拆分；当前已完成 Redis runtime 底座、全局 provider 并发闸门、手动生成 Redis 队列 worker、provider retry policy 和 Agent queue adapter。
 - **Web 注册入口**：`apps/web/src/App.tsx` 展示当前支持的注册邮箱后缀，并把后端错误码映射为本地化提示。
 - **Web 后台系统设置**：`apps/web/src/features/admin/AdminPage.tsx` 提供注册策略和邮箱后缀列表编辑入口。
 
@@ -57,6 +60,9 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - retryable 错误耗尽后，生成 output / record / audit 写稳定失败摘要，不透出上游原始错误体、Bearer token、OpenAI-style key 或 provider credential。
 - `GENERATION_QUEUE_WORKER_CONCURRENCY` 限制每个 API 进程同时消费的手动 generation queue job 数，不是 provider API 并发限制；provider API 并发仍只由 `GENERATION_PROVIDER_GLOBAL_CONCURRENCY` 控制。
 - Redis 模式下，手动文生图和参考图编辑请求只负责预扣积分、创建 `pending` generation record、记录 audit start 并 enqueue job；worker 消费后把 record 推到 `running` 并执行现有 finish 流程。
+- Redis 模式下，Agent 生成在未传 provider override 时也创建 `pending` generation record 并复用同一 generation queue；Agent plan job 保持 `queued`，直到 DB record 变为 `running` 或 terminal 时才映射为 `running` / 完成状态。
+- `AGENT_JOB_CONCURRENCY` 只限制单个 Agent run 同时提交或等待的 plan jobs，不是 provider API 并发限制；真实 provider API 并发仍由 `GENERATION_PROVIDER_GLOBAL_CONCURRENCY` 统一控制。
+- Agent 的 provider override path 和 `GENERATION_QUEUE_DRIVER=inline` 是测试 / 本地调试路径，保留 direct 同步执行语义，不提供 Redis queue 语义。
 - Redis 只保存生成调度运行态。生成记录、输出、审计、资产、积分交易和本地账号数据继续保存在数据库或资产存储中。
 - provider permit 在 Redis 中只保存短期随机 permit id 和过期分数；不得把 prompt、API key、reference image bytes、generation record、audit、credit transaction、generation id、output id 或用户输入写进 permit member。
 - generation queue job 在 Redis 中只保存 generation id、user id、mode、visibility flag、attempt 计数和 enqueue time 等路由元数据；worker 必须从 DB/asset storage 重新读取生成事实和参考图资产。
@@ -72,4 +78,4 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - 后续生成调度模块必须复用 `redis-runtime.ts` 的 runtime API，不应重新解析 Redis env 或创建独立 Redis client。
 - `GENERATION_QUEUE_DRIVER=inline` 下的 provider scheduler 只限制当前 API 进程，不提供跨进程或跨机器全局保证；真实全局闸门依赖 `GENERATION_QUEUE_DRIVER=redis`。
 - `GENERATION_QUEUE_DRIVER=inline` 下，手动生成仍使用旧进程内 background task；Redis generation queue worker 只在 `redis` driver 下启用。
-- 当前已实现 generation 级 Redis queue worker 和 provider call 级 retry policy，但还没有 per-output Redis job、delayed retry queue、取消恢复或队列可观测性；这些仍由 `generation-provider-scheduler` 后续子 feature 实现。
+- 当前已实现 generation 级 Redis queue worker、provider call 级 retry policy 和 Agent queue adapter，但还没有 per-output Redis job、delayed retry queue、Agent run 重启恢复、取消恢复或队列可观测性；这些仍由 `generation-provider-scheduler` 后续子 feature 实现。

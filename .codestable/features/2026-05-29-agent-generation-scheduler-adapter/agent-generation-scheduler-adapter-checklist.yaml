@@ -1,0 +1,76 @@
+feature: 2026-05-29-agent-generation-scheduler-adapter
+created: "2026-05-29"
+
+steps:
+  - action: "名词契约：新增 Agent generation scheduler adapter 和 queue/direct 分支判定"
+    exit_signal: "adapter 能在 Redis/no provider override 时调用 start*，inline/provider override 时调用 run*"
+    status: done
+
+  - action: "Executor 接入：Agent job queued/running 状态和事件按 queue/direct 分支收敛"
+    exit_signal: "direct path smoke 仍保持原有成功、partial、blocked、retry_failed 行为"
+    status: done
+
+  - action: "取消与等待：queue path 等待 DB terminal，并在 abort 时取消 generation record / Redis job"
+    exit_signal: "Redis smoke 能观察 queued job payload、取消后 job key 和 ready list 清理"
+    status: done
+
+  - action: "文档与架构：更新可靠性/安全文档和 CodeStable 架构边界"
+    exit_signal: "Agent queue path、provider override path 和 Redis payload 边界被记录"
+    status: done
+
+  - action: "验证：运行 typecheck/build、agent executor smoke、generation queue smoke、provider scheduler/retry/planner smoke"
+    exit_signal: "关键 smoke 通过，Redis ready list/provider permit 无残留"
+    status: done
+
+checks:
+  - item: "Redis driver 且未传 provider override 时 Agent job 创建 pending generation record 和 Redis job"
+    source: 验收场景
+    status: passed
+
+  - item: "Agent Redis queue job payload 不包含 prompt、reference image bytes、provider credential、audit payload、credit transaction 或完整 generation record"
+    source: 安全边界
+    status: passed
+
+  - item: "queued generation record 被标记 running 后 Agent job 从 queued 变 running 并发送 job_started"
+    source: 验收场景
+    status: passed
+
+  - item: "terminal succeeded/partial/failed record 的 outputs/status/error 与现有 direct path 规则一致"
+    source: 验收场景
+    status: passed
+
+  - item: "Agent run 在 pending queue 阶段取消会取消 generation record 并清理 Redis job"
+    source: 取消语义
+    status: passed
+
+  - item: "retry_failed 保留成功上游 job，只重跑失败 job"
+    source: DAG 语义
+    status: passed
+
+  - item: "inline 或 provider override path 保留现有 direct 执行语义"
+    source: provider override path
+    status: passed
+
+  - item: "所有 provider call 仍经 runProviderCallWithRetry / provider scheduler，adapter 不新增 provider 调用通道"
+    source: 并发语义
+    status: passed
+
+  - item: "docs/RELIABILITY.md、docs/SECURITY.md 说明 Agent queue path 和安全边界"
+    source: 挂载点
+    status: passed
+
+  - item: "不新增 Agent 专用 Redis queue key"
+    source: 范围守护
+    status: passed
+
+  - item: "不新增 per-output Redis job、delayed queue 或重启恢复 Agent run"
+    source: 范围守护
+    status: passed
+
+  - item: "不新增 Agent retrying 状态、前端 retrying UI 或 admin queue monitor"
+    source: 范围守护
+    status: passed
+
+  - item: "不改 Agent planner schema、DAG 验证、总图数上限或引用上限"
+    source: 范围守护
+    status: passed

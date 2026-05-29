@@ -24,6 +24,10 @@ All `provider.generate` and `provider.edit` calls must go through the provider s
 
 Provider calls retry recoverable upstream failures before an output is marked failed. `GENERATION_PROVIDER_MAX_RETRIES` defaults to `2`, so a single output can make up to 3 provider attempts. `GENERATION_PROVIDER_RETRY_BASE_MS` defaults to `1000` ms and `GENERATION_PROVIDER_RETRY_MAX_MS` defaults to `30000` ms. Retryable failures are 429, 408, 5xx, connection timeouts, and temporary network interruptions. Missing provider/configuration, 400-level parameter/reference-image errors, and user cancellation do not retry. Each retry attempt re-enters the provider scheduler; backoff sleep does not hold a provider permit.
 
+Agent generation jobs use the same generation queue in Redis mode when no test provider override is supplied. The Agent executor creates a pending generation record, enqueues the existing `generation:job:{generationId}` payload, waits for the database record to become terminal, and then copies outputs/status back to the Agent plan job. `AGENT_JOB_CONCURRENCY` only limits how many Agent plan jobs a single run submits or waits on at once; it is not a provider API concurrency limit.
+
+`GENERATION_QUEUE_DRIVER=inline` and explicit provider override execution remain direct synchronous paths for tests and local debugging. Those paths still go through the provider scheduler and retry wrapper before calling the provider, but they do not provide Redis queue semantics or cross-process coordination.
+
 ## Persistence
 
 `DATA_DIR` defaults to `./data` locally and `/app/data` in Docker. In SQLite mode it contains SQLite state, generated assets, and previews. In MySQL + OSS mode, MySQL stores metadata and OSS stores generated asset bytes; `DATA_DIR` may still hold local runtime files. Treat all of it as private runtime data.
@@ -63,6 +67,7 @@ Provider errors should become stable API errors where possible. Avoid exposing r
 - Provider API calls are additionally guarded by the global provider scheduler, so multiple concurrent generation tasks cannot multiply the upstream provider concurrency beyond `GENERATION_PROVIDER_GLOBAL_CONCURRENCY`.
 - Provider API calls use exponential backoff retry for recoverable upstream failures, and each retry attempt is still capped by the global provider scheduler.
 - In Redis mode, manual image generation enters the generation queue first; the HTTP route returns after creating a pending generation record and enqueueing a Redis job.
+- In Redis mode, Agent image generation also enters the generation queue unless a test provider override is supplied; the Agent plan job stays `queued` until the database generation record becomes `running` or terminal.
 - Individual output failures should be represented in output status instead of erasing the whole record when partial results exist.
 - 生成图片成功后必须能从当前资产存储读取；本地或 OSS 写入失败时不能记录成成功资产。
 - 生成前先按 `count * generation_credit_cost` 预扣积分。全部失败按本次输出数退款，部分失败只退失败输出对应积分；退款流水按 generation id 保持幂等。
@@ -76,6 +81,7 @@ Agent plans are dependency-aware DAGs. Reliability-sensitive rules:
 - Failed jobs can be retried without rerunning successful upstream jobs.
 - Cancellation should stop in-flight work where possible and leave the plan in an inspectable state.
 - WebSocket events should be stable, typed through `packages/shared`, and safe for reconnect behavior.
+- Redis-mode Agent execution maps plan-layer `queued` / `running` to database-layer `pending` / `running` through `generation-scheduler-adapter.ts`. Agent cancellation should call the generation cancellation path so pending Redis jobs are removed and the database record becomes `cancelled`.
 
 ## 资产存储
 

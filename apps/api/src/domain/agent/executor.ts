@@ -17,11 +17,15 @@ import {
   type OutputFormat,
   type ReferenceImageInput
 } from "../contracts.js";
-import { runReferenceImageGenerationTask, runTextToImageGenerationTask } from "../generation/generation-tasks.js";
 import { readStoredAsset } from "../generation/image-generation.js";
 import { createConfiguredImageProvider } from "../providers/image-provider-selection.js";
 import { userCanReadAsset } from "../storage/store.js";
 import type { ImageProvider, ImageProviderInput } from "../../infrastructure/providers/image-provider.js";
+import {
+  runScheduledAgentReferenceGeneration,
+  runScheduledAgentTextGeneration,
+  shouldUseAgentGenerationQueue
+} from "./generation-scheduler-adapter.js";
 
 export const AGENT_EXECUTION_TOOL_ALLOWLIST = ["generate_canvas_image_job"] as const;
 const AGENT_JOB_CONCURRENCY = 2;
@@ -87,10 +91,12 @@ export async function executeGenerationPlan(input: AgentPlanExecutionInput): Pro
   const plan = preparePlanForExecution(input.plan, input.mode);
   emitPlanUpdated(input, plan);
 
-  let provider: ImageProvider;
+  let provider: ImageProvider | undefined = input.provider;
   try {
     throwIfAborted(input.signal);
-    provider = input.provider ?? (await createConfiguredImageProvider(input.signal));
+    if (!shouldUseAgentGenerationQueue(input.provider)) {
+      provider = input.provider ?? (await createConfiguredImageProvider(input.signal));
+    }
   } catch (error) {
     if (isAbortError(error, input.signal)) {
       markPlanCancelled(plan);
@@ -191,19 +197,34 @@ function preparePlanForExecution(plan: GenerationPlan, mode: AgentPlanExecutionM
 async function executeGenerationJob(input: AgentPlanExecutionInput & {
   plan: GenerationPlan;
   job: GenerationJob;
-  provider: ImageProvider;
+  provider?: ImageProvider;
   selectedReferencesByKey: Map<string, AgentSelectedCanvasReference>;
 }): Promise<void> {
   if (!input.isRunActive() || input.signal.aborted || input.job.status !== "queued") {
     return;
   }
 
-  input.job.status = "running";
+  const useQueue = shouldUseAgentGenerationQueue(input.provider);
+  input.job.status = useQueue ? "queued" : "running";
   input.job.error = undefined;
   input.job.outputs = [];
   input.plan.updatedAt = new Date().toISOString();
-  emitJobStarted(input, input.plan, input.job.id);
-  emitPlanUpdated(input, input.plan);
+  let jobStarted = false;
+  const markJobRunning = (): void => {
+    if (jobStarted) {
+      return;
+    }
+    jobStarted = true;
+    input.job.status = "running";
+    input.plan.updatedAt = new Date().toISOString();
+    emitJobStarted(input, input.plan, input.job.id);
+    emitPlanUpdated(input, input.plan);
+  };
+  if (!useQueue) {
+    markJobRunning();
+  } else {
+    emitPlanUpdated(input, input.plan);
+  }
 
   try {
     throwIfAborted(input.signal);
@@ -216,18 +237,31 @@ async function executeGenerationJob(input: AgentPlanExecutionInput & {
     const request = createJobImageProviderInput(input.plan, input.job);
     const record =
       references.referenceImages.length > 0
-        ? await runReferenceImageGenerationTask(
-            {
+        ? await runScheduledAgentReferenceGeneration({
+            runId: input.runId,
+            jobId: input.job.id,
+            user: input.user,
+            provider: input.provider,
+            signal: input.signal,
+            isRunActive: input.isRunActive,
+            onRunning: markJobRunning,
+            request: {
               ...request,
               referenceImages: references.referenceImages,
               referenceAssetIds: references.referenceAssetIds,
               referenceAssetId: references.referenceAssetIds[0]
-            },
-            input.user,
-            input.provider,
-            input.signal
-          )
-        : await runTextToImageGenerationTask(request, input.user, input.provider, input.signal);
+            }
+          })
+        : await runScheduledAgentTextGeneration({
+            runId: input.runId,
+            jobId: input.job.id,
+            user: input.user,
+            provider: input.provider,
+            signal: input.signal,
+            isRunActive: input.isRunActive,
+            onRunning: markJobRunning,
+            request
+          });
     throwIfAborted(input.signal);
 
     input.job.outputs = record.outputs;
