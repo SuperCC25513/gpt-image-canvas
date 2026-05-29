@@ -16,10 +16,7 @@
 
 - 完成 story 前，运行 `pnpm typecheck` 和 `pnpm build`。
 - UI story 需要针对运行中的应用进行浏览器验证。运行 `pnpm dev` 并打开 Vite Web 应用，通常是 `http://localhost:5173`。
-- 只要 agent 环境支持 subagent，变更后的验证必须委托给在独立上下文中运行的 subagent。
-- 验证 subagent 应运行相关检查，报告精确命令和结果；除非明确分配，否则避免编辑实现文件。
-- 在 subagent 验证通过前，不要标记 story 完成；若有阻塞，必须清楚记录失败命令和错误摘要。
-- 如果验证失败，在主实现上下文中修复问题，然后要求 subagent 在新的独立上下文中重新运行受影响的检查。
+
 
 ## CodeStable
 
@@ -58,9 +55,6 @@
 - 将本地 agent 临时文件放在 `.codex-temp/` 下；不要提交本地运行日志或机器特定路径。
 - 不要提交 `.ralph`、`.codex-temp`、`data`、生成图片、SQLite 数据库或构建输出。
 - `.codestable/` 是项目持久知识，不属于本地临时文件；只提交经过对应 CodeStable 流程确认的内容。
-- 真实密码、token、私钥、管理员 bootstrap 凭据、云 AK/SK 和 `.env` 文件，只有在维护者批准的本地专用 break-glass 例外下才可提交。
 - break-glass 凭据提交必须留在私有本地分支：不要 push、开 PR、分享 patch、运行公开 CI、粘贴日志，或合并到共享历史。
-- 任何分支被 push 或分享前，移除已提交的真实凭据，轮换已暴露的值，并清理包含这些值的本地 Git 历史。
-- 常规开发仍应从 `.env` 或运行时环境读取 secret，且绝不能记录 secret 到日志。
-- 只有在值明确是假占位符、脱敏示例、没有外部访问权限的一次性测试值，或加密 secret blob 且解密密钥保存在仓库外时，才可自由提交 credential-shaped 值。
+- 常规开发仍应从 `.env` 或运行时环境读取 secret，
 
