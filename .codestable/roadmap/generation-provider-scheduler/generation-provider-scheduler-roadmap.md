@@ -333,10 +333,11 @@ async function runScheduledAgentReferenceGeneration(input: ScheduledAgentGenerat
    - 对应 feature：`2026-05-29-generation-cancel-and-recovery`
    - 备注：当前收敛为 generation 级 startup recovery：pending requeue、running interrupted failed、terminal completion guard；不做 per-output queue。
 7. **generation-queue-observability** — 暴露排队、运行、重试、失败摘要给 API、前端和审计。
-   - 所属模块：generation-state-bridge、agent-adapter
+   - 所属模块：generation-state-bridge、generation-queue、provider-scheduler
    - 依赖：`generation-cancel-and-recovery`、`agent-generation-scheduler-adapter`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done
+   - 对应 feature：`2026-05-29-generation-queue-observability`
+   - 备注：已新增 admin-only `/api/admin/generation-queue` 和生成审计页队列状态摘要，展示 Redis、ready queue、worker、provider permit、retry、DB 计数和失败摘要。
 
 **最小闭环**：第 2 条 `provider-global-semaphore` 做完后，现有手动生成仍能端到端完成，同时 100 个任务也只能按 `GENERATION_PROVIDER_GLOBAL_CONCURRENCY` 设定的总并发数向唯一 provider 发请求。
 

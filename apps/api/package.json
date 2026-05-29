@@ -13,6 +13,8 @@
     "smoke:agent-generation-queue": "tsx src/smoke/agent-generation-queue-smoke.ts",
     "smoke:executor": "tsx src/smoke/agent-executor-smoke.ts",
     "smoke:generation-recovery": "tsx src/smoke/generation-recovery-smoke.ts",
+    "smoke:generation-queue-observability": "tsx src/smoke/generation-queue-observability-smoke.ts",
+    "smoke:generation-queue-observability:inline": "tsx src/smoke/generation-queue-observability-inline-smoke.ts",
     "smoke:generation-queue": "tsx src/smoke/generation-queue-smoke.ts",
     "smoke:planner": "tsx src/smoke/agent-planner-smoke.ts",
     "smoke:provider-retry": "tsx src/smoke/provider-retry-policy-smoke.ts",

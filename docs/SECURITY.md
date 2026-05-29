@@ -56,6 +56,7 @@ When adding browser tests that save fake credentials, clear or restore local tes
 - Do not expose filesystem paths, shell details, environment contents, or database internals through API responses.
 - `/api/health` may report whether Redis is `ok`, `disabled`, or `unavailable`, but it must not expose `REDIS_URL`, passwords, Redis host topology, or raw connection errors.
 - `/api/admin/*` must require an active admin session. Admin responses may include users, settings, credit adjustments, and generation audit summaries, but must not include raw provider API keys, Agent API keys, OAuth tokens, cookies, database passwords, or unredacted upstream error payloads.
+- `/api/admin/generation-queue` may expose sanitized generation scheduling counts and recent stable failure summaries to admins. It must not expose `REDIS_URL`, Redis host topology, raw Redis errors, prompt text, reference image bytes, provider credentials, Redis job keys, full Redis payloads, credit transaction rows, or raw upstream error bodies.
 - Generation audit records store prompt, status, IP/User-Agent summaries, and output linkage for local administration. Treat the audit table as private runtime data alongside generated assets.
 
 ## Docker

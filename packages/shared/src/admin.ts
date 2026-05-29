@@ -82,3 +82,55 @@ export interface AdminGenerationAuditsResponse {
   items: AdminGenerationAuditRecord[];
   nextCursor?: string;
 }
+
+export type AdminGenerationQueueDriver = "redis" | "inline";
+export type AdminRedisStatus = "ok" | "disabled" | "unavailable";
+
+export interface AdminGenerationQueueRuntime {
+  driver: AdminGenerationQueueDriver;
+  readyLength?: number;
+  workerRunning: boolean;
+  activeWorkers: number;
+  workerConcurrency: number;
+  pollIntervalMs: number;
+}
+
+export interface AdminProviderSchedulerRuntime {
+  configuredConcurrency: number;
+  activePermits?: number;
+  availablePermits?: number;
+  permitTtlMs: number;
+}
+
+export interface AdminProviderRetrySummary {
+  maxRetries: number;
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+}
+
+export type AdminGenerationQueueFailureStatus = Extract<GenerationStatus, "failed" | "partial" | "cancelled">;
+
+export interface AdminGenerationQueueRecentFailure {
+  generationId: string;
+  status: AdminGenerationQueueFailureStatus;
+  errorSummary?: string;
+  updatedAt: string;
+}
+
+export interface AdminGenerationQueueDatabaseSummary {
+  records: Record<GenerationStatus, number>;
+  outputs: Record<OutputStatus, number>;
+  recentFailures: AdminGenerationQueueRecentFailure[];
+}
+
+export interface AdminGenerationQueueStatusResponse {
+  updatedAt: string;
+  redis: {
+    status: AdminRedisStatus;
+  };
+  queue: AdminGenerationQueueRuntime;
+  provider: AdminProviderSchedulerRuntime;
+  retry: AdminProviderRetrySummary;
+  database: AdminGenerationQueueDatabaseSummary;
+}

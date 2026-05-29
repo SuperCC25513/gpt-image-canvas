@@ -297,6 +297,47 @@ const zhMessages = {
   adminAuditPrivate: "私有",
   adminAuditPublic: "公开",
   adminAuditUserAgent: ({ userAgent }: { userAgent: string }) => `UA：${userAgent}`,
+  adminQueueDriverDetail: ({ driver }: { driver: "redis" | "inline" }) => `driver：${driver}`,
+  adminQueueNoRecentFailures: "暂无失败摘要",
+  adminQueueOutputsDetail: ({ failed, succeeded }: { failed: number; succeeded: number }) => `输出：${succeeded} 成功 / ${failed} 失败`,
+  adminQueueProviderDetail: ({ available, ttlMs }: { available: string; ttlMs: number }) => `可用 ${available}；TTL ${ttlMs}ms`,
+  adminQueueProviderLabel: "Provider",
+  adminQueueReadyLabel: "Ready",
+  adminQueueRecentFailureItem: ({
+    generationId,
+    status,
+    time
+  }: {
+    generationId: string;
+    status: "failed" | "partial" | "cancelled";
+    time: string;
+  }) => `${generationId} · ${status} · ${time}`,
+  adminQueueRecentFailuresLabel: "最近失败",
+  adminQueueRecordsDetail: ({ pending, running }: { pending: number; running: number }) => `pending ${pending} / running ${running}`,
+  adminQueueRecordsLabel: "失败记录",
+  adminQueueRedisDetail: ({ status }: { status: string }) => `Redis ${status}`,
+  adminQueueRedisLabel: "Redis",
+  adminQueueRedisStatus: ({ status }: { status: "ok" | "disabled" | "unavailable" }) =>
+    status === "ok" ? "正常" : status === "disabled" ? "Inline" : "不可用",
+  adminQueueRetryDetail: ({
+    baseDelayMs,
+    maxDelayMs,
+    maxRetries
+  }: {
+    baseDelayMs: number;
+    maxDelayMs: number;
+    maxRetries: number;
+  }) => `最多重试 ${maxRetries} 次；${baseDelayMs}-${maxDelayMs}ms`,
+  adminQueueRetryLabel: "Attempts",
+  adminQueueStatusEmpty: "暂未读取到队列状态。",
+  adminQueueStatusLoadFailed: "无法读取生成队列状态。",
+  adminQueueStatusLoading: "正在载入生成队列状态...",
+  adminQueueStatusTitle: "生成队列状态",
+  adminQueueUnavailableValue: "-",
+  adminQueueUpdatedAt: ({ time }: { time: string }) => `更新于 ${time}`,
+  adminQueueWorkerDetail: ({ pollMs, running }: { pollMs: number; running: boolean }) =>
+    `${running ? "worker 运行中" : "worker 未运行"}；poll ${pollMs}ms`,
+  adminQueueWorkersLabel: "Workers",
   adminColumnActions: "操作",
   adminColumnCreated: "创建时间",
   adminColumnCredits: "积分",
@@ -1200,6 +1241,30 @@ const enMessages: I18nMessages = {
   adminAuditPrivate: "Private",
   adminAuditPublic: "Public",
   adminAuditUserAgent: ({ userAgent }) => `UA: ${userAgent}`,
+  adminQueueDriverDetail: ({ driver }) => `driver: ${driver}`,
+  adminQueueNoRecentFailures: "No recent failures",
+  adminQueueOutputsDetail: ({ failed, succeeded }) => `Outputs: ${succeeded} succeeded / ${failed} failed`,
+  adminQueueProviderDetail: ({ available, ttlMs }) => `Available ${available}; TTL ${ttlMs}ms`,
+  adminQueueProviderLabel: "Provider",
+  adminQueueReadyLabel: "Ready",
+  adminQueueRecentFailureItem: ({ generationId, status, time }) => `${generationId} · ${status} · ${time}`,
+  adminQueueRecentFailuresLabel: "Recent failures",
+  adminQueueRecordsDetail: ({ pending, running }) => `pending ${pending} / running ${running}`,
+  adminQueueRecordsLabel: "Failed records",
+  adminQueueRedisDetail: ({ status }) => `Redis ${status}`,
+  adminQueueRedisLabel: "Redis",
+  adminQueueRedisStatus: ({ status }) => (status === "ok" ? "OK" : status === "disabled" ? "Inline" : "Unavailable"),
+  adminQueueRetryDetail: ({ baseDelayMs, maxDelayMs, maxRetries }) =>
+    `Retries ${maxRetries}; ${baseDelayMs}-${maxDelayMs}ms`,
+  adminQueueRetryLabel: "Attempts",
+  adminQueueStatusEmpty: "Queue status has not been loaded.",
+  adminQueueStatusLoadFailed: "Unable to load generation queue status.",
+  adminQueueStatusLoading: "Loading generation queue status...",
+  adminQueueStatusTitle: "Generation queue status",
+  adminQueueUnavailableValue: "-",
+  adminQueueUpdatedAt: ({ time }) => `Updated ${time}`,
+  adminQueueWorkerDetail: ({ pollMs, running }) => `${running ? "worker running" : "worker stopped"}; poll ${pollMs}ms`,
+  adminQueueWorkersLabel: "Workers",
   adminColumnActions: "Actions",
   adminColumnCreated: "Created",
   adminColumnCredits: "Credits",

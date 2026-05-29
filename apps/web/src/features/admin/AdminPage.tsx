@@ -1,16 +1,20 @@
 import {
+  Activity,
   AlertTriangle,
   CheckCircle2,
   Coins,
   Copy,
+  Gauge,
   Gift,
   KeyRound,
+  ListChecks,
   Loader2,
   Power,
   PowerOff,
   RefreshCw,
   Save,
   Search,
+  ServerCog,
   Settings,
   ShieldCheck,
   Trash2
@@ -22,6 +26,8 @@ import type {
   AdminCreditAdjustmentResponse,
   AdminGenerationAuditRecord,
   AdminGenerationAuditsResponse,
+  AdminGenerationQueueRecentFailure,
+  AdminGenerationQueueStatusResponse,
   AdminSettings,
   AdminSettingsResponse,
   AdminUserResponse,
@@ -89,10 +95,12 @@ type RedemptionCodeExpiryPresetOption = (typeof redemptionCodeExpiryPresetOption
 
 export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig }: AdminPageProps) {
   const { formatDateTime, locale, t } = useI18n();
+  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [userSearch, setUserSearch] = useState("");
   const [settings, setSettings] = useState<AdminSettings | null>(null);
   const [audits, setAudits] = useState<AdminGenerationAuditRecord[]>([]);
+  const [queueStatus, setQueueStatus] = useState<AdminGenerationQueueStatusResponse | null>(null);
   const [redemptionCodes, setRedemptionCodes] = useState<RedemptionCodeSummary[]>([]);
   const [createdRedemptionCodes, setCreatedRedemptionCodes] = useState<RedemptionCodeSummary[]>([]);
   const [redemptionCodeForm, setRedemptionCodeForm] = useState<RedemptionCodeFormState>(initialRedemptionCodeForm);
@@ -102,6 +110,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
     users: true,
     settings: true,
     audits: true,
+    queueStatus: true,
     redemptionCodes: true
   });
   const [busyKey, setBusyKey] = useState("");
@@ -173,6 +182,23 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
     }
   }, [locale, t]);
 
+  const loadQueueStatus = useCallback(async (): Promise<void> => {
+    setLoading((value) => ({ ...value, queueStatus: true }));
+    setError("");
+    try {
+      const body = await adminRequest<AdminGenerationQueueStatusResponse>("/api/admin/generation-queue", {
+        guard: isAdminGenerationQueueStatusResponse,
+        locale,
+        t
+      });
+      setQueueStatus(body);
+    } catch (requestError) {
+      setError(errorMessage(requestError, t("adminQueueStatusLoadFailed")));
+    } finally {
+      setLoading((value) => ({ ...value, queueStatus: false }));
+    }
+  }, [locale, t]);
+
   const loadRedemptionCodes = useCallback(async (): Promise<void> => {
     setLoading((value) => ({ ...value, redemptionCodes: true }));
     setError("");
@@ -193,8 +219,8 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
   }, [locale, t]);
 
   useEffect(() => {
-    void Promise.all([loadUsers(""), loadSettings(), loadAudits(), loadRedemptionCodes()]);
-  }, [loadAudits, loadRedemptionCodes, loadSettings, loadUsers]);
+    void Promise.all([loadUsers(""), loadSettings(), loadAudits(), loadQueueStatus(), loadRedemptionCodes()]);
+  }, [loadAudits, loadQueueStatus, loadRedemptionCodes, loadSettings, loadUsers]);
 
   async function submitUserSearch(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -436,7 +462,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
           <button
             className="admin-ghost-button"
             type="button"
-            onClick={() => void Promise.all([loadUsers(userSearch), loadSettings(), loadAudits(), loadRedemptionCodes()])}
+            onClick={() => void Promise.all([loadUsers(userSearch), loadSettings(), loadAudits(), loadQueueStatus(), loadRedemptionCodes()])}
           >
             <RefreshCw className="size-4" aria-hidden="true" />
             {t("adminRefresh")}
@@ -843,6 +869,18 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
               title={t("adminAuditsTitle")}
               description={t("adminAuditsSubtitle")}
             />
+            {loading.queueStatus ? (
+              <LoadingState label={t("adminQueueStatusLoading")} />
+            ) : queueStatus ? (
+              <GenerationQueueStatusPanel
+                formatDateTime={formatDateTime}
+                numberFormat={numberFormat}
+                status={queueStatus}
+                t={t}
+              />
+            ) : (
+              <EmptyState label={t("adminQueueStatusEmpty")} />
+            )}
             {loading.audits ? (
               <LoadingState label={t("adminLoading")} />
             ) : sortedAudits.length > 0 ? (
@@ -958,6 +996,134 @@ function LoadingState({ label }: { label: string }) {
 
 function EmptyState({ label }: { label: string }) {
   return <div className="admin-empty-state">{label}</div>;
+}
+
+function GenerationQueueStatusPanel({
+  formatDateTime,
+  numberFormat,
+  status,
+  t
+}: {
+  formatDateTime: (value: string) => string;
+  numberFormat: Intl.NumberFormat;
+  status: AdminGenerationQueueStatusResponse;
+  t: Translate;
+}) {
+  const readyLength = optionalNumber(status.queue.readyLength, numberFormat, t);
+  const activePermits = optionalNumber(status.provider.activePermits, numberFormat, t);
+  const availablePermits = optionalNumber(status.provider.availablePermits, numberFormat, t);
+  const failedRecords = status.database.records.failed + status.database.records.partial + status.database.records.cancelled;
+
+  return (
+    <section className="admin-queue-status" data-testid="admin-queue-status" aria-label={t("adminQueueStatusTitle")}>
+      <div className="admin-queue-status__topline">
+        <strong>{t("adminQueueStatusTitle")}</strong>
+        <span>{t("adminQueueUpdatedAt", { time: formatDateTime(status.updatedAt) })}</span>
+      </div>
+      <div className="admin-queue-status__metrics">
+        <QueueMetric
+          detail={t("adminQueueRedisDetail", { status: t("adminQueueRedisStatus", { status: status.redis.status }) })}
+          icon={<ServerCog className="size-4" aria-hidden="true" />}
+          label={t("adminQueueRedisLabel")}
+          value={t("adminQueueRedisStatus", { status: status.redis.status })}
+        />
+        <QueueMetric
+          detail={t("adminQueueDriverDetail", { driver: status.queue.driver })}
+          icon={<ListChecks className="size-4" aria-hidden="true" />}
+          label={t("adminQueueReadyLabel")}
+          value={readyLength}
+        />
+        <QueueMetric
+          detail={t("adminQueueWorkerDetail", {
+            pollMs: status.queue.pollIntervalMs,
+            running: status.queue.workerRunning
+          })}
+          icon={<Activity className="size-4" aria-hidden="true" />}
+          label={t("adminQueueWorkersLabel")}
+          value={`${numberFormat.format(status.queue.activeWorkers)} / ${numberFormat.format(status.queue.workerConcurrency)}`}
+        />
+        <QueueMetric
+          detail={t("adminQueueProviderDetail", {
+            available: availablePermits,
+            ttlMs: status.provider.permitTtlMs
+          })}
+          icon={<Gauge className="size-4" aria-hidden="true" />}
+          label={t("adminQueueProviderLabel")}
+          value={`${activePermits} / ${numberFormat.format(status.provider.configuredConcurrency)}`}
+        />
+        <QueueMetric
+          detail={t("adminQueueRetryDetail", {
+            baseDelayMs: status.retry.baseDelayMs,
+            maxDelayMs: status.retry.maxDelayMs,
+            maxRetries: status.retry.maxRetries
+          })}
+          icon={<RefreshCw className="size-4" aria-hidden="true" />}
+          label={t("adminQueueRetryLabel")}
+          value={numberFormat.format(status.retry.maxAttempts)}
+        />
+        <QueueMetric
+          detail={t("adminQueueRecordsDetail", {
+            pending: status.database.records.pending,
+            running: status.database.records.running
+          })}
+          icon={<AlertTriangle className="size-4" aria-hidden="true" />}
+          label={t("adminQueueRecordsLabel")}
+          value={numberFormat.format(failedRecords)}
+        />
+      </div>
+      <div className="admin-queue-status__footer">
+        <span>
+          {t("adminQueueOutputsDetail", {
+            failed: status.database.outputs.failed,
+            succeeded: status.database.outputs.succeeded
+          })}
+        </span>
+        <RecentFailures failures={status.database.recentFailures} formatDateTime={formatDateTime} t={t} />
+      </div>
+    </section>
+  );
+}
+
+function QueueMetric({ detail, icon, label, value }: { detail: string; icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="admin-queue-metric">
+      <span className="admin-queue-metric__label">
+        {icon}
+        {label}
+      </span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function RecentFailures({
+  failures,
+  formatDateTime,
+  t
+}: {
+  failures: AdminGenerationQueueRecentFailure[];
+  formatDateTime: (value: string) => string;
+  t: Translate;
+}) {
+  if (failures.length === 0) {
+    return <span>{t("adminQueueNoRecentFailures")}</span>;
+  }
+
+  return (
+    <div className="admin-queue-failures" aria-label={t("adminQueueRecentFailuresLabel")}>
+      <strong>{t("adminQueueRecentFailuresLabel")}</strong>
+      {failures.map((failure) => (
+        <span key={`${failure.generationId}:${failure.updatedAt}`} title={failure.errorSummary}>
+          {t("adminQueueRecentFailureItem", {
+            generationId: failure.generationId,
+            status: failure.status,
+            time: formatDateTime(failure.updatedAt)
+          })}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function NumberSetting({
@@ -1088,6 +1254,10 @@ async function finishPreparedClipboardWrite(writePromise: Promise<boolean> | und
   }
 }
 
+function optionalNumber(value: number | undefined, numberFormat: Intl.NumberFormat, t: Translate): string {
+  return value === undefined ? t("adminQueueUnavailableValue") : numberFormat.format(value);
+}
+
 async function writeClipboardText(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     try {
@@ -1169,6 +1339,19 @@ function isAdminGenerationAuditsResponse(value: unknown): value is AdminGenerati
   return isRecord(value) && Array.isArray(value.items) && value.items.every(isAdminGenerationAuditRecord);
 }
 
+function isAdminGenerationQueueStatusResponse(value: unknown): value is AdminGenerationQueueStatusResponse {
+  return (
+    isRecord(value) &&
+    typeof value.updatedAt === "string" &&
+    isRecord(value.redis) &&
+    isAdminRedisStatus(value.redis.status) &&
+    isAdminGenerationQueueRuntime(value.queue) &&
+    isAdminProviderSchedulerRuntime(value.provider) &&
+    isAdminProviderRetrySummary(value.retry) &&
+    isAdminGenerationQueueDatabaseSummary(value.database)
+  );
+}
+
 function isAdminUserSummary(value: unknown): value is AdminUserSummary {
   return (
     isRecord(value) &&
@@ -1230,6 +1413,73 @@ function isAdminGenerationAuditOutput(value: unknown): value is AdminGenerationA
     (value.error === undefined || typeof value.error === "string") &&
     typeof value.isPublic === "boolean"
   );
+}
+
+function isAdminGenerationQueueRuntime(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    (value.driver === "redis" || value.driver === "inline") &&
+    (value.readyLength === undefined || isFiniteNumber(value.readyLength)) &&
+    typeof value.workerRunning === "boolean" &&
+    isFiniteNumber(value.activeWorkers) &&
+    isFiniteNumber(value.workerConcurrency) &&
+    isFiniteNumber(value.pollIntervalMs)
+  );
+}
+
+function isAdminProviderSchedulerRuntime(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.configuredConcurrency) &&
+    (value.activePermits === undefined || isFiniteNumber(value.activePermits)) &&
+    (value.availablePermits === undefined || isFiniteNumber(value.availablePermits)) &&
+    isFiniteNumber(value.permitTtlMs)
+  );
+}
+
+function isAdminProviderRetrySummary(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.maxRetries) &&
+    isFiniteNumber(value.maxAttempts) &&
+    isFiniteNumber(value.baseDelayMs) &&
+    isFiniteNumber(value.maxDelayMs)
+  );
+}
+
+function isAdminGenerationQueueDatabaseSummary(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isGenerationStatusCounts(value.records) &&
+    isOutputStatusCounts(value.outputs) &&
+    Array.isArray(value.recentFailures) &&
+    value.recentFailures.every(isAdminGenerationQueueRecentFailure)
+  );
+}
+
+function isGenerationStatusCounts(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    ["pending", "running", "succeeded", "partial", "failed", "cancelled"].every((status) => isFiniteNumber(value[status]))
+  );
+}
+
+function isOutputStatusCounts(value: unknown): boolean {
+  return isRecord(value) && isFiniteNumber(value.succeeded) && isFiniteNumber(value.failed);
+}
+
+function isAdminGenerationQueueRecentFailure(value: unknown): value is AdminGenerationQueueRecentFailure {
+  return (
+    isRecord(value) &&
+    typeof value.generationId === "string" &&
+    (value.status === "failed" || value.status === "partial" || value.status === "cancelled") &&
+    (value.errorSummary === undefined || typeof value.errorSummary === "string") &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+function isAdminRedisStatus(value: unknown): boolean {
+  return value === "ok" || value === "disabled" || value === "unavailable";
 }
 
 function isCreditTransaction(value: unknown): boolean {

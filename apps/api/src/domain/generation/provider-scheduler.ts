@@ -8,6 +8,13 @@ export interface ProviderSchedulerConfig {
   permitTtlMs: number;
 }
 
+export interface ProviderSchedulerSnapshot {
+  configuredConcurrency: number;
+  activePermits?: number;
+  availablePermits?: number;
+  permitTtlMs: number;
+}
+
 export interface ProviderCallInput<T> {
   generationId: string;
   outputId: string;
@@ -50,6 +57,14 @@ end
 return 0
 `;
 
+const COUNT_PROVIDER_PERMITS_SCRIPT = `
+local key = KEYS[1]
+local redisTime = redis.call("TIME")
+local nowMs = redisTime[1] * 1000 + math.floor(redisTime[2] / 1000)
+redis.call("ZREMRANGEBYSCORE", key, "-inf", nowMs)
+return redis.call("ZCARD", key)
+`;
+
 const providerSchedulerConfig = readProviderSchedulerConfig(process.env);
 let inlineActivePermits = 0;
 
@@ -74,12 +89,44 @@ export async function runProviderCall<T>(input: ProviderCallInput<T>): Promise<T
   }
 }
 
+export async function getProviderSchedulerSnapshot(
+  options: { readRedisMetrics?: boolean } = {}
+): Promise<ProviderSchedulerSnapshot> {
+  const activePermits =
+    redisRuntimeUsesRedis() && options.readRedisMetrics !== false
+      ? await countRedisProviderPermits()
+      : redisRuntimeUsesRedis()
+        ? undefined
+        : inlineActivePermits;
+
+  return {
+    configuredConcurrency: providerSchedulerConfig.globalConcurrency,
+    activePermits,
+    availablePermits:
+      activePermits === undefined ? undefined : Math.max(0, providerSchedulerConfig.globalConcurrency - activePermits),
+    permitTtlMs: providerSchedulerConfig.permitTtlMs
+  };
+}
+
 async function acquireProviderPermit(input: ProviderCallInput<unknown>): Promise<ProviderPermit> {
   if (redisRuntimeUsesRedis()) {
     return acquireRedisProviderPermit(input);
   }
 
   return acquireInlineProviderPermit(input.signal);
+}
+
+async function countRedisProviderPermits(): Promise<number> {
+  try {
+    const client = await getRedisClient();
+    const count = await client.eval(COUNT_PROVIDER_PERMITS_SCRIPT, {
+      keys: [PROVIDER_PERMITS_KEY],
+      arguments: []
+    });
+    return numericRedisResult(count);
+  } catch (error) {
+    throw toProviderSchedulerError(error);
+  }
 }
 
 async function acquireInlineProviderPermit(signal: AbortSignal | undefined): Promise<ProviderPermit> {
@@ -163,6 +210,17 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
 
 function isAcquirePermitSuccess(value: unknown): boolean {
   return value === 1 || value === "1";
+}
+
+function numericRedisResult(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 function toProviderSchedulerError(error: unknown): ProviderSchedulerError {

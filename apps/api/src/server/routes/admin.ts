@@ -8,6 +8,7 @@ import {
   updateAdminSettings,
   updateAdminUser
 } from "../../domain/admin/admin-store.js";
+import { readAdminGenerationQueueStatus } from "../../domain/generation/generation-queue-observability.js";
 import { requireAdmin } from "../http/auth.js";
 import { errorResponse } from "../http/errors.js";
 import { readJson } from "../http/json.js";
@@ -123,6 +124,15 @@ export function registerAdminRoutes(app: Hono): void {
         cursor: c.req.query("cursor")
       })
     );
+  });
+
+  app.get("/api/admin/generation-queue", async (c) => {
+    const auth = await requireAdmin(c);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    return c.json(await readAdminGenerationQueueStatus());
   });
 }
 

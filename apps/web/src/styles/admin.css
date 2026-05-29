@@ -552,6 +552,90 @@
   text-wrap: pretty;
 }
 
+.admin-queue-status {
+  display: grid;
+  gap: 0.7rem;
+  border-block: 1px solid rgb(203 183 154 / 0.52);
+  margin-bottom: 0.85rem;
+  padding: 0.75rem 0;
+}
+
+.admin-queue-status__topline,
+.admin-queue-status__footer {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--muted-ink);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.admin-queue-status__topline strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.admin-queue-status__metrics {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(8rem, 1fr));
+  gap: 0.55rem;
+}
+
+.admin-queue-metric {
+  display: grid;
+  min-width: 0;
+  gap: 0.28rem;
+  border-left: 2px solid var(--line);
+  background: rgb(255 255 255 / 0.58);
+  padding: 0.2rem 0.65rem;
+}
+
+.admin-queue-metric__label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted-ink);
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.admin-queue-metric strong {
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.admin-queue-metric small {
+  color: var(--muted-ink);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.admin-queue-failures {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.admin-queue-failures strong,
+.admin-queue-failures span {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-soft);
+  padding: 0.18rem 0.45rem;
+  overflow-wrap: anywhere;
+}
+
 .admin-audit-list {
   display: grid;
   gap: 0.75rem;
@@ -685,6 +769,7 @@
   }
 
   .admin-settings-grid,
+  .admin-queue-status__metrics,
   .admin-audit-row {
     grid-template-columns: 1fr;
   }
@@ -708,6 +793,16 @@
 
   .admin-search button {
     grid-column: 1 / -1;
+  }
+
+  .admin-queue-status__topline,
+  .admin-queue-status__footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-queue-failures {
+    justify-content: flex-start;
   }
 
   .admin-credit-form,

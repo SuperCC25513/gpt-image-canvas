@@ -1,0 +1,68 @@
+feature: 2026-05-29-generation-queue-observability
+created: "2026-05-29"
+
+steps:
+  - action: "名词契约：新增 admin queue status 共享类型和前端响应 guard"
+    exit_signal: "typecheck 能验证前后端共用 queue/provider/retry/database 响应字段"
+    status: done
+
+  - action: "Runtime snapshot：queue / provider scheduler 暴露安全状态，observability 模块聚合 Redis health、retry config 和 DB summary"
+    exit_signal: "Redis 模式能读 ready length / active permits；inline 模式不读取 Redis ready list"
+    status: done
+
+  - action: "Admin API：新增 admin-only generation queue status route 和 smoke 覆盖"
+    exit_signal: "admin session 可读状态，未登录或非 admin 不能读取"
+    status: done
+
+  - action: "Admin UI：生成审计页顶部展示队列、provider、retry 和失败摘要"
+    exit_signal: "刷新动作同步刷新状态；桌面和移动视口无文本重叠"
+    status: done
+
+  - action: "文档与验证：更新 reliability/security/architecture 并运行 typecheck、build、smoke、浏览器验证"
+    exit_signal: "必需检查通过，Redis ready list / provider permit 无残留"
+    status: done
+
+checks:
+  - item: "Admin 请求 /api/admin/generation-queue -> 返回 queue/provider/retry/database/redis 字段，且不包含 REDIS_URL、密码、raw Redis error、prompt、provider secret 或 Redis job payload"
+    source: 验收场景
+    status: passed
+
+  - item: "Redis driver 且 Redis 可用 -> 响应包含 redis.status=ok、ready queue 长度、worker concurrency / poll interval、provider configured concurrency、active permits 和 available permits"
+    source: Redis runtime snapshot
+    status: passed
+
+  - item: "GENERATION_QUEUE_DRIVER=inline -> 响应包含 redis.status=disabled、queue.driver=inline，且不会读取 ready list"
+    source: inline 兼容语义
+    status: passed
+
+  - item: "DB 中存在 pending/running/failed/partial/cancelled/succeeded generation 和 failed/succeeded outputs -> database summary 按状态计数，recentFailures 只列失败类状态的稳定摘要"
+    source: DB summary
+    status: passed
+
+  - item: "非 admin 或未登录用户访问 admin route -> 被拒绝，不能读取 queue status"
+    source: admin 权限
+    status: passed
+
+  - item: "生成审计页加载成功 -> 顶部能看到队列、provider、retry、失败摘要；刷新按钮会刷新这些状态"
+    source: 前端可见行为
+    status: passed
+
+  - item: "Redis 指标读取失败 -> admin API 返回 redis.status=unavailable 和 DB summary，不暴露连接细节"
+    source: 错误语义
+    status: passed
+
+  - item: "不新增 delayed queue、per-output Redis job、processing list、用户排队位次、ETA 或 runtime retry attempt 持久化"
+    source: 范围守护
+    status: passed
+
+  - item: "不改 provider / worker / retry 默认配置和执行语义"
+    source: 范围守护
+    status: passed
+
+  - item: "不新增公开匿名 API"
+    source: 范围守护
+    status: passed
+
+  - item: "不把 prompt、reference bytes、provider credential、audit payload、credit transaction 或完整 generation record 写进 Redis 或 queue status 响应"
+    source: 安全边界
+    status: passed

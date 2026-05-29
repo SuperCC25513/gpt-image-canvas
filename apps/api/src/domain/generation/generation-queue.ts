@@ -7,6 +7,15 @@ export interface GenerationQueueConfig {
   pollIntervalMs: number;
 }
 
+export interface GenerationQueueSnapshot {
+  driver: "redis" | "inline";
+  readyLength?: number;
+  workerRunning: boolean;
+  activeWorkers: number;
+  workerConcurrency: number;
+  pollIntervalMs: number;
+}
+
 export interface GenerationQueueJob {
   jobId: string;
   generationId: string;
@@ -36,6 +45,7 @@ const generationQueueConfig = readGenerationQueueConfig(process.env);
 
 let workerAbortController: AbortController | undefined;
 let workerPromises: Array<Promise<void>> = [];
+let activeWorkerCount = 0;
 
 export function readGenerationQueueConfig(env: NodeJS.ProcessEnv): GenerationQueueConfig {
   return {
@@ -98,6 +108,31 @@ export async function removeGenerationJob(generationId: string): Promise<void> {
   }
 }
 
+export async function getGenerationQueueSnapshot(
+  options: { readRedisMetrics?: boolean } = {}
+): Promise<GenerationQueueSnapshot> {
+  const usesRedis = generationQueueUsesRedis();
+  let readyLength: number | undefined;
+
+  if (usesRedis && options.readRedisMetrics !== false) {
+    try {
+      const client = await getRedisClient();
+      readyLength = await client.lLen(GENERATION_QUEUE_READY_KEY);
+    } catch (error) {
+      throw toGenerationQueueError(error);
+    }
+  }
+
+  return {
+    driver: usesRedis ? "redis" : "inline",
+    readyLength,
+    workerRunning: Boolean(workerAbortController),
+    activeWorkers: activeWorkerCount,
+    workerConcurrency: generationQueueConfig.workerConcurrency,
+    pollIntervalMs: generationQueueConfig.pollIntervalMs
+  };
+}
+
 export function startGenerationQueueWorker(processor: GenerationQueueProcessor): void {
   if (!generationQueueUsesRedis() || workerAbortController) {
     return;
@@ -141,8 +176,10 @@ async function generationQueueWorkerLoop(
       }
 
       try {
+        activeWorkerCount += 1;
         await processor(job, signal);
       } finally {
+        activeWorkerCount = Math.max(0, activeWorkerCount - 1);
         await deleteQueuedJob(jobKey);
       }
     } catch (error) {

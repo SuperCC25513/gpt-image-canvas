@@ -53,7 +53,7 @@ items:
   - slug: generation-queue-observability
     description: 暴露排队、运行、重试、失败摘要给 API、前端和审计
     depends_on: [generation-cancel-and-recovery, agent-generation-scheduler-adapter]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-29-generation-queue-observability
     minimal_loop: false
-    notes: null
+    notes: "已新增 admin-only /api/admin/generation-queue 和生成审计页队列状态摘要；展示 Redis、ready queue、worker、provider permit、retry、DB 计数和失败摘要"
