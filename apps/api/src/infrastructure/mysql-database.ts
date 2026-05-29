@@ -91,6 +91,21 @@ const mySqlSchema: MySqlTableDefinition[] = [
     constraints: []
   },
   {
+    name: "registration_email_verifications",
+    comment: "自助注册邮箱验证码挑战状态",
+    columns: [
+      { name: "email", definition: "VARCHAR(254) PRIMARY KEY NOT NULL", comment: "规范化后的注册邮箱" },
+      { name: "code_hash", definition: "VARCHAR(128) NOT NULL", comment: "验证码 HMAC 哈希，不保存明文验证码" },
+      { name: "expires_at", definition: "VARCHAR(32) NOT NULL", comment: "验证码过期时间 ISO 字符串" },
+      { name: "verify_attempts", definition: "INT NOT NULL DEFAULT 0", comment: "当前验证码失败尝试次数" },
+      { name: "send_count", definition: "INT NOT NULL DEFAULT 0", comment: "当前邮箱累计发送挑战次数" },
+      { name: "last_sent_at", definition: "VARCHAR(32) NOT NULL", comment: "最近发送时间 ISO 字符串" },
+      { name: "created_at", definition: "VARCHAR(32) NOT NULL", comment: "创建时间 ISO 字符串" },
+      { name: "updated_at", definition: "VARCHAR(32) NOT NULL", comment: "更新时间 ISO 字符串" }
+    ],
+    constraints: ["KEY registration_email_verifications_expires_at_idx (expires_at)"]
+  },
+  {
     name: "credit_transactions",
     comment: "积分余额变更不可变审计流水",
     columns: [

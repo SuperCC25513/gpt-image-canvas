@@ -2,9 +2,9 @@
 doc_type: requirement
 slug: registration-email-verification
 pitch: 用户注册前必须证明邮箱归属，减少伪造邮箱账号进入系统。
-status: draft
+status: current
 last_reviewed: "2026-05-28"
-implemented_by: []
+implemented_by: [2026-05-28-registration-email-verification]
 tags: [auth, registration, email]
 ---
 
@@ -30,3 +30,7 @@ tags: [auth, registration, email]
 - 不做登录二次验证、忘记密码、邀请注册、企业 SSO 或邮件订阅通知。
 - 不在本应用保存邮件服务商凭据；本应用只调用内部邮件网关发送验证码邮件。
 - 不保证邮箱域名可信，也不检测一次性邮箱；域名准入仍由注册邮箱后缀支持列表负责。
+
+## 变更日志
+
+- 2026-05-29：实现注册验证码发送、HMAC 挑战存储、注册消费门禁、前端验证码输入和 Mail Gateway 集成；能力状态升级为 current。

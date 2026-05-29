@@ -2,7 +2,7 @@
 doc_type: feature-design
 feature: 2026-05-28-registration-email-verification
 requirement: registration-email-verification
-status: draft
+status: approved
 summary: 接入 cc-base Mail Gateway，注册页先发送邮箱验证码，注册时必须提交同邮箱有效验证码。
 tags: [auth, registration, email, mail-gateway]
 ---
@@ -206,6 +206,7 @@ flowchart TD
 - 错误语义：缺验证码返回 `email_verification_required`；验证码错误返回 `email_verification_invalid`；过期返回 `email_verification_expired`；发送节流返回 429 + `email_verification_rate_limited`；网关缺配置、超时、502/503/504 等失败返回 `email_verification_unavailable` 或上游语义折叠后的稳定码。
 - 顺序约束：注册发送验证码和最终注册都先检查 `allowRegistration`、邮箱后缀；最终注册保留现有邮箱查重位置，验证码只在用户尚不存在时被消费。
 - 数据一致性：验证码消费和用户创建需要在同一注册编排中顺序执行；若用户创建失败，验证码是否恢复不保证，用户可重新发送验证码。
+- 网关失败回滚：发送验证码时先写入本次 challenge 以保证发送成功后可验证；若 Mail Gateway 调用失败，需要恢复原 challenge 或删除新 challenge，避免用户收到不可用错误后被无效冷却卡住。
 - 幂等性：重复发送会替换同邮箱未消费挑战；重复提交同一已消费验证码不得创建第二个用户，最终由 `users(email)` 唯一约束兜底。
 - 安全约束：验证码不进日志、不返回前端、不存明文；邮件网关 API key 不进入响应、文档示例或提交。
 - 可观测点：服务端可记录网关 `request_id` 和本地错误码，但不记录验证码明文和完整 API key。

@@ -12,6 +12,9 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - **本地账号**：应用内账号，用于保护画布、Gallery 管理、资产、提供方配置、Agent 和后台管理能力。
 - **自助注册**：未登录用户通过注册页创建本地账号的入口，受系统设置控制。
 - **注册邮箱后缀支持列表**：后台系统设置中的邮箱域名白名单，只影响自助注册。列表非空时只允许精确匹配的邮箱域名注册；管理员显式保存空列表时表示不限制邮箱域名。
+- **注册邮箱验证码**：发送到注册邮箱的一次性 6 位数字短码。用户必须用同邮箱未过期验证码完成自助注册。
+- **验证挑战**：`registration_email_verifications` 中保存的注册验证码状态，包含邮箱、验证码 HMAC、过期时间、发送冷却和失败尝试次数；不保存明文验证码。
+- **邮件网关**：cc-base Mail Gateway 内部 HTTP API。当前应用只调用 `POST /v1/emails/send` 发送 `verification_code` 邮件，并通过 `X-Api-Key` 鉴权；具体邮件服务商凭据留在网关内。
 - **系统设置**：保存在 `app_settings` 的本地运行时配置，包括注册开关、审批策略、默认积分和注册邮箱后缀支持列表。
 - **Redis runtime**：API 进程内统一的 Redis 连接、配置读取、健康检查和关闭入口，支撑生成调度的短期运行态，包括当前 provider permit 和后续队列 / 重试状态。
 - **queue driver**：生成调度运行模式，取值 `redis` 或 `inline`。`redis` 是默认运行模式；`inline` 只用于测试或显式本地调试。
@@ -29,10 +32,10 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 
 ## 3. 子系统 / 模块索引
 
-- **共享契约层**：`packages/shared/src/auth.ts` 和 `packages/shared/src/admin.ts` 定义前后端共用的认证、后台设置字段、默认注册邮箱域名和错误码。
-- **认证域服务**：`apps/api/src/domain/auth/auth-store.ts` 负责读取注册策略、校验自助注册条件、创建用户和发放默认积分。
+- **共享契约层**：`packages/shared/src/auth.ts` 和 `packages/shared/src/admin.ts` 定义前后端共用的认证、后台设置字段、默认注册邮箱域名、注册验证码请求/响应和错误码。
+- **认证域服务**：`apps/api/src/domain/auth/auth-store.ts` 负责读取注册策略、校验自助注册条件、消费验证码挑战、创建用户和发放默认积分；`apps/api/src/domain/auth/registration-email-verification.ts` 负责验证码生成、HMAC、发送冷却、尝试次数和 Mail Gateway 调用。
 - **后台管理域服务**：`apps/api/src/domain/admin/admin-store.ts` 负责读取和更新系统设置，并在保存前规范化注册邮箱后缀支持列表。
-- **持久化层**：SQLite 和 MySQL 的 `app_settings.allowed_registration_email_domains_json` 保存注册邮箱后缀支持列表。
+- **持久化层**：SQLite 和 MySQL 的 `app_settings.allowed_registration_email_domains_json` 保存注册邮箱后缀支持列表，`registration_email_verifications` 保存注册验证码挑战状态。
 - **Redis runtime 基础设施**：`apps/api/src/infrastructure/redis-runtime.ts` 负责解析 `REDIS_URL`、`GENERATION_QUEUE_DRIVER`、`REDIS_CONNECT_TIMEOUT_MS`，创建 node-redis singleton client，提供 `assertRedisReady()`、`checkRedisHealth()` 和 `closeRedisClient()`。
 - **Provider scheduler**：`apps/api/src/domain/generation/provider-scheduler.ts` 负责解析 `GENERATION_PROVIDER_GLOBAL_CONCURRENCY`、`GENERATION_PROVIDER_PERMIT_TTL_MS`，并用 `runProviderCall()` 包住所有 `provider.generate` / `provider.edit` 单图调用。`GENERATION_QUEUE_DRIVER=redis` 时使用 Redis sorted set + Lua 原子 acquire；`inline` 时只使用进程内 semaphore。
 - **Provider retry policy**：`apps/api/src/domain/generation/provider-retry-policy.ts` 负责解析 `GENERATION_PROVIDER_MAX_RETRIES`、`GENERATION_PROVIDER_RETRY_BASE_MS`、`GENERATION_PROVIDER_RETRY_MAX_MS`，并用 `runProviderCallWithRetry()` 包住单图 provider call。429、408、5xx、连接超时和临时网络中断会退避重试，missing provider/API key、400 参数错误、参考图非法和取消不重试。
@@ -43,7 +46,7 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - **API 启动与健康检查**：`apps/api/src/server/app.ts` 在创建 app 时执行 Redis readiness；`apps/api/src/server/routes/core.ts` 的 `/api/health` 返回 `checks.redis=ok|disabled|unavailable`，Redis 不可用时返回 503。
 - **进程生命周期**：`apps/api/src/index.ts` 在 shutdown 中关闭 Agent WebSocket、generation queue worker、Redis client 和数据库连接，避免 dev/watch 或 smoke 测试残留句柄。
 - **生成 Provider 调度规划**：`.codestable/roadmap/generation-provider-scheduler/` 记录 Redis runtime、全局 provider 并发闸门、队列、重试、状态桥和 Agent 接入的拆分；当前已完成 Redis runtime 底座、全局 provider 并发闸门、手动生成 Redis 队列 worker、provider retry policy 和 Agent queue adapter。
-- **Web 注册入口**：`apps/web/src/App.tsx` 展示当前支持的注册邮箱后缀，并把后端错误码映射为本地化提示。
+- **Web 注册入口**：`apps/web/src/App.tsx` 展示当前支持的注册邮箱后缀，提供“发送验证码 → 填码注册”的自助注册流程，并把后端错误码映射为本地化提示。
 - **Web 后台系统设置**：`apps/web/src/features/admin/AdminPage.tsx` 提供注册策略和邮箱后缀列表编辑入口。
 
 ## 4. 关键架构决定
@@ -53,6 +56,9 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - 默认注册邮箱后缀支持列表为 `126.com`、`139.com`、`163.com`、`189.cn`、`aliyun.com`、`gmail.com`、`qq.com`。
 - 缺失字段、`NULL` 或无法解析的 JSON 都回退默认列表，避免旧库升级或坏数据把注册入口意外放开。
 - 管理员显式保存空列表表示“不限制邮箱域名”，这是一个有意配置，不等同于字段缺失。
+- 自助注册必须先通过邮箱验证码门禁。`POST /api/auth/registration-email-verifications` 只发送验证码；`POST /api/auth/register` 只消费同邮箱有效验证码后才进入创建用户、注册送积分和会话创建流程。
+- 注册验证码只保存 HMAC 哈希，不保存明文。当前 HMAC secret 复用 `MAIL_GATEWAY_API_KEY`；邮件网关地址和 key 来自 `MAIL_GATEWAY_BASE_URL`、`MAIL_GATEWAY_API_KEY`、`MAIL_GATEWAY_TIMEOUT_MS`，不写入系统设置或后台 UI。
+- 邮件网关错误统一折叠为本地稳定错误码，不能向前端暴露网关 URL、API key、provider 原始错误或内部拓扑。
 - Redis 是生成调度的必需运行依赖。默认 `REDIS_URL` 是 `redis://127.0.0.1:6379`；Docker Compose 使用内部 `redis://redis:6379`。
 - `GENERATION_QUEUE_DRIVER=redis` 是默认模式。Redis 不可用时 API readiness 或 health 必须失败，不能静默回退到旧的无限 provider 并发路径。
 - `GENERATION_QUEUE_DRIVER=inline` 只用于测试或显式本地调试，smoke 测试需要主动设置该值以避免依赖本机 Redis。
@@ -79,9 +85,11 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 ## 5. 已知约束 / 硬边界
 
 - 注册邮箱后缀支持列表只限制新的自助注册，不影响已有用户登录、管理员账号 bootstrap、Codex OAuth 或提供方账号邮箱。
-- 域名匹配只做邮箱 `@` 后部分的精确匹配；不支持通配符、正则、子域继承、MX 查询、邮箱验证码、一次性邮箱检测或黑名单策略。
+- 域名匹配只做邮箱 `@` 后部分的精确匹配；不支持通配符、正则、子域继承、MX 查询、一次性邮箱检测或黑名单策略。
+- 当前只做注册邮箱验证码，不做登录 MFA、忘记密码、修改邮箱、邀请注册或邮件订阅通知。
 - `allowRegistration=false` 是更高优先级的总开关。关闭自助注册后，不管邮箱域名是否在支持列表内，都应返回注册关闭语义。
 - 域名检查发生在邮箱查重之前，避免对不支持域名泄露该邮箱是否已注册。
+- 注册验证码发送和最终注册都会先检查 `allowRegistration` 与邮箱后缀支持列表；不支持域名或关闭注册时不调用邮件网关。
 - 本地无密码 Redis 只适合绑定本机或受控 Docker/内网网络，不得公网暴露；远程 Redis 的 ACL/TLS/网络隔离属于独立部署安全工作。
 - 后续生成调度模块必须复用 `redis-runtime.ts` 的 runtime API，不应重新解析 Redis env 或创建独立 Redis client。
 - `GENERATION_QUEUE_DRIVER=inline` 下的 provider scheduler 只限制当前 API 进程，不提供跨进程或跨机器全局保证；真实全局闸门依赖 `GENERATION_QUEUE_DRIVER=redis`。

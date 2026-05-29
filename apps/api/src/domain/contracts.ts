@@ -93,6 +93,8 @@ export type {
   AuthRegisterResponse,
   AuthSettings,
   AuthSessionResponse,
+  RegisterEmailVerificationRequest,
+  RegisterEmailVerificationResponse,
   CreatePromptFavoriteGroupRequest,
   CreatePromptFavoriteRequest,
   PromptFavoriteGroup,

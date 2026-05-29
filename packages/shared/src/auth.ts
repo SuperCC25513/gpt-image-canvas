@@ -133,6 +133,17 @@ export interface RegisterRequest {
   name: string;
   email: string;
   password: string;
+  emailVerificationCode: string;
+}
+
+export interface RegisterEmailVerificationRequest {
+  email: string;
+  locale?: "zh-CN" | "en";
+}
+
+export interface RegisterEmailVerificationResponse {
+  ok: true;
+  expiresAt: string;
 }
 
 export interface LoginRequest {
@@ -143,6 +154,11 @@ export interface LoginRequest {
 export type AuthErrorCode =
   | "account_inactive"
   | "email_already_registered"
+  | "email_verification_expired"
+  | "email_verification_invalid"
+  | "email_verification_rate_limited"
+  | "email_verification_required"
+  | "email_verification_unavailable"
   | "forbidden"
   | "email_domain_not_allowed"
   | "invalid_auth_request"

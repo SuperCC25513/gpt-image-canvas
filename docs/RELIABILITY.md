@@ -43,6 +43,7 @@ MySQL 通过 `USE_MYSQL=true` 显式启用。未设置或设为其他值时使�
 Important persistence rules:
 
 - Never write generated assets outside the configured `DATA_DIR/assets` path or the configured OSS `root-path`.
+- Registration email verification challenges are stored in `registration_email_verifications`. The table stores normalized email, HMAC code hash, expiry, failed attempt count, send count, and timestamps; it must never store plaintext verification codes.
 - Validate local asset paths before reading from disk, and validate OSS object keys before signing or reading.
 - Keep generation records, outputs, reference assets, and asset rows consistent.
 - 积分余额变更必须在数据库事务内同时写入 `credit_transactions`。生成预扣、失败退款、注册赠送和每日签到都不能只改 `users.credits`。
@@ -78,6 +79,22 @@ Provider errors should become stable API errors where possible. Avoid exposing r
 - 生成图片成功后必须能从当前资产存储读取；本地或 OSS 写入失败时不能记录成成功资产。
 - 生成前先按 `count * generation_credit_cost` 预扣积分。全部失败按本次输出数退款，部分失败只退失败输出对应积分；退款流水按 generation id 保持幂等。
 - Terminal generation records are immutable for late completion: once a record is `succeeded`, `partial`, `failed`, or `cancelled`, a late worker finish must not overwrite the status or persist new outputs.
+
+## Registration Email Verification
+
+Self-service registration requires an email verification code before user creation. The API sends codes through the internal cc-base Mail Gateway using `POST /v1/emails/send` with `type=verification_code` and `X-Api-Key`.
+
+Runtime variables:
+
+```text
+MAIL_GATEWAY_BASE_URL=
+MAIL_GATEWAY_API_KEY=
+MAIL_GATEWAY_TIMEOUT_MS=5000
+```
+
+If the gateway base URL or API key is missing, sending a code returns `email_verification_unavailable`; consuming an existing challenge also requires the API key because it is the current HMAC secret. No user or registration credit transaction should be created on verification failure. Code sends are cooled down per normalized email for 60 seconds. Codes expire after 10 minutes and allow at most 5 failed verification attempts.
+
+`allowRegistration` and the registration email-domain allowlist are checked both when sending a code and when registering. Registration remains a single creation endpoint: `/api/auth/register` consumes the code, then continues through the existing active/pending branch and registration credit transaction flow.
 
 ## Agent Execution
 

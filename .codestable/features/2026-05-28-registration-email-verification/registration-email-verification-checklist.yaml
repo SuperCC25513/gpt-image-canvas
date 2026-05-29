@@ -1,0 +1,72 @@
+feature: 2026-05-28-registration-email-verification
+created: "2026-05-29"
+
+steps:
+  - action: "契约骨架：扩展 shared auth 类型、错误码和发送验证码请求/响应契约"
+    exit_signal: "shared/API/Web typecheck 能引用 emailVerificationCode 和 registration-email-verifications 契约"
+    status: done
+
+  - action: "持久化骨架：SQLite/MySQL 增加 registration_email_verifications 挑战表、索引和 schema 文档"
+    exit_signal: "新库初始化和旧库迁移都会创建验证码挑战表，schema 文档同步"
+    status: done
+
+  - action: "后端计算节点：实现验证码生成、HMAC 哈希、节流、尝试次数、消费和 Mail Gateway 客户端"
+    exit_signal: "不触达 UI 也能覆盖发送成功、缺配置、冷却、错误码、过期和尝试次数"
+    status: done
+
+  - action: "后端编排接入：新增发送验证码路由，注册创建流程强制消费同邮箱验证码"
+    exit_signal: "缺少/错误/过期验证码无法注册，有效验证码继续沿用 active/pending 分支"
+    status: done
+
+  - action: "前端交互接入：注册页加入发送验证码、验证码输入、冷却、成功/失败状态和 i18n 文案"
+    exit_signal: "桌面和移动视口下注册表单不溢出，提交注册时包含验证码字段"
+    status: done
+
+  - action: "验证覆盖与文档同步：补 smoke、运行 typecheck/build/browser，并回写架构/安全/可靠性文档"
+    exit_signal: "关键场景清单均有自动化或浏览器证据，文档描述与实现一致"
+    status: done
+
+checks:
+  - item: "支持域名邮箱请求发送验证码 -> 调用 Mail Gateway verification_code，返回 200 + expiresAt，响应不包含验证码明文"
+    source: 验收场景
+    status: passed
+
+  - item: "Mail Gateway 未配置或不可用 -> 返回稳定错误码，不暴露 API key、内部 URL 或 provider 原始错误，且不留下不可用 challenge"
+    source: 网关错误语义
+    status: passed
+
+  - item: "同一邮箱冷却时间内重复请求 -> 返回 429 + email_verification_rate_limited，且不重复调用 Mail Gateway"
+    source: 发送节流
+    status: passed
+
+  - item: "注册缺少 emailVerificationCode -> 返回 email_verification_required，不新增用户和积分流水"
+    source: 注册门禁
+    status: passed
+
+  - item: "注册验证码错误或尝试次数超限 -> 返回 email_verification_invalid，不新增用户和积分流水"
+    source: 注册门禁
+    status: passed
+
+  - item: "注册验证码过期 -> 返回 email_verification_expired，不新增用户和积分流水"
+    source: 注册门禁
+    status: passed
+
+  - item: "正确邮箱和未过期验证码 -> 创建用户；requireApproval=false 返回 session，requireApproval=true 返回 pending；注册送积分保持事务一致"
+    source: 注册成功路径
+    status: passed
+
+  - item: "验证码属于邮箱 A 但注册邮箱 B -> 返回验证码错误，不创建邮箱 B 用户"
+    source: 邮箱绑定
+    status: passed
+
+  - item: "邮箱域名不支持或注册关闭 -> 发送验证码和注册都沿用 email_domain_not_allowed / registration_disabled，且不发送邮件"
+    source: 注册策略复用
+    status: passed
+
+  - item: "前端桌面和移动注册页 -> 邮箱、发送按钮、验证码输入、密码和提交按钮不重叠，状态可读"
+    source: 前端可见行为
+    status: passed
+
+  - item: "不接入 Resend/Mailgun SDK，不新增后台邮件配置 UI，不影响登录、退出、Codex OAuth 和管理员 bootstrap"
+    source: 范围守护
+    status: passed

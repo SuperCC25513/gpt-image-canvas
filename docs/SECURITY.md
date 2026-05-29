@@ -20,6 +20,7 @@ Secrets may come from:
 - `USE_MYSQL=true` 时使用的 MySQL 连接凭据。
 - `USE_MYSQL=true` 时用于服务端上传和签名的 OSS AK/SK，来自 `.env` 或 `OSS_*` 运行时环境变量。
 - `REDIS_URL` when it points to a remote Redis or contains credentials.
+- `MAIL_GATEWAY_API_KEY`, used only by the API to call the internal Mail Gateway.
 - Agent LLM config stored in SQLite.
 - Codex OAuth tokens stored in SQLite.
 
@@ -54,6 +55,7 @@ When adding browser tests that save fake credentials, clear or restore local tes
 - Prefer stable error codes from shared contracts or API helpers.
 - Do not pass raw upstream provider errors directly to clients if they may contain credentials or request internals.
 - Do not expose filesystem paths, shell details, environment contents, or database internals through API responses.
+- Registration email verification responses must not expose plaintext codes, `MAIL_GATEWAY_BASE_URL`, `MAIL_GATEWAY_API_KEY`, raw gateway errors, provider details, or internal gateway URLs.
 - `/api/health` may report whether Redis is `ok`, `disabled`, or `unavailable`, but it must not expose `REDIS_URL`, passwords, Redis host topology, or raw connection errors.
 - `/api/admin/*` must require an active admin session. Admin responses may include users, settings, credit adjustments, and generation audit summaries, but must not include raw provider API keys, Agent API keys, OAuth tokens, cookies, database passwords, or unredacted upstream error payloads.
 - `/api/admin/generation-queue` may expose sanitized generation scheduling counts and recent stable failure summaries to admins. It must not expose `REDIS_URL`, Redis host topology, raw Redis errors, prompt text, reference image bytes, provider credentials, Redis job keys, full Redis payloads, credit transaction rows, or raw upstream error bodies.

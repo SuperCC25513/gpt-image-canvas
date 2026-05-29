@@ -33,7 +33,9 @@ import {
   sessions,
   users
 } from "../../infrastructure/schema.js";
+import { AuthDomainError } from "./auth-errors.js";
 import { createSessionToken, hashPassword, hashSessionToken, verifyPassword } from "./password.js";
+import { consumeRegistrationEmailVerification } from "./registration-email-verification.js";
 
 const APP_SETTINGS_ID = "default";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -77,16 +79,7 @@ interface SessionPacket extends RowDataPacket {
 interface UserPacket extends RowDataPacket, UserRow {}
 interface AppSettingsPacket extends RowDataPacket, AppSettingsRow {}
 
-export class AuthDomainError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly status = 400
-  ) {
-    super(message);
-    this.name = "AuthDomainError";
-  }
-}
+export { AuthDomainError } from "./auth-errors.js";
 
 export interface CreatedSession {
   user: CurrentUser;
@@ -136,6 +129,11 @@ export async function registerUser(input: RegisterRequest): Promise<RegisterUser
   if (await findUserByEmail(email)) {
     throw new AuthDomainError("email_already_registered", "该邮箱已注册。", 409);
   }
+
+  await consumeRegistrationEmailVerification({
+    email,
+    code: input.emailVerificationCode
+  });
 
   const now = nowIso();
   const password = await hashPassword(input.password);

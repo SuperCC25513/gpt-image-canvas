@@ -31,6 +31,7 @@ import {
   type ProviderSourceId,
   type RedeemCreditCodeRequest,
   type ReferenceImageInput,
+  type RegisterEmailVerificationRequest,
   type RegisterRequest,
   type SaveAgentLlmConfigRequest,
   type SaveLocalOpenAIProviderConfig,
@@ -49,6 +50,7 @@ const MAX_PROJECT_NAME_LENGTH = 120;
 const MAX_CLIENT_REQUEST_ID_LENGTH = 120;
 const MAX_AUTH_NAME_LENGTH = 80;
 const MAX_AUTH_EMAIL_LENGTH = 254;
+const EMAIL_VERIFICATION_CODE_PATTERN = /^\d{6}$/u;
 const MIN_AUTH_PASSWORD_LENGTH = 8;
 const MAX_ADMIN_NOTE_LENGTH = 240;
 const MAX_REDEMPTION_CODE_LENGTH = 64;
@@ -129,12 +131,53 @@ export function parseRegisterPayload(input: unknown): ParseResult<RegisterReques
     };
   }
 
+  const emailVerificationCode = parseEmailVerificationCode(input.emailVerificationCode);
+  if (!emailVerificationCode) {
+    return {
+      ok: false,
+      error: errorResponse("email_verification_required", "请输入邮箱验证码。")
+    };
+  }
+
   return {
     ok: true,
     value: {
       name,
       email,
-      password
+      password,
+      emailVerificationCode
+    }
+  };
+}
+
+export function parseRegisterEmailVerificationPayload(input: unknown): ParseResult<RegisterEmailVerificationRequest> {
+  if (!isRecord(input)) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_auth_request", "发送验证码请求必须是 JSON 对象。")
+    };
+  }
+
+  const email = parseAuthEmail(input.email);
+  if (!email) {
+    return {
+      ok: false,
+      error: errorResponse("invalid_auth_request", "请输入有效的邮箱地址。")
+    };
+  }
+
+  if (input.locale !== undefined && input.locale !== "zh-CN" && input.locale !== "en") {
+    return {
+      ok: false,
+      error: errorResponse("invalid_auth_request", "不支持的验证码邮件语言。")
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      email,
+      locale: input.locale
     }
   };
 }
@@ -1089,6 +1132,15 @@ function parseAuthEmail(value: unknown): string | undefined {
   }
 
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(email) ? email : undefined;
+}
+
+function parseEmailVerificationCode(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const code = value.trim();
+  return EMAIL_VERIFICATION_CODE_PATTERN.test(code) ? code : undefined;
 }
 
 function parseAllowedRegistrationEmailDomains(value: unknown): string[] | undefined {

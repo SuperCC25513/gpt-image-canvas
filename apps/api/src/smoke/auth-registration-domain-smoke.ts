@@ -1,9 +1,10 @@
+import { createHmac } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { eq } from "drizzle-orm";
 import { DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS } from "@gpt-image-canvas/shared";
-import { appSettings, creditTransactions, users } from "../infrastructure/schema.js";
+import { appSettings, creditTransactions, registrationEmailVerifications, users } from "../infrastructure/schema.js";
 import type { SqliteDatabase } from "../infrastructure/sqlite-database.js";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -19,6 +20,7 @@ process.env.GENERATION_QUEUE_DRIVER = "inline";
 process.env.ADMIN_EMAIL = adminEmail;
 process.env.ADMIN_PASSWORD = adminPassword;
 process.env.ADMIN_NAME = "Smoke Admin";
+process.env.MAIL_GATEWAY_API_KEY = "auth-registration-domain-smoke-secret";
 
 mkdirSync(dataDir, { recursive: true });
 
@@ -145,10 +147,48 @@ async function smokeRegistrationDomainAllowlist(app: RequestApp, db: SqliteDatab
 }
 
 async function register(app: RequestApp, body: { name: string; email: string; password: string }): Promise<JsonResult> {
+  const emailVerificationCode = "123456";
+  await createVerificationChallenge(body.email, emailVerificationCode);
   return requestJson(app, "/api/auth/register", {
-    body,
+    body: {
+      ...body,
+      emailVerificationCode
+    },
     method: "POST"
   });
+}
+
+async function createVerificationChallenge(email: string, code: string): Promise<void> {
+  const { db } = await import("../infrastructure/database.js");
+  const normalizedEmail = email.trim().toLowerCase();
+  const now = new Date().toISOString();
+  db.insert(registrationEmailVerifications)
+    .values({
+      email: normalizedEmail,
+      codeHash: createHmac("sha256", process.env.MAIL_GATEWAY_API_KEY ?? "")
+        .update(`${normalizedEmail}:${code}`)
+        .digest("hex"),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      verifyAttempts: 0,
+      sendCount: 1,
+      lastSentAt: now,
+      createdAt: now,
+      updatedAt: now
+    })
+    .onConflictDoUpdate({
+      target: registrationEmailVerifications.email,
+      set: {
+        codeHash: createHmac("sha256", process.env.MAIL_GATEWAY_API_KEY ?? "")
+          .update(`${normalizedEmail}:${code}`)
+          .digest("hex"),
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        verifyAttempts: 0,
+        sendCount: 1,
+        lastSentAt: now,
+        updatedAt: now
+      }
+    })
+    .run();
 }
 
 async function requestJson(

@@ -130,6 +130,17 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS registration_email_verifications (
+  email TEXT PRIMARY KEY NOT NULL,
+  code_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  verify_attempts INTEGER NOT NULL DEFAULT 0,
+  send_count INTEGER NOT NULL DEFAULT 0,
+  last_sent_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS credit_transactions (
   id TEXT PRIMARY KEY NOT NULL,
   user_id TEXT NOT NULL REFERENCES users(id),
@@ -346,6 +357,7 @@ CREATE INDEX IF NOT EXISTS prompt_favorites_user_id_idx ON prompt_favorites(user
 CREATE UNIQUE INDEX IF NOT EXISTS prompt_favorites_user_source_idx ON prompt_favorites(user_id, source_type, source_id);
 CREATE INDEX IF NOT EXISTS prompt_favorites_group_id_idx ON prompt_favorites(group_id);
 CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites(last_used_at);
+CREATE INDEX IF NOT EXISTS registration_email_verifications_expires_at_idx ON registration_email_verifications(expires_at);
 `);
 
   ensureColumn(sqlite, "projects", "user_id", "user_id TEXT");
@@ -383,6 +395,7 @@ CREATE INDEX IF NOT EXISTS prompt_favorites_last_used_at_idx ON prompt_favorites
   sqlite
     .prepare("UPDATE app_settings SET allowed_registration_email_domains_json = ? WHERE allowed_registration_email_domains_json IS NULL")
     .run(DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS_JSON);
+  sqlite.exec("CREATE INDEX IF NOT EXISTS registration_email_verifications_expires_at_idx ON registration_email_verifications(expires_at)");
   ensureColumn(sqlite, "credit_transactions", "related_redemption_code_id", "related_redemption_code_id TEXT");
   sqlite.exec("CREATE INDEX IF NOT EXISTS credit_transactions_user_id_idx ON credit_transactions(user_id)");
   sqlite.exec("CREATE UNIQUE INDEX IF NOT EXISTS credit_transactions_generation_reason_idx ON credit_transactions(related_generation_id, reason)");

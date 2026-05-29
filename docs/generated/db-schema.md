@@ -2,7 +2,7 @@
 
 本文档记录当前持久化表结构。SQLite schema 定义在 `apps/api/src/infrastructure/schema.ts`，MySQL 建表 SQL 定义在 `apps/api/src/infrastructure/mysql-database.ts`。
 
-最后检查：2026-05-28。
+最后检查：2026-05-29。
 
 ## 驱动行为
 
@@ -67,6 +67,23 @@ Stores minimal registration settings.
 | `allowed_registration_email_domains_json` | text | Optional JSON array of email domains allowed for self-service registration; `NULL` falls back to the default allowlist. |
 | `created_at` | text | Required ISO timestamp. |
 | `updated_at` | text | Required ISO timestamp. |
+
+## `registration_email_verifications`
+
+Stores self-service registration email verification challenges. It never stores the plaintext code.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `email` | text | Primary key; normalized registration email. |
+| `code_hash` | text | Required HMAC hash of the verification code. |
+| `expires_at` | text | Required ISO expiry timestamp. |
+| `verify_attempts` | integer | Required failed verification attempt count. |
+| `send_count` | integer | Required send counter for the current email challenge row. |
+| `last_sent_at` | text | Required ISO timestamp of the latest send attempt. |
+| `created_at` | text | Required ISO timestamp. |
+| `updated_at` | text | Required ISO timestamp. |
+
+索引：`registration_email_verifications_expires_at_idx` 覆盖 `expires_at`，便于后续清理过期挑战。
 
 ## `credit_transactions`
 

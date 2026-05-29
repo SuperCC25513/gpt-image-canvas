@@ -1,4 +1,4 @@
-import { LogIn, Loader2, UserPlus } from "lucide-react";
+import { LogIn, Loader2, Send, UserPlus } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { AuthMeResponse, AuthRegisterResponse, AuthSessionResponse, CurrentUser } from "@gpt-image-canvas/shared";
 import { App as CanvasApp } from "./features/canvas/CanvasApp";
@@ -10,6 +10,7 @@ interface AuthFormState {
   name: string;
   email: string;
   password: string;
+  emailVerificationCode: string;
 }
 
 interface LoadMeOptions {
@@ -19,7 +20,8 @@ interface LoadMeOptions {
 const initialFormState: AuthFormState = {
   name: "",
   email: "",
-  password: ""
+  password: "",
+  emailVerificationCode: ""
 };
 
 const PublicGalleryPage = lazy(() =>
@@ -36,6 +38,10 @@ export function App() {
   const [form, setForm] = useState<AuthFormState>(initialFormState);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSendingVerification, setIsSendingVerification] = useState(false);
+  const [verificationCooldownUntil, setVerificationCooldownUntil] = useState(0);
+  const [verificationCooldownSeconds, setVerificationCooldownSeconds] = useState(0);
+  const [verificationSentTo, setVerificationSentTo] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -80,6 +86,8 @@ export function App() {
   const adminConfigured = authStatus?.settings.adminConfigured ?? false;
   const allowedRegistrationEmailDomains = authStatus?.settings.allowedRegistrationEmailDomains ?? [];
   const allowedRegistrationEmailDomainsText = allowedRegistrationEmailDomains.join(locale === "zh-CN" ? "、" : ", ");
+  const normalizedFormEmail = form.email.trim().toLowerCase();
+  const isVerificationCooldownActive = verificationSentTo === normalizedFormEmail && verificationCooldownSeconds > 0;
   const authCopy = useMemo(() => {
     if (!adminConfigured) {
       return t("authAdminUnavailable");
@@ -89,6 +97,20 @@ export function App() {
     }
     return mode === "login" ? t("authLoginCopy") : t("authRegisterCopy");
   }, [adminConfigured, canRegister, mode, t]);
+
+  useEffect(() => {
+    if (!verificationCooldownUntil) {
+      setVerificationCooldownSeconds(0);
+      return undefined;
+    }
+
+    const update = () => {
+      setVerificationCooldownSeconds(Math.max(0, Math.ceil((verificationCooldownUntil - Date.now()) / 1000)));
+    };
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [verificationCooldownUntil]);
 
   async function submitAuth(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -114,6 +136,7 @@ export function App() {
         setNotice(t("authRegistrationPending"));
         setMode("login");
         setForm(initialFormState);
+        resetVerificationState();
         await loadMe();
         return;
       }
@@ -125,11 +148,57 @@ export function App() {
       setCurrentUser(body.user);
       await loadMe(undefined, { preserveCurrentUserOnError: true });
       setForm(initialFormState);
+      resetVerificationState();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : mode === "login" ? t("authLoginFailed") : t("authRegisterFailed"));
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function sendEmailVerification(): Promise<void> {
+    setError("");
+    setNotice("");
+    if (!normalizedFormEmail) {
+      setError(t("authVerificationEmailRequired"));
+      return;
+    }
+
+    setIsSendingVerification(true);
+    try {
+      const response = await fetch("/api/auth/registration-email-verifications", {
+        body: JSON.stringify({
+          email: normalizedFormEmail,
+          locale
+        }),
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+      if (!response.ok) {
+        throw new Error(await readAuthError(response, locale, t("authVerificationSendFailed")));
+      }
+
+      const body = (await response.json()) as { expiresAt?: string };
+      setVerificationSentTo(normalizedFormEmail);
+      setVerificationCooldownUntil(Date.now() + 60_000);
+      setNotice(t("authVerificationSent", { email: normalizedFormEmail }));
+      if (!body.expiresAt) {
+        return;
+      }
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : t("authVerificationSendFailed"));
+    } finally {
+      setIsSendingVerification(false);
+    }
+  }
+
+  function resetVerificationState(): void {
+    setVerificationCooldownUntil(0);
+    setVerificationCooldownSeconds(0);
+    setVerificationSentTo("");
   }
 
   async function logout(): Promise<void> {
@@ -238,6 +307,40 @@ export function App() {
           </label>
           {mode === "register" ? (
             <p className="auth-domain-hint">{t("authAllowedEmailDomainsHint", { domains: allowedRegistrationEmailDomainsText })}</p>
+          ) : null}
+
+          {mode === "register" ? (
+            <div className="auth-verification-grid">
+              <label>
+                <span>{t("authVerificationCodeLabel")}</span>
+                <input
+                  autoComplete="one-time-code"
+                  disabled={isSubmitting}
+                  inputMode="numeric"
+                  maxLength={6}
+                  onChange={(event) => setForm((value) => ({ ...value, emailVerificationCode: event.target.value }))}
+                  pattern="[0-9]{6}"
+                  placeholder={t("authVerificationCodePlaceholder")}
+                  required
+                  value={form.emailVerificationCode}
+                />
+              </label>
+              <button
+                className="secondary-action auth-verification-button"
+                disabled={isSubmitting || isSendingVerification || isVerificationCooldownActive || !canRegister}
+                onClick={() => void sendEmailVerification()}
+                type="button"
+              >
+                {isSendingVerification ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Send className="size-4" aria-hidden="true" />
+                )}
+                {isVerificationCooldownActive
+                  ? t("authVerificationCooldown", { seconds: verificationCooldownSeconds })
+                  : t("authVerificationSend")}
+              </button>
+            </div>
           ) : null}
 
           <label>

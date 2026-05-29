@@ -36,6 +36,17 @@ export const appSettings = sqliteTable("app_settings", {
   updatedAt: text("updated_at").notNull()
 });
 
+export const registrationEmailVerifications = sqliteTable("registration_email_verifications", {
+  email: text("email").primaryKey(),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  verifyAttempts: integer("verify_attempts").notNull(),
+  sendCount: integer("send_count").notNull(),
+  lastSentAt: text("last_sent_at").notNull(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull()
+});
+
 export const creditTransactions = sqliteTable("credit_transactions", {
   id: text("id").primaryKey(),
   userId: text("user_id")

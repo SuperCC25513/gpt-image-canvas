@@ -142,6 +142,23 @@
   line-height: 1.45;
 }
 
+.auth-verification-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.auth-verification-button {
+  min-width: 132px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
 .auth-message {
   margin: 0;
   color: var(--danger);
@@ -167,5 +184,13 @@
   .auth-shell {
     align-self: center;
     padding: 18px;
+  }
+
+  .auth-verification-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-verification-button {
+    width: 100%;
   }
 }

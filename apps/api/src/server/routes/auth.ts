@@ -1,15 +1,45 @@
 import type { Hono } from "hono";
-import { AuthDomainError, loginUser, logoutToken, registerUser } from "../../domain/auth/auth-store.js";
+import {
+  AuthDomainError,
+  getAuthSettings,
+  loginUser,
+  logoutToken,
+  registerUser
+} from "../../domain/auth/auth-store.js";
+import { sendRegistrationEmailVerification } from "../../domain/auth/registration-email-verification.js";
 import { checkInUser, CreditDomainError } from "../../domain/credits/credit-store.js";
 import { getAuthStatus, logoutCodex, pollCodexDeviceLogin, startCodexDeviceLogin } from "../../domain/providers/codex-auth.js";
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
 import { authMeResponse, clearSessionCookie, requireAdmin, requireAuth, SESSION_COOKIE_NAME, setSessionCookie } from "../http/auth.js";
 import { errorResponse, providerErrorJson } from "../http/errors.js";
 import { readJson } from "../http/json.js";
-import { parseCodexPollPayload, parseLoginPayload, parseRegisterPayload } from "../http/validation.js";
+import {
+  parseCodexPollPayload,
+  parseLoginPayload,
+  parseRegisterEmailVerificationPayload,
+  parseRegisterPayload
+} from "../http/validation.js";
 
 export function registerAuthRoutes(app: Hono): void {
   app.get("/api/auth/me", (c) => authMeResponse(c));
+
+  app.post("/api/auth/registration-email-verifications", async (c) => {
+    const payload = await readJson(c.req.raw);
+    if (!payload.ok) {
+      return c.json(payload.error, 400);
+    }
+
+    const parsed = parseRegisterEmailVerificationPayload(payload.value);
+    if (!parsed.ok) {
+      return c.json(parsed.error, 400);
+    }
+
+    try {
+      return c.json(await sendRegistrationEmailVerification(parsed.value, await getAuthSettings(), c.req.raw.signal));
+    } catch (error) {
+      return authErrorJson(error);
+    }
+  });
 
   app.post("/api/auth/register", async (c) => {
     const payload = await readJson(c.req.raw);
