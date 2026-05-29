@@ -29,10 +29,10 @@ items:
   - slug: provider-retry-policy
     description: 增加 provider 可恢复错误分类、退避重试和最终失败记录
     depends_on: [generation-queue-worker]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-29-provider-retry-policy
     minimal_loop: false
-    notes: null
+    notes: "已在单图 provider call 层增加 retry policy；每次 attempt 重新进入 runProviderCall，sleep 不占 permit；未实现 per-output delayed Redis job"
 
   - slug: agent-generation-scheduler-adapter
     description: Agent 生成 job 接入同一队列、闸门和重试机制

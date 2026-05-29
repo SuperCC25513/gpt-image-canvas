@@ -1,0 +1,80 @@
+feature: 2026-05-29-provider-retry-policy
+created: "2026-05-29"
+
+steps:
+  - action: "名词契约：新增 retry config、decision 类型、分类函数和 retry wrapper"
+    exit_signal: "配置默认值/非法值解析稳定，分类函数覆盖 retryable / non-retryable"
+    status: done
+
+  - action: "Provider call 接入：单图 generate/edit 改为 retry wrapper，保持每次 attempt 进入 runProviderCall"
+    exit_signal: "grep 显示单图 provider call 不再直接调用 runProviderCall"
+    status: done
+
+  - action: "稳定失败摘要：retryable 耗尽后写稳定 ProviderError，非重试错误保持现有稳定业务语义"
+    exit_signal: "smoke 证明最终失败不包含 secret-like 文本"
+    status: done
+
+  - action: "配置与文档：更新 env、Docker、可靠性和安全文档"
+    exit_signal: "默认 retry 次数、退避、不可重试类型和错误摘要边界被记录"
+    status: done
+
+  - action: "验证：运行 typecheck/build、provider retry smoke、queue smoke、provider scheduler smoke、executor/planner smoke"
+    exit_signal: "关键 smoke 通过，未引入 Redis 队列残留"
+    status: done
+
+checks:
+  - item: "未设置 retry env 时默认 max retries 为 2、base delay 为 1000ms、max delay 为 30000ms"
+    source: 验收场景
+    status: passed
+
+  - item: "非法 retry env 回退默认值"
+    source: 验收场景
+    status: passed
+
+  - item: "429/408/5xx、连接超时和临时网络中断被分类为可重试"
+    source: 错误语义
+    status: passed
+
+  - item: "missing_provider、missing_api_key、400 参数错误、参考图非法和取消被分类为不可重试"
+    source: 错误语义
+    status: passed
+
+  - item: "每次 retry attempt 都重新通过 runProviderCall"
+    source: 并发语义
+    status: passed
+
+  - item: "retry sleep 期间不占 provider permit"
+    source: 并发语义
+    status: passed
+
+  - item: "retryable 错误耗尽后 output failed 且错误摘要稳定"
+    source: 稳定失败摘要
+    status: passed
+
+  - item: "最终失败摘要不包含 API key、Bearer token 或上游原始 detail"
+    source: 安全边界
+    status: passed
+
+  - item: "retry delay 期间取消会停止新 attempt 并保持 AbortError 语义"
+    source: 取消语义
+    status: passed
+
+  - item: ".env.example、docker-compose.yml、docs/RELIABILITY.md、docs/SECURITY.md 说明 retry 配置和错误摘要边界"
+    source: 挂载点
+    status: passed
+
+  - item: "不新增 generation:queue:delayed、generation:attempt:* 或 per-output Redis job"
+    source: 范围守护
+    status: passed
+
+  - item: "不改 Agent executor 的 retry_failed 计划重跑语义"
+    source: 范围守护
+    status: passed
+
+  - item: "不新增前端 retrying UI、admin retry monitor 或队列可观测性"
+    source: 范围守护
+    status: passed
+
+  - item: "不改积分价格、最大图片数、退款规则或生成记录表结构"
+    source: 范围守护
+    status: passed

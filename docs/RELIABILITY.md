@@ -22,6 +22,8 @@ All `provider.generate` and `provider.edit` calls must go through the provider s
 
 `GENERATION_QUEUE_WORKER_CONCURRENCY` controls how many manual generation jobs each API process consumes from Redis at once. The default is `2`. `GENERATION_QUEUE_POLL_INTERVAL_MS` controls the ready-queue polling interval; the default is `250` ms. These worker settings are not provider API concurrency limits; provider calls are still capped by `GENERATION_PROVIDER_GLOBAL_CONCURRENCY`.
 
+Provider calls retry recoverable upstream failures before an output is marked failed. `GENERATION_PROVIDER_MAX_RETRIES` defaults to `2`, so a single output can make up to 3 provider attempts. `GENERATION_PROVIDER_RETRY_BASE_MS` defaults to `1000` ms and `GENERATION_PROVIDER_RETRY_MAX_MS` defaults to `30000` ms. Retryable failures are 429, 408, 5xx, connection timeouts, and temporary network interruptions. Missing provider/configuration, 400-level parameter/reference-image errors, and user cancellation do not retry. Each retry attempt re-enters the provider scheduler; backoff sleep does not hold a provider permit.
+
 ## Persistence
 
 `DATA_DIR` defaults to `./data` locally and `/app/data` in Docker. In SQLite mode it contains SQLite state, generated assets, and previews. In MySQL + OSS mode, MySQL stores metadata and OSS stores generated asset bytes; `DATA_DIR` may still hold local runtime files. Treat all of it as private runtime data.
@@ -59,6 +61,7 @@ Provider errors should become stable API errors where possible. Avoid exposing r
 - Reference image inputs are size and MIME checked.
 - Batch generation uses bounded concurrency.
 - Provider API calls are additionally guarded by the global provider scheduler, so multiple concurrent generation tasks cannot multiply the upstream provider concurrency beyond `GENERATION_PROVIDER_GLOBAL_CONCURRENCY`.
+- Provider API calls use exponential backoff retry for recoverable upstream failures, and each retry attempt is still capped by the global provider scheduler.
 - In Redis mode, manual image generation enters the generation queue first; the HTTP route returns after creating a pending generation record and enqueueing a Redis job.
 - Individual output failures should be represented in output status instead of erasing the whole record when partial results exist.
 - 生成图片成功后必须能从当前资产存储读取；本地或 OSS 写入失败时不能记录成成功资产。

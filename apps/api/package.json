@@ -13,6 +13,7 @@
     "smoke:executor": "tsx src/smoke/agent-executor-smoke.ts",
     "smoke:generation-queue": "tsx src/smoke/generation-queue-smoke.ts",
     "smoke:planner": "tsx src/smoke/agent-planner-smoke.ts",
+    "smoke:provider-retry": "tsx src/smoke/provider-retry-policy-smoke.ts",
     "smoke:provider-scheduler": "tsx src/smoke/provider-scheduler-smoke.ts",
     "smoke:redis-runtime": "tsx src/smoke/redis-runtime-smoke.ts",
     "typecheck": "pnpm --filter @gpt-image-canvas/shared build && tsc -p tsconfig.json --noEmit",

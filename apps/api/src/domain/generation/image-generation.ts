@@ -26,7 +26,7 @@ import {
   type ImageProviderInput,
   type ProviderImage
 } from "../../infrastructure/providers/image-provider.js";
-import { runProviderCall } from "./provider-scheduler.js";
+import { runProviderCallWithRetry } from "./provider-retry-policy.js";
 import {
   assetStorageSignedUrlExpiresInSeconds,
   deleteStoredAssetBytes,
@@ -565,7 +565,7 @@ async function generateSingleOutput(
 
   try {
     throwIfAborted(signal);
-    const result = await runProviderCall({
+    const result = await runProviderCallWithRetry({
       generationId,
       outputId,
       outputIndex,
@@ -618,7 +618,7 @@ async function editSingleOutput(
 
   try {
     throwIfAborted(signal);
-    const result = await runProviderCall({
+    const result = await runProviderCallWithRetry({
       generationId,
       outputId,
       outputIndex,

@@ -307,8 +307,9 @@ interface ScheduledAgentGenerationInput {
 4. **provider-retry-policy** — 增加 provider 可恢复错误分类、退避重试和最终失败记录。
    - 所属模块：retry-policy、generation-state-bridge
    - 依赖：`generation-queue-worker`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done
+   - 对应 feature：`2026-05-29-provider-retry-policy`
+   - 备注：单图 provider call 已按 retry policy 自动重试；每次 attempt 重新进入全局 provider 闸门，退避期间不占 permit；per-output delayed Redis job 仍留给后续状态桥/恢复能力。
 5. **agent-generation-scheduler-adapter** — Agent 生成 job 接入同一队列、闸门和重试机制。
    - 所属模块：agent-adapter、generation-queue、provider-scheduler
    - 依赖：`provider-retry-policy`
