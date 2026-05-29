@@ -67,6 +67,22 @@ export async function enqueueGenerationJob(job: GenerationQueueJob): Promise<voi
   }
 }
 
+export async function ensureGenerationJobQueued(job: GenerationQueueJob): Promise<void> {
+  if (!generationQueueUsesRedis()) {
+    throw new GenerationQueueError("Generation queue is disabled by GENERATION_QUEUE_DRIVER=inline.");
+  }
+
+  try {
+    const client = await getRedisClient();
+    const jobKey = generationJobKey(job.generationId);
+    await client.set(jobKey, JSON.stringify(job));
+    await client.lRem(GENERATION_QUEUE_READY_KEY, 0, jobKey);
+    await client.rPush(GENERATION_QUEUE_READY_KEY, jobKey);
+  } catch (error) {
+    throw toGenerationQueueError(error);
+  }
+}
+
 export async function removeGenerationJob(generationId: string): Promise<void> {
   if (!generationQueueUsesRedis()) {
     return;

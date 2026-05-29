@@ -115,6 +115,13 @@ export interface GenerationRecordOwner {
   count: number;
 }
 
+export interface GenerationQueueRecoveryRecord {
+  id: string;
+  userId: string | null;
+  mode: ImageMode;
+  status: Extract<GenerationStatus, "pending" | "running">;
+}
+
 export interface CompleteGenerationRecordInput {
   generationId: string;
   status: GenerationStatus;
@@ -785,9 +792,9 @@ export async function replaceGenerationOutputs(generationId: string, outputs: St
   await insertGenerationOutputs(generationId, outputs);
 }
 
-export async function completeGenerationRecordWithOutputs(input: CompleteGenerationRecordInput): Promise<void> {
+export async function completeGenerationRecordWithOutputs(input: CompleteGenerationRecordInput): Promise<boolean> {
   if (databaseDriver === "sqlite") {
-    db.transaction((tx) => {
+    return db.transaction((tx) => {
       const generation = tx
         .select()
         .from(generationRecords)
@@ -797,6 +804,9 @@ export async function completeGenerationRecordWithOutputs(input: CompleteGenerat
         throw new Error("Generation record not found.");
       }
       assertExpectedGenerationUser(generation.userId, input.expectedUserId);
+      if (isTerminalGenerationStatus(generation.status as GenerationStatus)) {
+        return false;
+      }
 
       const createdAt = nowIso();
       tx.delete(generationOutputs).where(eq(generationOutputs.generationId, input.generationId)).run();
@@ -812,17 +822,18 @@ export async function completeGenerationRecordWithOutputs(input: CompleteGenerat
         })
         .where(eq(generationRecords.id, input.generationId))
         .run();
+      return true;
     });
-    return;
   }
 
   const connection = await getMySqlPool().getConnection();
   try {
     await connection.beginTransaction();
-    const [generationRows] = await connection.execute<Array<RowDataPacket & { id: string; userId: string | null; count: number }>>(
+    const [generationRows] = await connection.execute<Array<RowDataPacket & { id: string; userId: string | null; count: number; status: string }>>(
       `SELECT id,
               user_id AS userId,
-              count
+              count,
+              status
        FROM generation_records
        WHERE id = ?
        LIMIT 1
@@ -834,6 +845,10 @@ export async function completeGenerationRecordWithOutputs(input: CompleteGenerat
       throw new Error("Generation record not found.");
     }
     assertExpectedGenerationUser(generation.userId, input.expectedUserId);
+    if (isTerminalGenerationStatus(generation.status as GenerationStatus)) {
+      await connection.commit();
+      return false;
+    }
 
     const createdAt = nowIso();
     await connection.execute("DELETE FROM generation_outputs WHERE generation_id = ?", [input.generationId]);
@@ -848,6 +863,7 @@ export async function completeGenerationRecordWithOutputs(input: CompleteGenerat
       [input.status, input.error, input.referenceAssetId, input.generationId]
     );
     await connection.commit();
+    return true;
   } catch (error) {
     await connection.rollback();
     throw error;
@@ -1094,10 +1110,15 @@ function refundAmountForCharge(totalCharge: number, failedCount: number, count: 
   return Math.min(totalCharge, unitCost * failedCount);
 }
 
+function isTerminalGenerationStatus(status: GenerationStatus): boolean {
+  return status === "succeeded" || status === "partial" || status === "failed" || status === "cancelled";
+}
+
 export async function markInterruptedGenerationRecordsFailed(
   error: string,
   statuses: GenerationStatus[] = ["pending", "running"]
-): Promise<void> {
+): Promise<string[]> {
+  const interrupted = await listGenerationQueueRecoveryRecords(statuses);
   if (databaseDriver === "sqlite") {
     db.update(generationRecords)
       .set({
@@ -1106,7 +1127,7 @@ export async function markInterruptedGenerationRecordsFailed(
       })
       .where(inArray(generationRecords.status, statuses))
       .run();
-    return;
+    return interrupted.map((record) => record.id);
   }
 
   const placeholders = statuses.map(() => "?").join(", ");
@@ -1116,6 +1137,60 @@ export async function markInterruptedGenerationRecordsFailed(
      WHERE status IN (${placeholders})`,
     ["failed", error, ...statuses]
   );
+  return interrupted.map((record) => record.id);
+}
+
+export async function listGenerationQueueRecoveryRecords(
+  statuses: GenerationStatus[] = ["pending", "running"]
+): Promise<GenerationQueueRecoveryRecord[]> {
+  const recoveryStatuses = statuses.filter((status): status is "pending" | "running" => status === "pending" || status === "running");
+  if (recoveryStatuses.length === 0) {
+    return [];
+  }
+
+  if (databaseDriver === "sqlite") {
+    return db
+      .select({
+        id: generationRecords.id,
+        userId: generationRecords.userId,
+        mode: generationRecords.mode,
+        status: generationRecords.status
+      })
+      .from(generationRecords)
+      .where(inArray(generationRecords.status, recoveryStatuses))
+      .all()
+      .map((record) => generationQueueRecoveryRecordFromRow(record));
+  }
+
+  const [rows] = await getMySqlPool().execute<Array<RowDataPacket & {
+    id: string;
+    userId: string | null;
+    mode: string;
+    status: string;
+  }>>(
+    `SELECT id,
+            user_id AS userId,
+            mode,
+            status
+     FROM generation_records
+     WHERE status IN (${recoveryStatuses.map(() => "?").join(", ")})`,
+    recoveryStatuses
+  );
+  return rows.map((record) => generationQueueRecoveryRecordFromRow(record));
+}
+
+function generationQueueRecoveryRecordFromRow(row: {
+  id: string;
+  userId: string | null;
+  mode: string;
+  status: string;
+}): GenerationQueueRecoveryRecord {
+  return {
+    id: row.id,
+    userId: row.userId,
+    mode: row.mode === "edit" ? "edit" : "generate",
+    status: row.status === "running" ? "running" : "pending"
+  };
 }
 
 export async function readGenerationRecord(generationId: string, user?: CurrentUser): Promise<ApiGenerationRecord | undefined> {

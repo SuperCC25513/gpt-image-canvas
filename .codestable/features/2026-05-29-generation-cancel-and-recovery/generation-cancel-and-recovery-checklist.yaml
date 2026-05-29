@@ -1,0 +1,80 @@
+feature: 2026-05-29-generation-cancel-and-recovery
+created: "2026-05-29"
+
+steps:
+  - action: "名词契约：新增 recovery record、audit visibility、idempotent queue ensure API"
+    exit_signal: "能从 DB/audit 重建不含敏感字段的 queue job，并去重 ready entry"
+    status: done
+
+  - action: "Startup recovery：Redis driver 启动先 failed 收敛 running，再 requeue pending，最后启动 worker"
+    exit_signal: "smoke 能模拟 Redis job 丢失后恢复 pending ready entry，并模拟 running interrupted 后退款一次"
+    status: done
+
+  - action: "Terminal guard：completion transaction 阻止 late finish 覆盖 terminal record，并清理未落库 assets"
+    exit_signal: "smoke 能取消 running record 后再执行 finish，最终仍是 cancelled、outputs 为空、refund 只有一条"
+    status: done
+
+  - action: "文档与架构：更新可靠性/安全文档和 CodeStable 架构边界"
+    exit_signal: "pending recovery、running interrupted、visibility fallback 和不做 per-output recovery 被记录"
+    status: done
+
+  - action: "验证：运行 typecheck/build、recovery smoke、queue/agent queue/provider retry/provider scheduler/executor/planner smoke"
+    exit_signal: "关键 smoke 通过，Redis ready list/provider permit 无残留"
+    status: done
+
+checks:
+  - item: "Redis driver 下 DB 有 pending record，但 generation:job:{id} 和 ready list 丢失 -> recovery 重建 job key 和单条 ready entry，record 仍是 pending"
+    source: 验收场景
+    status: passed
+
+  - item: "Redis driver 下 DB 有 pending record，job key 和 ready list 已存在多份 -> recovery 后 ready list 中该 job key 只有一份"
+    source: 幂等语义
+    status: passed
+
+  - item: "pending recovery 的 Redis payload 不包含 prompt、reference bytes、provider credential、audit payload、credit transaction 或完整 generation record"
+    source: 安全边界
+    status: passed
+
+  - item: "pending recovery 从 audit 恢复 public visibility；audit 缺失时恢复为 private"
+    source: visibility 语义
+    status: passed
+
+  - item: "Redis driver 下 DB 有 running record -> startup recovery 标记 failed、audit failed、退款一次，并清理 Redis job key / ready entry"
+    source: interrupted recovery
+    status: passed
+
+  - item: "重复执行 running recovery -> 不重复写 refund transaction，不增加用户积分"
+    source: 退款幂等
+    status: passed
+
+  - item: "用户取消 pending/running generation -> record cancelled、Redis job 清理、退款一次；再次 cancel 不重复退款"
+    source: 取消语义
+    status: passed
+
+  - item: "cancelled / failed generation 遇到 late finish -> status 不被覆盖，outputs 不落库，未引用成功 asset 被清理"
+    source: terminal guard
+    status: passed
+
+  - item: "inline driver 启动仍按原语义把 pending/running failed 收敛"
+    source: 兼容语义
+    status: passed
+
+  - item: "docs/RELIABILITY.md、docs/SECURITY.md 说明 recovery 和安全边界"
+    source: 挂载点
+    status: passed
+
+  - item: "不新增 generation:queue:delayed、generation:attempt:*、per-output Redis job 或 processing list"
+    source: 范围守护
+    status: passed
+
+  - item: "不恢复 running provider call，不做跨重启 retry sleep 续跑"
+    source: 范围守护
+    status: passed
+
+  - item: "不新增前端 queue UI、admin monitor、排队位次或 retrying 状态"
+    source: 范围守护
+    status: passed
+
+  - item: "不改积分定价、最大图片数、输出表结构、provider source order 或 Agent planner schema"
+    source: 范围守护
+    status: passed

@@ -13,6 +13,7 @@ import {
   stopGenerationQueueWorker,
   type GenerationQueueJob
 } from "./generation-queue.js";
+import { recoverGenerationQueueState } from "./generation-state-bridge.js";
 import {
   cancelGenerationRecord,
   createPendingReferenceImageGeneration,
@@ -38,7 +39,7 @@ const activeGenerationTasks = new Map<string, ActiveGenerationTask>();
 export async function initializeGenerationTaskManager(): Promise<void> {
   activeGenerationTasks.clear();
   if (generationQueueUsesRedis()) {
-    await markInterruptedGenerationRecordsFailed({ includePending: false });
+    await recoverGenerationQueueState();
     startGenerationQueueWorker(processQueuedGenerationJob);
     return;
   }

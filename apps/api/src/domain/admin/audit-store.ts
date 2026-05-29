@@ -154,6 +154,11 @@ export async function updateGenerationAuditFromRecord(record: GenerationRecord, 
   );
 }
 
+export async function readGenerationAuditVisibility(generationId: string): Promise<boolean | undefined> {
+  const row = await findAuditRow(generationId);
+  return row ? row.isPublic === 1 : undefined;
+}
+
 export async function markInterruptedGenerationAuditsFailed(
   error: string,
   statuses: GenerationStatus[] = ["pending", "running"]

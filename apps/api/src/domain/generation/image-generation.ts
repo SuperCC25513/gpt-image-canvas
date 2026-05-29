@@ -350,11 +350,18 @@ export async function markGenerationRecordRunning(generationId: string, user?: C
   return readGenerationRecord(generationId, user);
 }
 
-export async function markInterruptedGenerationRecordsFailed(options: { includePending?: boolean } = {}): Promise<void> {
+export async function markInterruptedGenerationRecordsFailed(options: { includePending?: boolean } = {}): Promise<string[]> {
   const statuses: GenerationStatus[] = options.includePending === false ? ["running"] : ["pending", "running"];
   await refundInterruptedGenerationCredits(statuses);
-  await markInterruptedGenerationRecordsFailedInStore(INTERRUPTED_GENERATION_ERROR, statuses);
+  const interruptedGenerationIds = await markInterruptedGenerationRecordsFailedInStore(INTERRUPTED_GENERATION_ERROR, statuses);
   await markInterruptedGenerationAuditsFailedSafely(INTERRUPTED_GENERATION_ERROR, statuses);
+  for (const generationId of interruptedGenerationIds) {
+    const record = await readGenerationRecord(generationId);
+    if (record) {
+      await updateGenerationAuditSafely(record);
+    }
+  }
+  return interruptedGenerationIds;
 }
 
 async function ensureReferenceAssetIds(input: EditImageProviderInput, user?: CurrentUser): Promise<string[]> {
@@ -801,7 +808,7 @@ async function completeGenerationRecord(
   const referenceAssetIds = input.referenceAssetIds ?? (input.referenceAssetId ? [input.referenceAssetId] : []);
   const primaryReferenceAssetId = referenceAssetIds[0] ?? input.referenceAssetId;
 
-  await completeGenerationRecordWithOutputs({
+  const completed = await completeGenerationRecordWithOutputs({
     generationId,
     status,
     error: error ?? null,
@@ -811,6 +818,9 @@ async function completeGenerationRecord(
     fallbackCount: input.count,
     expectedUserId: user?.id
   });
+  if (!completed) {
+    await cleanupUnpersistedOutputAssets(outputs);
+  }
 
   const completedRecord = (await readGenerationRecord(generationId, user)) ?? {
     id: generationId,

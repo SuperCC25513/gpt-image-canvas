@@ -28,6 +28,8 @@ Agent generation jobs use the same generation queue in Redis mode when no test p
 
 `GENERATION_QUEUE_DRIVER=inline` and explicit provider override execution remain direct synchronous paths for tests and local debugging. Those paths still go through the provider scheduler and retry wrapper before calling the provider, but they do not provide Redis queue semantics or cross-process coordination.
 
+In Redis mode, API startup runs generation state recovery before starting the queue worker. Recovery fails interrupted `running` records with an interrupted error, updates audits, refunds credits idempotently, removes stale Redis jobs, and requeues still-`pending` records with a deduplicated ready-list entry. Pending recovery rebuilds Redis payloads from database routing fields plus audit visibility; if audit visibility is missing, the recovered job is private.
+
 ## Persistence
 
 `DATA_DIR` defaults to `./data` locally and `/app/data` in Docker. In SQLite mode it contains SQLite state, generated assets, and previews. In MySQL + OSS mode, MySQL stores metadata and OSS stores generated asset bytes; `DATA_DIR` may still hold local runtime files. Treat all of it as private runtime data.
@@ -68,9 +70,11 @@ Provider errors should become stable API errors where possible. Avoid exposing r
 - Provider API calls use exponential backoff retry for recoverable upstream failures, and each retry attempt is still capped by the global provider scheduler.
 - In Redis mode, manual image generation enters the generation queue first; the HTTP route returns after creating a pending generation record and enqueueing a Redis job.
 - In Redis mode, Agent image generation also enters the generation queue unless a test provider override is supplied; the Agent plan job stays `queued` until the database generation record becomes `running` or terminal.
+- In Redis mode, pending generation records are recovered into the ready queue on startup. Running generation records from a previous process are not resumed; they become failed/interrupted and are safe to rerun from history.
 - Individual output failures should be represented in output status instead of erasing the whole record when partial results exist.
 - 生成图片成功后必须能从当前资产存储读取；本地或 OSS 写入失败时不能记录成成功资产。
 - 生成前先按 `count * generation_credit_cost` 预扣积分。全部失败按本次输出数退款，部分失败只退失败输出对应积分；退款流水按 generation id 保持幂等。
+- Terminal generation records are immutable for late completion: once a record is `succeeded`, `partial`, `failed`, or `cancelled`, a late worker finish must not overwrite the status or persist new outputs.
 
 ## Agent Execution
 

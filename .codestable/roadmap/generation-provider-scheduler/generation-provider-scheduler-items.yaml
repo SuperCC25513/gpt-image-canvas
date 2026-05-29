@@ -45,10 +45,10 @@ items:
   - slug: generation-cancel-and-recovery
     description: 完善队列取消、重启恢复、失败收敛和退款幂等
     depends_on: [generation-queue-worker, provider-retry-policy]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-05-29-generation-cancel-and-recovery
     minimal_loop: false
-    notes: null
+    notes: "收敛为 generation 级 startup recovery：pending requeue、running interrupted failed、terminal completion guard；不做 per-output queue"
 
   - slug: generation-queue-observability
     description: 暴露排队、运行、重试、失败摘要给 API、前端和审计

@@ -329,8 +329,9 @@ async function runScheduledAgentReferenceGeneration(input: ScheduledAgentGenerat
 6. **generation-cancel-and-recovery** — 完善队列取消、重启恢复、失败收敛和退款幂等。
    - 所属模块：generation-state-bridge、generation-queue
    - 依赖：`generation-queue-worker`、`provider-retry-policy`
-   - 状态：planned
-   - 对应 feature：未启动
+   - 状态：done
+   - 对应 feature：`2026-05-29-generation-cancel-and-recovery`
+   - 备注：当前收敛为 generation 级 startup recovery：pending requeue、running interrupted failed、terminal completion guard；不做 per-output queue。
 7. **generation-queue-observability** — 暴露排队、运行、重试、失败摘要给 API、前端和审计。
    - 所属模块：generation-state-bridge、agent-adapter
    - 依赖：`generation-cancel-and-recovery`、`agent-generation-scheduler-adapter`
