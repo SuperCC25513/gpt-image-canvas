@@ -2,7 +2,7 @@
 
 ## draft
 
-暂无。
+- `registration-email-verification` — 用户注册前必须证明邮箱归属，减少伪造邮箱账号进入系统。
 
 ## current
 
