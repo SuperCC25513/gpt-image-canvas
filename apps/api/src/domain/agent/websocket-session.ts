@@ -15,7 +15,7 @@ import {
   type GenerationPlan
 } from "../contracts.js";
 import { getAgentConversationContext, saveAgentConversationContext } from "./conversation-store.js";
-import { getUsableAgentLlmConfig } from "./config.js";
+import { getUsableAgentLlmConfig, type UsableAgentLlmConfig } from "./config.js";
 import {
   executeGenerationPlan,
   isExecutableGenerationPlan,
@@ -116,7 +116,7 @@ export function createAgentWebSocketEvents(connectionId: string | undefined, run
       flushPendingSessionEvents(session);
     },
     onMessage(event, ws) {
-      handleAgentMessage(event.data, ws, session);
+      void handleAgentMessage(event.data, ws, session);
     },
     onClose(_event, ws) {
       detachAgentSocket(session, ws, "socket_disconnected");
@@ -311,7 +311,7 @@ function flushPendingSessionEvents(session: AgentSocketSession): void {
   }
 }
 
-function handleAgentMessage(data: WSMessageReceive, _ws: WSContext, session: AgentSocketSession): void {
+async function handleAgentMessage(data: WSMessageReceive, _ws: WSContext, session: AgentSocketSession): Promise<void> {
   const parsed = parseAgentClientMessage(data);
   if (!parsed.ok) {
     sendSessionError(session, {
@@ -347,7 +347,7 @@ function handleAgentMessage(data: WSMessageReceive, _ws: WSContext, session: Age
   }
 
   if (AGENT_WORK_MESSAGE_TYPES.has(message.type)) {
-    handleAgentWorkMessage(message, session);
+    await handleAgentWorkMessage(message, session);
     return;
   }
 
@@ -360,8 +360,8 @@ function handleAgentMessage(data: WSMessageReceive, _ws: WSContext, session: Age
   });
 }
 
-function handleAgentWorkMessage(message: AgentClientMessage, session: AgentSocketSession): void {
-  const llmConfig = getUsableAgentLlmConfig();
+async function handleAgentWorkMessage(message: AgentClientMessage, session: AgentSocketSession): Promise<void> {
+  const llmConfig = await getUsableAgentLlmConfig();
   if (!llmConfig) {
     sendSessionError(session, {
       code: "missing_agent_config",
@@ -444,7 +444,7 @@ async function handleAgentPlanMessage(
   message: Extract<AgentClientMessage, { type: "user_message" }>,
   session: AgentSocketSession,
   activeRun: ActiveAgentRun,
-  llmConfig: NonNullable<ReturnType<typeof getUsableAgentLlmConfig>>
+  llmConfig: UsableAgentLlmConfig
 ): Promise<void> {
   let result: Awaited<ReturnType<typeof createGenerationPlan>>;
   const rawClientSelectedReferences = Array.isArray(message.selectedReferences)

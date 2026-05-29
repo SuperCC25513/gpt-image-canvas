@@ -8,6 +8,7 @@
 
 - `registration-email-domain-allowlist` — 管理员可以限制哪些邮箱后缀能自助注册。
 - `registration-email-verification` — 用户注册前必须证明邮箱归属，减少伪造邮箱账号进入系统。
+- `system-provider-configuration` — 管理员可以在系统页面配置生成服务和 Agent 模型，让保存后的设置持续生效。
 
 ## outdated
 

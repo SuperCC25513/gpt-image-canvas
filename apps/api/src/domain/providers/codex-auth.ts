@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import type { RowDataPacket } from "mysql2/promise";
 import type {
   AuthStatusResponse,
   CodexDevicePollResponse,
@@ -12,7 +13,7 @@ import {
   parseCodexDeviceStartPayload,
   parseCodexTokenPayload
 } from "./codex-auth-utils.js";
-import { databaseDriver, db } from "../../infrastructure/database.js";
+import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
 import { getProviderConfig } from "./provider-config.js";
 import { codexOAuthTokens } from "../../infrastructure/schema.js";
@@ -27,15 +28,17 @@ let activeRefreshPromise: Promise<CodexTokenRow | undefined> | undefined;
 
 type CodexTokenRow = typeof codexOAuthTokens.$inferSelect;
 
+interface MySqlCodexTokenRow extends RowDataPacket, CodexTokenRow {}
+
 export interface CodexAccessSession {
   accessToken: string;
   accountId?: string;
   expiresAt?: string;
 }
 
-export function getAuthStatus(options: { includeCodexDetails?: boolean } = {}): AuthStatusResponse {
-  const providerConfig = getProviderConfig();
-  const codex = providerConfig.sources.find((source) => source.id === "codex")?.details.codex ?? codexSessionView(getCodexTokenRow());
+export async function getAuthStatus(options: { includeCodexDetails?: boolean } = {}): Promise<AuthStatusResponse> {
+  const providerConfig = await getProviderConfig();
+  const codex = providerConfig.sources.find((source) => source.id === "codex")?.details.codex ?? codexSessionView(await getCodexTokenRow());
   const openaiConfigured = providerConfig.sources.some(
     (source) => (source.id === "env-openai" || source.id === "local-openai") && source.available
   );
@@ -130,32 +133,29 @@ export async function pollCodexDeviceLogin(
   }
 
   const tokens = await exchangeAuthorizationCodeForTokens(issuer, parsed.exchange.authorizationCode, parsed.exchange.codeVerifier, signal);
-  storeCodexTokens(tokens);
+  await storeCodexTokens(tokens);
 
   return {
     status: "authorized",
-    auth: getAuthStatus({ includeCodexDetails: true })
+    auth: await getAuthStatus({ includeCodexDetails: true })
   };
 }
 
-export function logoutCodex(): CodexLogoutResponse {
-  if (databaseDriver !== "sqlite") {
-    return {
-      ok: true,
-      auth: getAuthStatus({ includeCodexDetails: true })
-    };
+export async function logoutCodex(): Promise<CodexLogoutResponse> {
+  if (databaseDriver === "sqlite") {
+    db.delete(codexOAuthTokens).where(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)).run();
+  } else {
+    await getMySqlPool().execute("DELETE FROM codex_oauth_tokens WHERE id = ?", [CODEX_TOKEN_ROW_ID]);
   }
-
-  db.delete(codexOAuthTokens).where(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)).run();
 
   return {
     ok: true,
-    auth: getAuthStatus({ includeCodexDetails: true })
+    auth: await getAuthStatus({ includeCodexDetails: true })
   };
 }
 
 export async function getValidCodexSession(signal?: AbortSignal): Promise<CodexAccessSession | undefined> {
-  const row = getCodexTokenRow();
+  const row = await getCodexTokenRow();
   if (!hasUsableTokenMaterial(row)) {
     return undefined;
   }
@@ -172,19 +172,34 @@ export async function getValidCodexSession(signal?: AbortSignal): Promise<CodexA
   };
 }
 
-function getCodexTokenRow(): CodexTokenRow | undefined {
-  if (databaseDriver !== "sqlite") {
-    return undefined;
+async function getCodexTokenRow(): Promise<CodexTokenRow | undefined> {
+  if (databaseDriver === "sqlite") {
+    return db.select().from(codexOAuthTokens).where(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)).get();
   }
 
-  return db.select().from(codexOAuthTokens).where(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)).get();
+  const [rows] = await getMySqlPool().execute<MySqlCodexTokenRow[]>(
+    `SELECT
+       id,
+       access_token AS accessToken,
+       refresh_token AS refreshToken,
+       id_token AS idToken,
+       email,
+       account_id AS accountId,
+       expires_at AS expiresAt,
+       refreshed_at AS refreshedAt,
+       unavailable_at AS unavailableAt,
+       unavailable_reason AS unavailableReason,
+       created_at AS createdAt,
+       updated_at AS updatedAt
+     FROM codex_oauth_tokens
+     WHERE id = ?
+     LIMIT 1`,
+    [CODEX_TOKEN_ROW_ID]
+  );
+  return rows[0];
 }
 
-function storeCodexTokens(payload: unknown, fallback?: CodexTokenRow): CodexTokenRow {
-  if (databaseDriver !== "sqlite") {
-    throw new ProviderError("unsupported_provider_behavior", "MySQL 模式当前不支持保存 Codex 登录。", 400);
-  }
-
+async function storeCodexTokens(payload: unknown, fallback?: CodexTokenRow): Promise<CodexTokenRow> {
   const now = new Date();
   const parsed = parseCodexTokenPayload(payload, {
     now,
@@ -220,31 +235,68 @@ function storeCodexTokens(payload: unknown, fallback?: CodexTokenRow): CodexToke
     updatedAt: now.toISOString()
   };
 
-  db.insert(codexOAuthTokens)
-    .values(row)
-    .onConflictDoUpdate({
-      target: codexOAuthTokens.id,
-      set: {
-        accessToken: row.accessToken,
-        refreshToken: row.refreshToken,
-        idToken: row.idToken,
-        email: row.email,
-        accountId: row.accountId,
-        expiresAt: row.expiresAt,
-        refreshedAt: row.refreshedAt,
-        unavailableAt: row.unavailableAt,
-        unavailableReason: row.unavailableReason,
-        updatedAt: row.updatedAt
-      }
-    })
-    .run();
+  if (databaseDriver === "sqlite") {
+    db.insert(codexOAuthTokens)
+      .values(row)
+      .onConflictDoUpdate({
+        target: codexOAuthTokens.id,
+        set: {
+          accessToken: row.accessToken,
+          refreshToken: row.refreshToken,
+          idToken: row.idToken,
+          email: row.email,
+          accountId: row.accountId,
+          expiresAt: row.expiresAt,
+          refreshedAt: row.refreshedAt,
+          unavailableAt: row.unavailableAt,
+          unavailableReason: row.unavailableReason,
+          updatedAt: row.updatedAt
+        }
+      })
+      .run();
+  } else {
+    await saveMySqlCodexTokenRow(row);
+  }
 
   return row;
 }
 
+async function saveMySqlCodexTokenRow(row: CodexTokenRow): Promise<void> {
+  await getMySqlPool().execute(
+    `INSERT INTO codex_oauth_tokens
+      (id, access_token, refresh_token, id_token, email, account_id, expires_at, refreshed_at, unavailable_at, unavailable_reason, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       access_token = VALUES(access_token),
+       refresh_token = VALUES(refresh_token),
+       id_token = VALUES(id_token),
+       email = VALUES(email),
+       account_id = VALUES(account_id),
+       expires_at = VALUES(expires_at),
+       refreshed_at = VALUES(refreshed_at),
+       unavailable_at = VALUES(unavailable_at),
+       unavailable_reason = VALUES(unavailable_reason),
+       updated_at = VALUES(updated_at)`,
+    [
+      row.id,
+      row.accessToken,
+      row.refreshToken,
+      row.idToken,
+      row.email,
+      row.accountId,
+      row.expiresAt,
+      row.refreshedAt,
+      row.unavailableAt,
+      row.unavailableReason,
+      row.createdAt,
+      row.updatedAt
+    ]
+  );
+}
+
 async function refreshCodexToken(row: CodexTokenRow, signal?: AbortSignal): Promise<CodexTokenRow | undefined> {
   if (!row.refreshToken) {
-    markCodexSessionUnavailable("missing_refresh_token");
+    await markCodexSessionUnavailable("missing_refresh_token");
     return undefined;
   }
 
@@ -269,7 +321,7 @@ async function refreshCodexToken(row: CodexTokenRow, signal?: AbortSignal): Prom
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     if (classifyCodexRefreshFailure(response.status, body) === "permanent") {
-      markCodexSessionUnavailable("refresh_rejected", row.refreshToken);
+      await markCodexSessionUnavailable("refresh_rejected", row.refreshToken);
       return undefined;
     }
 
@@ -359,27 +411,40 @@ async function readResponseBody(response: Response): Promise<unknown> {
   return response.text().catch(() => "");
 }
 
-function markCodexSessionUnavailable(reason: string, expectedRefreshToken?: string): void {
-  if (databaseDriver !== "sqlite") {
+async function markCodexSessionUnavailable(reason: string, expectedRefreshToken?: string): Promise<void> {
+  if (databaseDriver === "sqlite") {
+    const now = new Date().toISOString();
+    db.update(codexOAuthTokens)
+      .set({
+        accessToken: null,
+        refreshToken: null,
+        idToken: null,
+        unavailableAt: now,
+        unavailableReason: reason,
+        updatedAt: now
+      })
+      .where(
+        expectedRefreshToken
+          ? and(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID), eq(codexOAuthTokens.refreshToken, expectedRefreshToken))
+          : eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)
+      )
+      .run();
     return;
   }
 
   const now = new Date().toISOString();
-  db.update(codexOAuthTokens)
-    .set({
-      accessToken: null,
-      refreshToken: null,
-      idToken: null,
-      unavailableAt: now,
-      unavailableReason: reason,
-      updatedAt: now
-    })
-    .where(
-      expectedRefreshToken
-        ? and(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID), eq(codexOAuthTokens.refreshToken, expectedRefreshToken))
-        : eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)
-    )
-    .run();
+  await getMySqlPool().execute(
+    `UPDATE codex_oauth_tokens
+     SET access_token = NULL,
+         refresh_token = NULL,
+         id_token = NULL,
+         unavailable_at = ?,
+         unavailable_reason = ?,
+         updated_at = ?
+     WHERE id = ?
+       ${expectedRefreshToken ? "AND refresh_token = ?" : ""}`,
+    expectedRefreshToken ? [now, reason, now, CODEX_TOKEN_ROW_ID, expectedRefreshToken] : [now, reason, now, CODEX_TOKEN_ROW_ID]
+  );
 }
 
 function publicCodexSessionView(codex: AuthStatusResponse["codex"]): AuthStatusResponse["codex"] {

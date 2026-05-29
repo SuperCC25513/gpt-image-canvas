@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import type { RowDataPacket } from "mysql2/promise";
 import {
   IMAGE_MODEL,
   PROVIDER_SOURCE_IDS,
@@ -13,7 +14,7 @@ import {
   type SaveLocalOpenAIProviderConfig,
   type SaveProviderConfigRequest
 } from "../contracts.js";
-import { databaseDriver, db } from "../../infrastructure/database.js";
+import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import {
   DEFAULT_OPENAI_IMAGE_TIMEOUT_MS,
   getConfiguredImageModel,
@@ -30,6 +31,9 @@ export const DEFAULT_PROVIDER_SOURCE_ORDER: ProviderSourceId[] = ["env-openai", 
 type ProviderConfigRow = typeof providerConfigs.$inferSelect;
 type CodexTokenRow = typeof codexOAuthTokens.$inferSelect;
 
+interface MySqlProviderConfigRow extends RowDataPacket, ProviderConfigRow {}
+interface MySqlCodexTokenRow extends RowDataPacket, CodexTokenRow {}
+
 interface ResolvedLocalConfig {
   localApiKey: string | null;
   localBaseUrl: string | null;
@@ -37,10 +41,10 @@ interface ResolvedLocalConfig {
   localTimeoutMs: number | null;
 }
 
-export function getProviderConfig(): ProviderConfigResponse {
-  const row = getProviderConfigRow();
+export async function getProviderConfig(): Promise<ProviderConfigResponse> {
+  const row = await getProviderConfigRow();
   const sourceOrder = readSavedSourceOrder(row?.sourceOrderJson);
-  const sourcesById = new Map(providerSources(row).map((source) => [source.id, source]));
+  const sourcesById = new Map((await providerSources(row)).map((source) => [source.id, source]));
   const sources = sourceOrder.map((sourceId) => sourcesById.get(sourceId)).filter(isDefined);
   const activeSource = sources.find((source) => source.available);
 
@@ -52,17 +56,13 @@ export function getProviderConfig(): ProviderConfigResponse {
   };
 }
 
-export function saveProviderConfig(input: SaveProviderConfigRequest): ProviderConfigResponse {
-  if (databaseDriver !== "sqlite") {
-    throw new Error("MySQL 模式当前只支持环境变量 provider 配置。");
-  }
-
+export async function saveProviderConfig(input: SaveProviderConfigRequest): Promise<ProviderConfigResponse> {
   if (!isProviderSourceOrder(input.sourceOrder)) {
     throw new Error("Provider source order is invalid.");
   }
 
   const now = new Date().toISOString();
-  const existing = getProviderConfigRow();
+  const existing = await getProviderConfigRow();
   const local = resolveLocalConfigForSave(input.localOpenAI, existing);
   const row: ProviderConfigRow = {
     id: ACTIVE_PROVIDER_CONFIG_ID,
@@ -75,26 +75,30 @@ export function saveProviderConfig(input: SaveProviderConfigRequest): ProviderCo
     updatedAt: now
   };
 
-  db.insert(providerConfigs)
-    .values(row)
-    .onConflictDoUpdate({
-      target: providerConfigs.id,
-      set: {
-        sourceOrderJson: row.sourceOrderJson,
-        localApiKey: row.localApiKey,
-        localBaseUrl: row.localBaseUrl,
-        localModel: row.localModel,
-        localTimeoutMs: row.localTimeoutMs,
-        updatedAt: row.updatedAt
-      }
-    })
-    .run();
+  if (databaseDriver === "sqlite") {
+    db.insert(providerConfigs)
+      .values(row)
+      .onConflictDoUpdate({
+        target: providerConfigs.id,
+        set: {
+          sourceOrderJson: row.sourceOrderJson,
+          localApiKey: row.localApiKey,
+          localBaseUrl: row.localBaseUrl,
+          localModel: row.localModel,
+          localTimeoutMs: row.localTimeoutMs,
+          updatedAt: row.updatedAt
+        }
+      })
+      .run();
+  } else {
+    await saveMySqlProviderConfigRow(row);
+  }
 
   return getProviderConfig();
 }
 
-export function getProviderSourceOrder(): ProviderSourceId[] {
-  return readSavedSourceOrder(getProviderConfigRow()?.sourceOrderJson);
+export async function getProviderSourceOrder(): Promise<ProviderSourceId[]> {
+  return readSavedSourceOrder((await getProviderConfigRow())?.sourceOrderJson);
 }
 
 export function getEnvironmentOpenAIImageProviderConfig(): OpenAIImageProviderConfig | undefined {
@@ -112,8 +116,12 @@ export function getEnvironmentOpenAIImageProviderConfig(): OpenAIImageProviderCo
   };
 }
 
-export function getLocalOpenAIImageProviderConfig(): OpenAIImageProviderConfig | undefined {
-  const row = getProviderConfigRow();
+export async function getLocalOpenAIImageProviderConfig(): Promise<OpenAIImageProviderConfig | undefined> {
+  const row = await getProviderConfigRow();
+  return localOpenAIImageProviderConfigFromRow(row);
+}
+
+function localOpenAIImageProviderConfigFromRow(row: ProviderConfigRow | undefined): OpenAIImageProviderConfig | undefined {
   const apiKey = trimToUndefined(row?.localApiKey);
   if (!apiKey) {
     return undefined;
@@ -135,18 +143,58 @@ export function isProviderSourceId(value: unknown): value is ProviderSourceId {
   return typeof value === "string" && (PROVIDER_SOURCE_IDS as readonly string[]).includes(value);
 }
 
-function getProviderConfigRow(): ProviderConfigRow | undefined {
-  if (databaseDriver !== "sqlite") {
-    return undefined;
+async function getProviderConfigRow(): Promise<ProviderConfigRow | undefined> {
+  if (databaseDriver === "sqlite") {
+    return db.select().from(providerConfigs).where(eq(providerConfigs.id, ACTIVE_PROVIDER_CONFIG_ID)).get();
   }
 
-  return db.select().from(providerConfigs).where(eq(providerConfigs.id, ACTIVE_PROVIDER_CONFIG_ID)).get();
+  const [rows] = await getMySqlPool().execute<MySqlProviderConfigRow[]>(
+    `SELECT
+       id,
+       source_order_json AS sourceOrderJson,
+       local_api_key AS localApiKey,
+       local_base_url AS localBaseUrl,
+       local_model AS localModel,
+       local_timeout_ms AS localTimeoutMs,
+       created_at AS createdAt,
+       updated_at AS updatedAt
+     FROM provider_configs
+     WHERE id = ?
+     LIMIT 1`,
+    [ACTIVE_PROVIDER_CONFIG_ID]
+  );
+  return rows[0];
 }
 
-function providerSources(row: ProviderConfigRow | undefined): ProviderSourceView[] {
+async function saveMySqlProviderConfigRow(row: ProviderConfigRow): Promise<void> {
+  await getMySqlPool().execute(
+    `INSERT INTO provider_configs
+      (id, source_order_json, local_api_key, local_base_url, local_model, local_timeout_ms, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       source_order_json = VALUES(source_order_json),
+       local_api_key = VALUES(local_api_key),
+       local_base_url = VALUES(local_base_url),
+       local_model = VALUES(local_model),
+       local_timeout_ms = VALUES(local_timeout_ms),
+       updated_at = VALUES(updated_at)`,
+    [
+      row.id,
+      row.sourceOrderJson,
+      row.localApiKey,
+      row.localBaseUrl,
+      row.localModel,
+      row.localTimeoutMs,
+      row.createdAt,
+      row.updatedAt
+    ]
+  );
+}
+
+async function providerSources(row: ProviderConfigRow | undefined): Promise<ProviderSourceView[]> {
   const envConfig = getEnvironmentOpenAIImageProviderConfig();
-  const localConfig = getLocalOpenAIImageProviderConfig();
-  const codex = codexSessionView(getCodexTokenRow());
+  const localConfig = localOpenAIImageProviderConfigFromRow(row);
+  const codex = codexSessionView(await getCodexTokenRow());
 
   return [
     {
@@ -300,12 +348,31 @@ function parseProviderSourceOrder(value: unknown): ProviderSourceId[] | undefine
   return PROVIDER_SOURCE_IDS.every((sourceId) => unique.has(sourceId)) ? [...value] : undefined;
 }
 
-function getCodexTokenRow(): CodexTokenRow | undefined {
-  if (databaseDriver !== "sqlite") {
-    return undefined;
+async function getCodexTokenRow(): Promise<CodexTokenRow | undefined> {
+  if (databaseDriver === "sqlite") {
+    return db.select().from(codexOAuthTokens).where(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)).get();
   }
 
-  return db.select().from(codexOAuthTokens).where(eq(codexOAuthTokens.id, CODEX_TOKEN_ROW_ID)).get();
+  const [rows] = await getMySqlPool().execute<MySqlCodexTokenRow[]>(
+    `SELECT
+       id,
+       access_token AS accessToken,
+       refresh_token AS refreshToken,
+       id_token AS idToken,
+       email,
+       account_id AS accountId,
+       expires_at AS expiresAt,
+       refreshed_at AS refreshedAt,
+       unavailable_at AS unavailableAt,
+       unavailable_reason AS unavailableReason,
+       created_at AS createdAt,
+       updated_at AS updatedAt
+     FROM codex_oauth_tokens
+     WHERE id = ?
+     LIMIT 1`,
+    [CODEX_TOKEN_ROW_ID]
+  );
+  return rows[0];
 }
 
 function codexSessionView(row: CodexTokenRow | undefined): CodexAuthSessionView {

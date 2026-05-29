@@ -18,6 +18,12 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - **系统设置**：保存在 `app_settings` 的本地运行时配置，包括注册开关、审批策略、默认积分和注册邮箱后缀支持列表。
 - **Redis runtime**：API 进程内统一的 Redis 连接、配置读取、健康检查和关闭入口，支撑生成调度的短期运行态，包括当前 provider permit 和后续队列 / 重试状态。
 - **queue driver**：生成调度运行模式，取值 `redis` 或 `inline`。`redis` 是默认运行模式；`inline` 只用于测试或显式本地调试。
+- **provider source order**：图片生成前选择 provider 的全局顺序，当前 source id 为 `env-openai`、`local-openai`、`codex`。
+- **Environment OpenAI-compatible config**：从 `.env` 或运行时环境变量读取的图片 provider 配置。系统页面只展示状态，不写入数据库。
+- **Local OpenAI-compatible config**：管理员在系统页面保存的图片 provider API key、Base URL、model 和 timeout，保存在全局 `provider_configs.active` 配置行。
+- **Agent LLM config**：Agent 规划模型的独立 OpenAI-compatible chat 配置，包含 API key、Base URL、model、timeout 和视觉支持标记，保存在全局 `agent_llm_configs.active` 配置行。
+- **Codex fallback**：图片 provider source order 中的 `codex` 分支，依赖本地 Codex OAuth 会话，保存在全局 `codex_oauth_tokens.default` 配置行。
+- **配置行**：provider、Agent LLM 和 Codex OAuth 使用的全局单行配置记录。它们是本地工作站级设置，不按用户拆分。
 - **生成调度运行态**：后续 provider permit、队列、attempt、取消标记等短期协调状态。Redis 承载运行态，数据库仍是生成记录、输出、审计、资产和积分流水的事实来源。
 - **全局 provider 并发数**：整个应用同一时刻允许打到当前图片 provider 的 provider API 请求总数。它不是单任务并发、单用户并发或 worker 数；当前闸门由 `provider-global-semaphore` 落地。
 - **provider permit**：一次图片 provider API 调用执行前获得的短期租约；完成、失败或取消后释放，进程崩溃时依赖 TTL 自动过期。
@@ -35,7 +41,10 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - **共享契约层**：`packages/shared/src/auth.ts` 和 `packages/shared/src/admin.ts` 定义前后端共用的认证、后台设置字段、默认注册邮箱域名、注册验证码请求/响应和错误码。
 - **认证域服务**：`apps/api/src/domain/auth/auth-store.ts` 负责读取注册策略、校验自助注册条件、消费验证码挑战、创建用户和发放默认积分；`apps/api/src/domain/auth/registration-email-verification.ts` 负责验证码生成、HMAC、发送冷却、尝试次数和 Mail Gateway 调用。
 - **后台管理域服务**：`apps/api/src/domain/admin/admin-store.ts` 负责读取和更新系统设置，并在保存前规范化注册邮箱后缀支持列表。
-- **持久化层**：SQLite 和 MySQL 的 `app_settings.allowed_registration_email_domains_json` 保存注册邮箱后缀支持列表，`registration_email_verifications` 保存注册验证码挑战状态。
+- **持久化层**：SQLite 和 MySQL 的 `app_settings.allowed_registration_email_domains_json` 保存注册邮箱后缀支持列表，`registration_email_verifications` 保存注册验证码挑战状态。SQLite 与 MySQL 都保存 `provider_configs.active`、`agent_llm_configs.active` 和 `codex_oauth_tokens.default`；切换数据库驱动不会自动迁移这些配置。
+- **Provider config domain**：`apps/api/src/domain/providers/provider-config.ts` 负责读取 provider source order、Environment/Local/Codex source 状态、masked local secret，并在 SQLite/MySQL 中读写全局 `provider_configs.active`。
+- **Codex auth domain**：`apps/api/src/domain/providers/codex-auth.ts` 负责 Codex device login、token refresh、logout 和 session status，并在 SQLite/MySQL 中读写 `codex_oauth_tokens.default`。
+- **Agent LLM config domain**：`apps/api/src/domain/agent/config.ts` 负责系统页面 Agent LLM 配置视图、masked secret 和运行时 usable config，并在 SQLite/MySQL 中读写 `agent_llm_configs.active`。
 - **Redis runtime 基础设施**：`apps/api/src/infrastructure/redis-runtime.ts` 负责解析 `REDIS_URL`、`GENERATION_QUEUE_DRIVER`、`REDIS_CONNECT_TIMEOUT_MS`，创建 node-redis singleton client，提供 `assertRedisReady()`、`checkRedisHealth()` 和 `closeRedisClient()`。
 - **Provider scheduler**：`apps/api/src/domain/generation/provider-scheduler.ts` 负责解析 `GENERATION_PROVIDER_GLOBAL_CONCURRENCY`、`GENERATION_PROVIDER_PERMIT_TTL_MS`，并用 `runProviderCall()` 包住所有 `provider.generate` / `provider.edit` 单图调用。`GENERATION_QUEUE_DRIVER=redis` 时使用 Redis sorted set + Lua 原子 acquire；`inline` 时只使用进程内 semaphore。
 - **Provider retry policy**：`apps/api/src/domain/generation/provider-retry-policy.ts` 负责解析 `GENERATION_PROVIDER_MAX_RETRIES`、`GENERATION_PROVIDER_RETRY_BASE_MS`、`GENERATION_PROVIDER_RETRY_MAX_MS`，并用 `runProviderCallWithRetry()` 包住单图 provider call。429、408、5xx、连接超时和临时网络中断会退避重试，missing provider/API key、400 参数错误、参考图非法和取消不重试。
@@ -56,6 +65,12 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - 默认注册邮箱后缀支持列表为 `126.com`、`139.com`、`163.com`、`189.cn`、`aliyun.com`、`gmail.com`、`qq.com`。
 - 缺失字段、`NULL` 或无法解析的 JSON 都回退默认列表，避免旧库升级或坏数据把注册入口意外放开。
 - 管理员显式保存空列表表示“不限制邮箱域名”，这是一个有意配置，不等同于字段缺失。
+- Provider 和 Agent LLM 配置是 admin-only 的全局工作站配置。`/api/provider-config`、`/api/agent-config` 和 Codex login/logout 只能由管理员操作；运行时图片生成和 Agent 规划读取同一组全局配置行。
+- SQLite 与 MySQL 共用同一套 provider/Agent/Codex 配置契约。MySQL 模式使用 `provider_configs.active`、`agent_llm_configs.active` 和 `codex_oauth_tokens.default`，字段语义与 SQLite 对齐。
+- 切换到 MySQL 不会从 SQLite 复制 provider、Agent LLM 或 Codex OAuth 配置。管理员需要在系统页面重新保存 provider/Agent 设置，并重新登录 Codex fallback。
+- Environment OpenAI-compatible config 仍来自运行时环境变量，是只读 provider source；系统页面不写入 `.env`，也不把 env provider 配置保存到数据库。
+- provider source order 读到缺失或坏 JSON 时回退默认顺序 `env-openai`、`local-openai`、`codex`，避免坏配置阻断系统页面或图片生成。
+- 本地 provider、Agent LLM 和 Codex token 的 raw secret 只保存在数据库或运行时环境中；API 响应只返回 masked secret 或可用性状态，不返回 raw API key 或 OAuth token。
 - 自助注册必须先通过邮箱验证码门禁。`POST /api/auth/registration-email-verifications` 只发送验证码；`POST /api/auth/register` 只消费同邮箱有效验证码后才进入创建用户、注册送积分和会话创建流程。
 - 注册验证码只保存 HMAC 哈希，不保存明文。当前 HMAC secret 复用 `MAIL_GATEWAY_API_KEY`；邮件网关地址和 key 来自 `MAIL_GATEWAY_BASE_URL`、`MAIL_GATEWAY_API_KEY`、`MAIL_GATEWAY_TIMEOUT_MS`，不写入系统设置或后台 UI。
 - 邮件网关错误统一折叠为本地稳定错误码，不能向前端暴露网关 URL、API key、provider 原始错误或内部拓扑。
@@ -87,6 +102,8 @@ GPT Image Canvas 是一个面向本地工作站的 AI 图像画布，支持文�
 - 注册邮箱后缀支持列表只限制新的自助注册，不影响已有用户登录、管理员账号 bootstrap、Codex OAuth 或提供方账号邮箱。
 - 域名匹配只做邮箱 `@` 后部分的精确匹配；不支持通配符、正则、子域继承、MX 查询、一次性邮箱检测或黑名单策略。
 - 当前只做注册邮箱验证码，不做登录 MFA、忘记密码、修改邮箱、邀请注册或邮件订阅通知。
+- Provider/Agent/Codex 配置当前不支持 per-user 设置；如果后续要按用户选择 provider 或 Agent 模型，需要单独设计用户级路由和执行时上下文。
+- 系统页面只配置图片 provider、Agent LLM 和 Codex fallback，不配置 OSS、MySQL、Redis、Mail Gateway 或其他部署凭据。
 - `allowRegistration=false` 是更高优先级的总开关。关闭自助注册后，不管邮箱域名是否在支持列表内，都应返回注册关闭语义。
 - 域名检查发生在邮箱查重之前，避免对不支持域名泄露该邮箱是否已注册。
 - 注册验证码发送和最终注册都会先检查 `allowRegistration` 与邮箱后缀支持列表；不支持域名或关闭注册时不调用邮件网关。

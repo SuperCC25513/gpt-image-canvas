@@ -19,7 +19,7 @@
 - SQLite 布尔值使用 `integer` 的 `0/1`，MySQL 使用 `TINYINT` 的 `0/1`。
 - 两种驱动都用 ISO 字符串保存时间，排序依赖 ISO 字符串的字典序。
 - 两种驱动都包含用户、会话、系统设置、积分流水、每日签到、兑换码、生成审计和私有数据 `user_id` 归属字段。
-- `provider_configs` 和 `agent_llm_configs` 当前只在 SQLite 本地模式启用；MySQL 模式使用环境变量图片 provider，暂不创建这两张配置表。
+- `provider_configs`、`agent_llm_configs` 和 `codex_oauth_tokens` 在 SQLite 与 MySQL 模式下都可用；切换到 MySQL 不会迁移 SQLite 中已有配置，需要在系统页面重新保存或重新登录 Codex。
 
 ## `users`
 
@@ -179,33 +179,33 @@ Stores generated and reference asset metadata.
 
 ## `provider_configs`
 
-Stores image provider source order and local OpenAI-compatible settings. This table is SQLite-only in the current runtime.
+Stores image provider source order and local OpenAI-compatible settings. SQLite and MySQL both use the global `active` row.
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | text | Primary key. |
+| `id` | text / varchar | Primary key. |
 | `source_order_json` | text | Required serialized provider source order. |
 | `local_api_key` | text | Optional local API key. |
 | `local_base_url` | text | Optional OpenAI-compatible base URL. |
 | `local_model` | text | Optional image model. |
-| `local_timeout_ms` | integer | Optional image timeout in milliseconds. |
-| `created_at` | text | Required ISO timestamp. |
-| `updated_at` | text | Required ISO timestamp. |
+| `local_timeout_ms` | integer / int | Optional image timeout in milliseconds. |
+| `created_at` | text / varchar | Required ISO timestamp. |
+| `updated_at` | text / varchar | Required ISO timestamp. |
 
 ## `agent_llm_configs`
 
-Stores Agent planning model configuration. This table is SQLite-only in the current runtime.
+Stores Agent planning model configuration. SQLite and MySQL both use the global `active` row.
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | text | Primary key. |
+| `id` | text / varchar | Primary key. |
 | `api_key` | text | Optional Agent LLM API key. |
 | `base_url` | text | Required OpenAI-compatible base URL. |
 | `model` | text | Required planning model. |
-| `timeout_ms` | integer | Required timeout in milliseconds. |
-| `supports_vision` | integer | Required boolean flag stored as integer. |
-| `created_at` | text | Required ISO timestamp. |
-| `updated_at` | text | Required ISO timestamp. |
+| `timeout_ms` | integer / int | Required timeout in milliseconds. |
+| `supports_vision` | integer / tinyint | Required boolean flag stored as `0/1`. |
+| `created_at` | text / varchar | Required ISO timestamp. |
+| `updated_at` | text / varchar | Required ISO timestamp. |
 
 ## `agent_skills`
 
@@ -283,22 +283,22 @@ Stores per-user favorite prompt references.
 
 ## `codex_oauth_tokens`
 
-Stores local Codex OAuth session state.
+Stores local Codex OAuth session state. SQLite and MySQL both use the global `default` row.
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | text | Primary key. |
+| `id` | text / varchar | Primary key. |
 | `access_token` | text | Optional access token. |
 | `refresh_token` | text | Optional refresh token. |
 | `id_token` | text | Optional ID token. |
 | `email` | text | Optional account email. |
 | `account_id` | text | Optional account ID. |
-| `expires_at` | text | Optional token expiry timestamp. |
-| `refreshed_at` | text | Optional refresh timestamp. |
-| `unavailable_at` | text | Optional unavailable timestamp. |
+| `expires_at` | text / varchar | Optional token expiry timestamp. |
+| `refreshed_at` | text / varchar | Optional refresh timestamp. |
+| `unavailable_at` | text / varchar | Optional unavailable timestamp. |
 | `unavailable_reason` | text | Optional unavailable reason. |
-| `created_at` | text | Required ISO timestamp. |
-| `updated_at` | text | Required ISO timestamp. |
+| `created_at` | text / varchar | Required ISO timestamp. |
+| `updated_at` | text / varchar | Required ISO timestamp. |
 
 ## `generation_records`
 

@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { getProviderConfig, saveProviderConfig } from "../../domain/providers/provider-config.js";
 import { requireAdmin } from "../http/auth.js";
-import { errorResponse, errorToMessage } from "../http/errors.js";
+import { errorResponse } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 import { parseProviderConfigPayload } from "../http/validation.js";
 
@@ -12,7 +12,7 @@ export function registerProviderConfigRoutes(app: Hono): void {
       return auth.response;
     }
 
-    return c.json(getProviderConfig());
+    return c.json(await getProviderConfig());
   });
 
   app.put("/api/provider-config", async (c) => {
@@ -32,9 +32,9 @@ export function registerProviderConfigRoutes(app: Hono): void {
     }
 
     try {
-      return c.json(saveProviderConfig(parsed.value));
-    } catch (error) {
-      return c.json(errorResponse("provider_config_error", errorToMessage(error)), 400);
+      return c.json(await saveProviderConfig(parsed.value));
+    } catch {
+      return c.json(errorResponse("provider_config_error", "Provider config could not be saved."), 400);
     }
   });
 }

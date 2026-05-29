@@ -214,6 +214,40 @@ const mySqlSchema: MySqlTableDefinition[] = [
     constraints: ["KEY assets_user_id_idx (user_id)"]
   },
   {
+    name: "provider_configs",
+    comment: "图片生成 provider source order 和本地 OpenAI-compatible 配置",
+    columns: [
+      { name: "id", definition: "VARCHAR(191) PRIMARY KEY NOT NULL", comment: "配置行唯一标识，当前为 active" },
+      {
+        name: "source_order_json",
+        definition: "TEXT NOT NULL",
+        comment: "provider source order JSON"
+      },
+      { name: "local_api_key", definition: "TEXT", comment: "本地 OpenAI-compatible API key" },
+      { name: "local_base_url", definition: "TEXT", comment: "本地 OpenAI-compatible Base URL" },
+      { name: "local_model", definition: "TEXT", comment: "本地 OpenAI-compatible 图片模型" },
+      { name: "local_timeout_ms", definition: "INT", comment: "本地 provider 请求超时时间毫秒" },
+      { name: "created_at", definition: "VARCHAR(32) NOT NULL", comment: "创建时间 ISO 字符串" },
+      { name: "updated_at", definition: "VARCHAR(32) NOT NULL", comment: "更新时间 ISO 字符串" }
+    ],
+    constraints: []
+  },
+  {
+    name: "agent_llm_configs",
+    comment: "Agent 规划模型 OpenAI-compatible 配置",
+    columns: [
+      { name: "id", definition: "VARCHAR(191) PRIMARY KEY NOT NULL", comment: "配置行唯一标识，当前为 active" },
+      { name: "api_key", definition: "TEXT", comment: "Agent LLM API key" },
+      { name: "base_url", definition: "TEXT NOT NULL", addDefinition: "TEXT NOT NULL DEFAULT ''", comment: "Agent LLM Base URL" },
+      { name: "model", definition: "TEXT NOT NULL", addDefinition: "TEXT NOT NULL DEFAULT ''", comment: "Agent LLM 模型名称" },
+      { name: "timeout_ms", definition: "INT NOT NULL DEFAULT 60000", comment: "Agent LLM 请求超时时间毫秒" },
+      { name: "supports_vision", definition: "TINYINT NOT NULL DEFAULT 0", comment: "Agent LLM 是否支持视觉输入" },
+      { name: "created_at", definition: "VARCHAR(32) NOT NULL", comment: "创建时间 ISO 字符串" },
+      { name: "updated_at", definition: "VARCHAR(32) NOT NULL", comment: "更新时间 ISO 字符串" }
+    ],
+    constraints: []
+  },
+  {
     name: "agent_conversations",
     comment: "Agent 对话历史和可恢复上下文",
     columns: [
@@ -471,6 +505,8 @@ async function migrateMySql(pool: Pool): Promise<void> {
   await ensureOwnerColumns(pool);
   await ensureMySqlSchemaComments(pool);
   await backfillGenerationReferenceAssets(pool);
+  await ensureProviderConfigRow(pool);
+  await ensureAgentLlmConfigRow(pool);
   await ensureAppSettingsRow(pool);
   await ensurePromptFavoriteDefaultGroup(pool);
 }
@@ -528,6 +564,16 @@ async function ensureOwnerColumns(pool: Pool): Promise<void> {
   await ensureMySqlColumn(pool, "app_settings", "max_images_per_request");
   await ensureMySqlColumn(pool, "app_settings", "allowed_registration_email_domains_json");
   await ensureMySqlColumn(pool, "credit_transactions", "related_redemption_code_id");
+  await ensureMySqlColumn(pool, "provider_configs", "source_order_json");
+  await ensureMySqlColumn(pool, "provider_configs", "local_api_key");
+  await ensureMySqlColumn(pool, "provider_configs", "local_base_url");
+  await ensureMySqlColumn(pool, "provider_configs", "local_model");
+  await ensureMySqlColumn(pool, "provider_configs", "local_timeout_ms");
+  await ensureMySqlColumn(pool, "agent_llm_configs", "api_key");
+  await ensureMySqlColumn(pool, "agent_llm_configs", "base_url");
+  await ensureMySqlColumn(pool, "agent_llm_configs", "model");
+  await ensureMySqlColumn(pool, "agent_llm_configs", "timeout_ms");
+  await ensureMySqlColumn(pool, "agent_llm_configs", "supports_vision");
   await ensureMySqlColumn(pool, "agent_conversations", "user_id");
   await ensureMySqlColumn(pool, "prompt_favorite_groups", "user_id");
   await ensureMySqlColumn(pool, "prompt_favorites", "user_id");
@@ -740,6 +786,25 @@ async function ensureAppSettingsRow(pool: Pool): Promise<void> {
      SET allowed_registration_email_domains_json = ?
      WHERE id = ? AND allowed_registration_email_domains_json IS NULL`,
     [DEFAULT_ALLOWED_REGISTRATION_EMAIL_DOMAINS_JSON, "default"]
+  );
+}
+
+async function ensureProviderConfigRow(pool: Pool): Promise<void> {
+  const now = new Date().toISOString();
+  await pool.execute(
+    `INSERT IGNORE INTO provider_configs (id, source_order_json, created_at, updated_at)
+     VALUES (?, ?, ?, ?)`,
+    ["active", JSON.stringify(["env-openai", "local-openai", "codex"]), now, now]
+  );
+}
+
+async function ensureAgentLlmConfigRow(pool: Pool): Promise<void> {
+  const now = new Date().toISOString();
+  await pool.execute(
+    `INSERT IGNORE INTO agent_llm_configs
+      (id, api_key, base_url, model, timeout_ms, supports_vision, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ["active", null, "", "", 60000, 0, now, now]
   );
 }
 

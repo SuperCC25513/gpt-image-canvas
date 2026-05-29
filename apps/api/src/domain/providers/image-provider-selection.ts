@@ -53,7 +53,7 @@ export async function createConfiguredImageProvider(signal?: AbortSignal): Promi
 export async function selectConfiguredImageProviderSource(
   signal?: AbortSignal
 ): Promise<ConfiguredImageProviderSelection | undefined> {
-  for (const sourceId of getProviderSourceOrder()) {
+  for (const sourceId of await getProviderSourceOrder()) {
     if (sourceId === "env-openai") {
       const openAIConfig = getEnvironmentOpenAIImageProviderConfig();
       if (openAIConfig) {
@@ -67,7 +67,7 @@ export async function selectConfiguredImageProviderSource(
     }
 
     if (sourceId === "local-openai") {
-      const openAIConfig = getLocalOpenAIImageProviderConfig();
+      const openAIConfig = await getLocalOpenAIImageProviderConfig();
       if (openAIConfig) {
         return {
           sourceId,

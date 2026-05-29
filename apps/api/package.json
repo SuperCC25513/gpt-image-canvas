@@ -19,6 +19,8 @@
     "smoke:generation-queue-observability:inline": "tsx src/smoke/generation-queue-observability-inline-smoke.ts",
     "smoke:generation-queue": "tsx src/smoke/generation-queue-smoke.ts",
     "smoke:planner": "tsx src/smoke/agent-planner-smoke.ts",
+    "smoke:provider-config": "tsx src/smoke/provider-config-smoke.ts",
+    "smoke:provider-config:mysql": "tsx src/smoke/provider-config-mysql-smoke.ts",
     "smoke:provider-retry": "tsx src/smoke/provider-retry-policy-smoke.ts",
     "smoke:provider-scheduler": "tsx src/smoke/provider-scheduler-smoke.ts",
     "smoke:redis-runtime": "tsx src/smoke/redis-runtime-smoke.ts",

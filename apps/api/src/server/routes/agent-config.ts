@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { getAgentLlmConfig, saveAgentLlmConfig } from "../../domain/agent/config.js";
 import { requireAdmin } from "../http/auth.js";
-import { errorResponse, errorToMessage } from "../http/errors.js";
+import { errorResponse } from "../http/errors.js";
 import { readJson } from "../http/json.js";
 import { parseAgentLlmConfigPayload } from "../http/validation.js";
 
@@ -12,7 +12,7 @@ export function registerAgentConfigRoutes(app: Hono): void {
       return auth.response;
     }
 
-    return c.json(getAgentLlmConfig());
+    return c.json(await getAgentLlmConfig());
   });
 
   app.put("/api/agent-config", async (c) => {
@@ -32,9 +32,9 @@ export function registerAgentConfigRoutes(app: Hono): void {
     }
 
     try {
-      return c.json(saveAgentLlmConfig(parsed.value));
-    } catch (error) {
-      return c.json(errorResponse("agent_config_error", errorToMessage(error)), 400);
+      return c.json(await saveAgentLlmConfig(parsed.value));
+    } catch {
+      return c.json(errorResponse("agent_config_error", "Agent LLM config could not be saved."), 400);
     }
   });
 }

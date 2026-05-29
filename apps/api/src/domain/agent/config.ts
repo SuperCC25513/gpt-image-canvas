@@ -1,12 +1,15 @@
 import { eq } from "drizzle-orm";
+import type { RowDataPacket } from "mysql2/promise";
 import type { AgentLlmConfigView, MaskedSecret, SaveAgentLlmConfigRequest } from "../contracts.js";
-import { databaseDriver, db } from "../../infrastructure/database.js";
+import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import { agentLlmConfigs } from "../../infrastructure/schema.js";
 
 const ACTIVE_AGENT_LLM_CONFIG_ID = "active";
 export const DEFAULT_AGENT_LLM_TIMEOUT_MS = 60000;
 
 type AgentLlmConfigRow = typeof agentLlmConfigs.$inferSelect;
+
+interface MySqlAgentLlmConfigRow extends RowDataPacket, AgentLlmConfigRow {}
 
 export interface UsableAgentLlmConfig {
   apiKey: string;
@@ -16,12 +19,12 @@ export interface UsableAgentLlmConfig {
   supportsVision: boolean;
 }
 
-export function getAgentLlmConfig(): AgentLlmConfigView {
-  return toAgentLlmConfigView(getAgentLlmConfigRow());
+export async function getAgentLlmConfig(): Promise<AgentLlmConfigView> {
+  return toAgentLlmConfigView(await getAgentLlmConfigRow());
 }
 
-export function getUsableAgentLlmConfig(): UsableAgentLlmConfig | undefined {
-  const row = getAgentLlmConfigRow();
+export async function getUsableAgentLlmConfig(): Promise<UsableAgentLlmConfig | undefined> {
+  const row = await getAgentLlmConfigRow();
   const apiKey = trimToUndefined(row?.apiKey);
   const model = trimToUndefined(row?.model);
   const timeoutMs = validTimeoutMs(row?.timeoutMs);
@@ -39,13 +42,9 @@ export function getUsableAgentLlmConfig(): UsableAgentLlmConfig | undefined {
   };
 }
 
-export function saveAgentLlmConfig(input: SaveAgentLlmConfigRequest): AgentLlmConfigView {
-  if (databaseDriver !== "sqlite") {
-    throw new Error("MySQL 模式当前只支持环境变量图片 provider；Agent LLM 配置仍需后续任务接入。");
-  }
-
+export async function saveAgentLlmConfig(input: SaveAgentLlmConfigRequest): Promise<AgentLlmConfigView> {
   const now = new Date().toISOString();
-  const existing = getAgentLlmConfigRow();
+  const existing = await getAgentLlmConfigRow();
   const apiKey = resolveApiKeyForSave(input, existing);
   const baseUrl = input.baseUrl.trim();
   const model = requiredTrimmedString(input.model, "Agent LLM model");
@@ -66,30 +65,65 @@ export function saveAgentLlmConfig(input: SaveAgentLlmConfigRequest): AgentLlmCo
     updatedAt: now
   };
 
-  db.insert(agentLlmConfigs)
-    .values(row)
-    .onConflictDoUpdate({
-      target: agentLlmConfigs.id,
-      set: {
-        apiKey: row.apiKey,
-        baseUrl: row.baseUrl,
-        model: row.model,
-        timeoutMs: row.timeoutMs,
-        supportsVision: row.supportsVision,
-        updatedAt: row.updatedAt
-      }
-    })
-    .run();
+  if (databaseDriver === "sqlite") {
+    db.insert(agentLlmConfigs)
+      .values(row)
+      .onConflictDoUpdate({
+        target: agentLlmConfigs.id,
+        set: {
+          apiKey: row.apiKey,
+          baseUrl: row.baseUrl,
+          model: row.model,
+          timeoutMs: row.timeoutMs,
+          supportsVision: row.supportsVision,
+          updatedAt: row.updatedAt
+        }
+      })
+      .run();
+  } else {
+    await saveMySqlAgentLlmConfigRow(row);
+  }
 
   return getAgentLlmConfig();
 }
 
-function getAgentLlmConfigRow(): AgentLlmConfigRow | undefined {
-  if (databaseDriver !== "sqlite") {
-    return undefined;
+async function getAgentLlmConfigRow(): Promise<AgentLlmConfigRow | undefined> {
+  if (databaseDriver === "sqlite") {
+    return db.select().from(agentLlmConfigs).where(eq(agentLlmConfigs.id, ACTIVE_AGENT_LLM_CONFIG_ID)).get();
   }
 
-  return db.select().from(agentLlmConfigs).where(eq(agentLlmConfigs.id, ACTIVE_AGENT_LLM_CONFIG_ID)).get();
+  const [rows] = await getMySqlPool().execute<MySqlAgentLlmConfigRow[]>(
+    `SELECT
+       id,
+       api_key AS apiKey,
+       base_url AS baseUrl,
+       model,
+       timeout_ms AS timeoutMs,
+       supports_vision AS supportsVision,
+       created_at AS createdAt,
+       updated_at AS updatedAt
+     FROM agent_llm_configs
+     WHERE id = ?
+     LIMIT 1`,
+    [ACTIVE_AGENT_LLM_CONFIG_ID]
+  );
+  return rows[0];
+}
+
+async function saveMySqlAgentLlmConfigRow(row: AgentLlmConfigRow): Promise<void> {
+  await getMySqlPool().execute(
+    `INSERT INTO agent_llm_configs
+      (id, api_key, base_url, model, timeout_ms, supports_vision, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       api_key = VALUES(api_key),
+       base_url = VALUES(base_url),
+       model = VALUES(model),
+       timeout_ms = VALUES(timeout_ms),
+       supports_vision = VALUES(supports_vision),
+       updated_at = VALUES(updated_at)`,
+    [row.id, row.apiKey, row.baseUrl, row.model, row.timeoutMs, row.supportsVision, row.createdAt, row.updatedAt]
+  );
 }
 
 function toAgentLlmConfigView(row: AgentLlmConfigRow | undefined): AgentLlmConfigView {

@@ -38,7 +38,7 @@ Admins can inspect generation scheduling through `/api/admin/generation-queue`. 
 
 SQLite tables are defined in `apps/api/src/infrastructure/schema.ts`; keep `docs/generated/db-schema.md` updated when the schema changes.
 
-MySQL 通过 `USE_MYSQL=true` 显式启用。未设置或设为其他值时使用 SQLite。该模式下 API 只用 MySQL 保存用户、会话、项目、资产、生成记录和 Gallery 元数据，不读取 SQLite 数据，也不做 SQLite 到 MySQL 的迁移。MySQL 模式下图片资产主存储为 OSS，`assets.relative_path` 保存 OSS object key；SQLite 模式下该字段仍保存相对 `DATA_DIR` 的本地路径。`.env` 凭据必须保留在本机，`MYSQL_CREATE_DATABASE=true` 只用于本地初始化或受控部署；`MYSQL_CREATE_DATABASE=false` 时只自动创建缺失表，不自动创建数据库本身。MySQL 初始化会维护数据库层表注释和字段注释。
+MySQL 通过 `USE_MYSQL=true` 显式启用。未设置或设为其他值时使用 SQLite。该模式下 API 只用 MySQL 保存用户、会话、项目、资产、生成记录、Gallery 元数据、provider 配置、Agent LLM 配置和 Codex OAuth token，不读取 SQLite 数据，也不做 SQLite 到 MySQL 的迁移；切换到 MySQL 后需要在系统页面重新保存 provider/Agent 配置并重新登录 Codex。MySQL 模式下图片资产主存储为 OSS，`assets.relative_path` 保存 OSS object key；SQLite 模式下该字段仍保存相对 `DATA_DIR` 的本地路径。`.env` 凭据必须保留在本机，`MYSQL_CREATE_DATABASE=true` 只用于本地初始化或受控部署；`MYSQL_CREATE_DATABASE=false` 时只自动创建缺失表，不自动创建数据库本身。MySQL 初始化会维护数据库层表注释和字段注释。
 
 Important persistence rules:
 
@@ -57,10 +57,12 @@ Important persistence rules:
 Provider source order is:
 
 1. Environment OpenAI-compatible config.
-2. Local OpenAI-compatible config stored in SQLite.
+2. Local OpenAI-compatible config stored in `provider_configs`.
 3. Codex login fallback.
 
-Agent planning uses separate Agent LLM configuration. Do not assume the image provider and planning model are the same provider.
+SQLite and MySQL both use the same admin-only system page contract for local provider config, Agent LLM config, and Codex session state. Environment provider values still come from runtime variables and remain read-only in the UI.
+
+Agent planning uses separate Agent LLM configuration stored in `agent_llm_configs`. Do not assume the image provider and planning model are the same provider.
 
 Provider errors should become stable API errors where possible. Avoid exposing raw secrets, raw token values, or noisy upstream internals in responses or logs.
 

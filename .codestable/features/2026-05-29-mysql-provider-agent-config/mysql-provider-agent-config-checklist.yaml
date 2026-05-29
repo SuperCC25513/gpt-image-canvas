@@ -1,0 +1,93 @@
+feature: 2026-05-29-mysql-provider-agent-config
+created: "2026-05-29"
+
+steps:
+  - action: "持久化骨架：补齐 MySQL provider_configs / agent_llm_configs schema 和默认 active 行"
+    exit_signal: "MySQL 新库启动后两张表和 active 行存在；SQLite 初始化不变。"
+    status: done
+  - action: "Provider config 分支：让 provider config domain 可在 MySQL 中读写 active row"
+    exit_signal: "MySQL 模式下 provider config GET/PUT 能保存 source order/local key，并被 provider selection 读取。"
+    status: done
+  - action: "Agent LLM 分支：让 Agent config domain 可在 MySQL 中读写 active row"
+    exit_signal: "MySQL 模式下 Agent config GET/PUT 能保存配置，getUsableAgentLlmConfig() 返回 usable config。"
+    status: done
+  - action: "Codex fallback 分支：让 Codex token store 在 MySQL 模式读写已有 codex_oauth_tokens"
+    exit_signal: "MySQL 模式下 Codex login/logout/status 可持久化，source order 中 codex 可变为 available。"
+    status: done
+  - action: "UI 联调与文档：保持系统页面契约不变，更新文档和必要提示"
+    exit_signal: "后台 provider 页面在 MySQL 模式保存后刷新仍显示 saved/masked 状态；文档不再声明 provider/Agent config SQLite-only。"
+    status: done
+  - action: "验证：补 MySQL/SQLite 关键 smoke 或集成验证，运行 typecheck/build"
+    exit_signal: "SQLite provider/Agent 行为不退化，MySQL provider/Agent/Codex 配置路径通过；pnpm typecheck 和 pnpm build 通过。"
+    status: done
+
+checks:
+  - item: "不做 SQLite 配置到 MySQL 的迁移；切换到 MySQL 后需要重新保存系统页面配置。"
+    source: 范围守护
+    status: passed
+  - item: "不做 per-user provider / Agent LLM 配置；继续使用全局 active 行，并保持现有 admin-only 路由边界。"
+    source: 范围守护
+    status: passed
+  - item: "不做 Agent conversation / Agent skill 的完整 MySQL 持久化；保留稳定降级语义。"
+    source: 范围守护
+    status: passed
+  - item: "不合并 /api/provider-config 和 /api/agent-config 为原子单请求。"
+    source: 范围守护
+    status: passed
+  - item: "MySQL provider_configs 字段与 SQLite provider_configs 语义对齐，并有 active 默认行。"
+    source: 名词契约
+    status: passed
+  - item: "MySQL agent_llm_configs 字段与 SQLite agent_llm_configs 语义对齐，并有 active 默认行。"
+    source: 名词契约
+    status: passed
+  - item: "Provider config domain 在 MySQL 模式下读写 active row，响应仍返回 masked secret。"
+    source: 编排骨架
+    status: passed
+  - item: "Agent LLM config domain 在 MySQL 模式下读写 active row，Agent WebSocket 能读取 usable config。"
+    source: 编排骨架
+    status: passed
+  - item: "Codex auth domain 在 MySQL 模式下读写/删除/刷新 codex_oauth_tokens。"
+    source: 编排骨架
+    status: passed
+  - item: "错误响应不泄漏 API key、OAuth token、MySQL password、OSS AK/SK、SQL 连接串或 raw SQL error 细节。"
+    source: 流程级约束
+    status: passed
+  - item: "MySQL schema 挂载 provider_configs / agent_llm_configs 表定义和默认行初始化。"
+    source: 挂载点
+    status: passed
+  - item: "Provider config、Agent config、Codex token store 三个 domain 挂载 driver-aware 读写分支。"
+    source: 挂载点
+    status: passed
+  - item: "配置文档移除 provider_configs / agent_llm_configs SQLite-only 口径。"
+    source: 挂载点
+    status: passed
+  - item: "USE_MYSQL=true 且 MySQL 新库启动时创建 provider_configs / agent_llm_configs 表，并插入默认 active 行。"
+    source: 验收场景
+    status: passed
+  - item: "MySQL 模式 GET /api/provider-config 返回默认 source order、env source 状态、空 localOpenAI、Codex session view，不返回 raw secret。"
+    source: 验收场景
+    status: passed
+  - item: "MySQL 模式 PUT /api/provider-config 保存 local OpenAI key/baseUrl/model/timeout/sourceOrder 后，再次 GET 能读到同一配置。"
+    source: 验收场景
+    status: passed
+  - item: "MySQL 模式保存 local OpenAI 后，provider selection 可以选中 local-openai。"
+    source: 验收场景
+    status: passed
+  - item: "MySQL 模式 provider GET 读到坏 source_order_json 时返回默认 source order，不 500。"
+    source: 验收场景
+    status: passed
+  - item: "MySQL 模式 PUT /api/agent-config 保存 Agent LLM 配置后返回 configured=true，Agent WebSocket 不再因缺配置返回 missing_agent_config。"
+    source: 验收场景
+    status: passed
+  - item: "MySQL 模式 Agent config 保存时只传 masked key 或 preserveApiKey=true，不覆盖已保存 raw key。"
+    source: 验收场景
+    status: passed
+  - item: "MySQL 模式 Codex device login 成功后 token 写入 MySQL，GET /api/provider-config 中 codex.available=true。"
+    source: 验收场景
+    status: passed
+  - item: "MySQL 模式 Codex logout 删除 token，codex.available=false，source order 保留。"
+    source: 验收场景
+    status: passed
+  - item: "SQLite 模式 provider config、Agent config、Codex login/logout 仍按现有行为通过。"
+    source: 验收场景
+    status: passed
