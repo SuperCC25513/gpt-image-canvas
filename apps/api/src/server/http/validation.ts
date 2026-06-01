@@ -40,6 +40,7 @@ import {
   type UpdateGalleryVisibilityRequest
 } from "../../domain/contracts.js";
 import { getStoredAssetFile } from "../../domain/generation/image-generation.js";
+import { normalizeOutboundUrl, OutboundUrlError } from "../../domain/security/outbound-url.js";
 import { userCanReadAsset } from "../../domain/storage/store.js";
 import { isProviderSourceOrder } from "../../domain/providers/provider-config.js";
 import type { EditImageProviderInput, ImageProviderInput } from "../../infrastructure/providers/image-provider.js";
@@ -654,6 +655,11 @@ export function parseAgentLlmConfigPayload(input: unknown): ParseResult<SaveAgen
     };
   }
 
+  const agentBaseUrl = parseProviderBaseUrl(input.baseUrl, "invalid_agent_config");
+  if (!agentBaseUrl.ok) {
+    return agentBaseUrl;
+  }
+
   if (typeof input.model !== "string") {
     return {
       ok: false,
@@ -680,7 +686,7 @@ export function parseAgentLlmConfigPayload(input: unknown): ParseResult<SaveAgen
     value: {
       apiKey: stringValue(input.apiKey),
       preserveApiKey: input.preserveApiKey === true,
-      baseUrl: input.baseUrl,
+      baseUrl: agentBaseUrl.value,
       model: input.model,
       timeoutMs: input.timeoutMs,
       supportsVision: input.supportsVision
@@ -748,6 +754,23 @@ function parseProviderSourceOrderPayload(input: unknown): ParseResult<ProviderSo
   };
 }
 
+function parseProviderBaseUrl(value: string, code: string): ParseResult<string> {
+  try {
+    return {
+      ok: true,
+      value: normalizeOutboundUrl(value, { purpose: "provider_base_url" })
+    };
+  } catch (error) {
+    if (error instanceof OutboundUrlError) {
+      return {
+        ok: false,
+        error: errorResponse(code, error.message)
+      };
+    }
+    throw error;
+  }
+}
+
 function parseLocalOpenAIProviderConfig(input: unknown): ParseResult<SaveLocalOpenAIProviderConfig> {
   if (!isRecord(input)) {
     return {
@@ -777,7 +800,11 @@ function parseLocalOpenAIProviderConfig(input: unknown): ParseResult<SaveLocalOp
         error: errorResponse("invalid_provider_config", "Custom OpenAI base URL must be a string.")
       };
     }
-    config.baseUrl = input.baseUrl;
+    const baseUrl = parseProviderBaseUrl(input.baseUrl, "invalid_provider_config");
+    if (!baseUrl.ok) {
+      return baseUrl;
+    }
+    config.baseUrl = baseUrl.value;
   }
 
   if (Object.hasOwn(input, "model")) {

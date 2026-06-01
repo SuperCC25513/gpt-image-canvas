@@ -7606,7 +7606,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
         />
       ) : null}
 
-      {isAgentSkillDialogOpen ? <AgentSkillDialog onClose={() => setIsAgentSkillDialogOpen(false)} /> : null}
+      {isAgentSkillDialogOpen ? <AgentSkillDialog isAdmin={isCurrentUserAdmin} onClose={() => setIsAgentSkillDialogOpen(false)} /> : null}
 
       {isCodexLoginOpen ? createPortal(
         (

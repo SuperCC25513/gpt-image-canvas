@@ -12,7 +12,7 @@ import { GenerationDomainError } from "../../domain/generation/image-generation.
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
 import { requireAuth } from "../http/auth.js";
 import { errorResponse, providerErrorJson } from "../http/errors.js";
-import { readJson } from "../http/json.js";
+import { IMAGE_EDIT_JSON_BODY_MAX_BYTES, jsonErrorStatus, readJson } from "../http/json.js";
 import { parseEditPayload, parseGeneratePayload } from "../http/validation.js";
 
 export function registerImageRoutes(app: Hono): void {
@@ -28,7 +28,7 @@ export function registerImageRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseGeneratePayload(payload.value);
@@ -61,9 +61,9 @@ export function registerImageRoutes(app: Hono): void {
       return auth.response;
     }
 
-    const payload = await readJson(c.req.raw);
+    const payload = await readJson(c.req.raw, { maxBytes: IMAGE_EDIT_JSON_BODY_MAX_BYTES });
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = await parseEditPayload(payload.value, auth.user);

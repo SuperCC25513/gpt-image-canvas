@@ -153,6 +153,7 @@ export interface LoginRequest {
 
 export type AuthErrorCode =
   | "account_inactive"
+  | "auth_rate_limited"
   | "email_already_registered"
   | "email_verification_expired"
   | "email_verification_invalid"

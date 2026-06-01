@@ -3,6 +3,7 @@ import type { RowDataPacket } from "mysql2/promise";
 import type { AgentLlmConfigView, MaskedSecret, SaveAgentLlmConfigRequest } from "../contracts.js";
 import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import { agentLlmConfigs } from "../../infrastructure/schema.js";
+import { normalizeOutboundUrl } from "../security/outbound-url.js";
 
 const ACTIVE_AGENT_LLM_CONFIG_ID = "active";
 export const DEFAULT_AGENT_LLM_TIMEOUT_MS = 60000;
@@ -46,7 +47,7 @@ export async function saveAgentLlmConfig(input: SaveAgentLlmConfigRequest): Prom
   const now = new Date().toISOString();
   const existing = await getAgentLlmConfigRow();
   const apiKey = resolveApiKeyForSave(input, existing);
-  const baseUrl = input.baseUrl.trim();
+  const baseUrl = normalizeOutboundUrl(input.baseUrl, { purpose: "provider_base_url" });
   const model = requiredTrimmedString(input.model, "Agent LLM model");
   const timeoutMs = requiredPositiveInteger(input.timeoutMs, "Agent LLM timeout");
 

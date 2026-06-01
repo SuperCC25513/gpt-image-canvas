@@ -1,6 +1,15 @@
-import { errorResponse, type ParseResult } from "./errors.js";
+import { errorResponse, type ErrorResponseBody, type ParseResult } from "./errors.js";
 
-export async function readJson(request: Request): Promise<ParseResult<unknown>> {
+export const DEFAULT_JSON_BODY_MAX_BYTES = 1024 * 1024;
+export const PROJECT_JSON_BODY_MAX_BYTES = 110 * 1024 * 1024;
+export const IMAGE_EDIT_JSON_BODY_MAX_BYTES = 220 * 1024 * 1024;
+export const AGENT_CONVERSATION_JSON_BODY_MAX_BYTES = 5 * 1024 * 1024;
+
+export interface ReadJsonOptions {
+  maxBytes?: number;
+}
+
+export async function readJson(request: Request, options: ReadJsonOptions = {}): Promise<ParseResult<unknown>> {
   const contentType = request.headers.get("content-type");
   if (contentType && !isJsonContentType(contentType)) {
     return {
@@ -9,9 +18,22 @@ export async function readJson(request: Request): Promise<ParseResult<unknown>> 
     };
   }
 
+  const maxBytes = validMaxBytes(options.maxBytes) ?? DEFAULT_JSON_BODY_MAX_BYTES;
+  const contentLength = parseContentLength(request.headers.get("content-length"));
+  if (contentLength !== undefined && contentLength > maxBytes) {
+    return {
+      ok: false,
+      error: requestBodyTooLarge()
+    };
+  }
+
   let bodyText: string;
   try {
-    bodyText = await request.text();
+    const result = await readRequestTextWithLimit(request, maxBytes);
+    if (!result.ok) {
+      return result;
+    }
+    bodyText = result.value;
   } catch {
     return {
       ok: false,
@@ -39,7 +61,72 @@ export async function readJson(request: Request): Promise<ParseResult<unknown>> 
   }
 }
 
+export function jsonErrorStatus(error: ErrorResponseBody): 400 | 413 | 415 {
+  if (error.error.code === "request_body_too_large") {
+    return 413;
+  }
+  if (error.error.code === "unsupported_media_type") {
+    return 415;
+  }
+  return 400;
+}
+
+async function readRequestTextWithLimit(request: Request, maxBytes: number): Promise<ParseResult<string>> {
+  if (!request.body) {
+    return {
+      ok: true,
+      value: ""
+    };
+  }
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let totalBytes = 0;
+  let bodyText = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        await reader.cancel();
+        return {
+          ok: false,
+          error: requestBodyTooLarge()
+        };
+      }
+
+      bodyText += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  bodyText += decoder.decode();
+  return {
+    ok: true,
+    value: bodyText
+  };
+}
+
+function requestBodyTooLarge(): ErrorResponseBody {
+  return errorResponse("request_body_too_large", "请求体过大。");
+}
+
 function isJsonContentType(contentType: string): boolean {
   const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase();
   return mediaType === "application/json" || Boolean(mediaType?.endsWith("+json"));
+}
+
+function parseContentLength(value: string | null): number | undefined {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function validMaxBytes(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }

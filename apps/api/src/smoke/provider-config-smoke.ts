@@ -44,6 +44,33 @@ async function main(): Promise<void> {
     expect((await providerConfig.getProviderSourceOrder())[0] === "local-openai", "saved source order is readable");
     expect((await providerConfig.getLocalOpenAIImageProviderConfig())?.apiKey === "sk-local-provider-secret", "runtime provider reads raw key");
 
+    await expectRejects(
+      () =>
+        providerConfig.saveProviderConfig({
+          sourceOrder: ["local-openai", "env-openai", "codex"],
+          localOpenAI: {
+            apiKey: "sk-local-provider-secret",
+            baseUrl: "http://127.0.0.1:11434/v1",
+            model: "gpt-image-2",
+            timeoutMs: 120000
+          }
+        }),
+      "local provider base URL is rejected without explicit dev override"
+    );
+
+    process.env.ALLOW_LOCAL_PROVIDER_BASE_URL = "true";
+    const localDevProvider = await providerConfig.saveProviderConfig({
+      sourceOrder: ["local-openai", "env-openai", "codex"],
+      localOpenAI: {
+        apiKey: "sk-local-provider-secret",
+        baseUrl: "http://127.0.0.1:11434/v1",
+        model: "gpt-image-2",
+        timeoutMs: 120000
+      }
+    });
+    expect(localDevProvider.localOpenAI.baseUrl === "http://127.0.0.1:11434/v1", "explicit dev override allows loopback provider base URL");
+    delete process.env.ALLOW_LOCAL_PROVIDER_BASE_URL;
+
     await providerConfig.saveProviderConfig({
       sourceOrder: ["local-openai", "env-openai", "codex"],
       localOpenAI: {
@@ -71,6 +98,18 @@ async function main(): Promise<void> {
     expect(savedAgent.configured, "saved agent config is configured");
     expect(savedAgent.apiKey.value !== "sk-agent-secret", "agent key is masked");
     expect((await agentConfig.getUsableAgentLlmConfig())?.apiKey === "sk-agent-secret", "runtime agent config reads raw key");
+
+    await expectRejects(
+      () =>
+        agentConfig.saveAgentLlmConfig({
+          apiKey: "sk-agent-secret",
+          baseUrl: "http://169.254.169.254/latest",
+          model: "gpt-5",
+          timeoutMs: 60000,
+          supportsVision: true
+        }),
+      "agent base URL rejects metadata service targets"
+    );
 
     await agentConfig.saveAgentLlmConfig({
       apiKey: savedAgent.apiKey.value,
@@ -125,6 +164,16 @@ function expect(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(`Assertion failed: ${message}`);
   }
+}
+
+async function expectRejects(action: () => Promise<unknown>, message: string): Promise<void> {
+  try {
+    await action();
+  } catch {
+    return;
+  }
+
+  throw new Error(`Assertion failed: ${message}`);
 }
 
 main().catch((error) => {

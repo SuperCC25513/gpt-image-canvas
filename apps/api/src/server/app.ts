@@ -7,6 +7,7 @@ import { assertRedisReady } from "../infrastructure/redis-runtime.js";
 import { runtimePaths } from "../infrastructure/runtime.js";
 import { assertAssetStorageConfigured } from "../infrastructure/storage/asset-storage.js";
 import { errorResponse } from "./http/errors.js";
+import { securityHeaders } from "./http/security-headers.js";
 import { registerAgentConfigRoutes } from "./routes/agent-config.js";
 import { registerAgentConversationRoutes } from "./routes/agent-conversations.js";
 import { registerAgentSkillRoutes } from "./routes/agent-skills.js";
@@ -33,6 +34,7 @@ export async function createApp(): Promise<Hono> {
   await initializeAuthFoundation();
 
   const app = new Hono();
+  app.use("*", securityHeaders());
 
   app.onError((error, c) => {
     console.error(error);

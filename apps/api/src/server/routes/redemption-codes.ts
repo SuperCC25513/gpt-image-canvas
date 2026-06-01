@@ -9,7 +9,7 @@ import {
 } from "../../domain/redemption-codes/redemption-code-store.js";
 import { requireAdmin, requireAuth } from "../http/auth.js";
 import { errorResponse } from "../http/errors.js";
-import { readJson } from "../http/json.js";
+import { jsonErrorStatus, readJson } from "../http/json.js";
 import {
   parseAdminCreateRedemptionCodesPayload,
   parseAdminRedemptionCodePatchPayload,
@@ -25,7 +25,7 @@ export function registerRedemptionCodeRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseRedeemCreditCodePayload(payload.value);
@@ -62,7 +62,7 @@ export function registerRedemptionCodeRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseAdminCreateRedemptionCodesPayload(payload.value);
@@ -85,7 +85,7 @@ export function registerRedemptionCodeRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseAdminRedemptionCodePatchPayload(payload.value);

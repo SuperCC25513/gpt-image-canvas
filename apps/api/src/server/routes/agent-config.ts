@@ -2,7 +2,7 @@ import type { Hono } from "hono";
 import { getAgentLlmConfig, saveAgentLlmConfig } from "../../domain/agent/config.js";
 import { requireAdmin } from "../http/auth.js";
 import { errorResponse } from "../http/errors.js";
-import { readJson } from "../http/json.js";
+import { jsonErrorStatus, readJson } from "../http/json.js";
 import { parseAgentLlmConfigPayload } from "../http/validation.js";
 
 export function registerAgentConfigRoutes(app: Hono): void {
@@ -23,7 +23,7 @@ export function registerAgentConfigRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseAgentLlmConfigPayload(payload.value);

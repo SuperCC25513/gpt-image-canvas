@@ -64,6 +64,8 @@ SQLite and MySQL both use the same admin-only system page contract for local pro
 
 Agent planning uses separate Agent LLM configuration stored in `agent_llm_configs`. Do not assume the image provider and planning model are the same provider.
 
+OpenAI-compatible base URLs are validated before saving UI provider or Agent LLM configuration. Public HTTPS endpoints are the default supported path. Local loopback HTTP proxies require `ALLOW_LOCAL_PROVIDER_BASE_URL=true`; do not rely on private-network provider URLs unless that deployment has been separately reviewed.
+
 Provider errors should become stable API errors where possible. Avoid exposing raw secrets, raw token values, or noisy upstream internals in responses or logs.
 
 ## Image Generation
@@ -141,3 +143,5 @@ docker compose config --quiet --no-env-resolution
 ```
 
 Do not run plain `docker compose config` when `.env` may contain real secrets.
+
+Docker Compose binds the published app port to `127.0.0.1` unless `DOCKER_BIND_ADDRESS` is set. Keep the default for local use; setting `DOCKER_BIND_ADDRESS=0.0.0.0` is a deployment decision, not a development default.

@@ -10,9 +10,9 @@ import {
   saveAgentSkill
 } from "../../domain/agent/skill-store.js";
 import type { SaveAgentSkillRequest } from "../../domain/contracts.js";
-import { requireAuth } from "../http/auth.js";
+import { requireAdmin, requireAuth } from "../http/auth.js";
 import { errorResponse, errorToMessage } from "../http/errors.js";
-import { readJson } from "../http/json.js";
+import { jsonErrorStatus, readJson } from "../http/json.js";
 
 export function registerAgentSkillRoutes(app: Hono): void {
   app.get("/api/agent-skills", async (c) => {
@@ -39,7 +39,7 @@ export function registerAgentSkillRoutes(app: Hono): void {
   });
 
   app.post("/api/agent-skills", async (c) => {
-    const auth = await requireAuth(c);
+    const auth = await requireAdmin(c);
     if (!auth.ok) {
       return auth.response;
     }
@@ -49,7 +49,7 @@ export function registerAgentSkillRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     try {
@@ -60,7 +60,7 @@ export function registerAgentSkillRoutes(app: Hono): void {
   });
 
   app.put("/api/agent-skills/:id", async (c) => {
-    const auth = await requireAuth(c);
+    const auth = await requireAdmin(c);
     if (!auth.ok) {
       return auth.response;
     }
@@ -70,7 +70,7 @@ export function registerAgentSkillRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     try {
@@ -81,7 +81,7 @@ export function registerAgentSkillRoutes(app: Hono): void {
   });
 
   app.post("/api/agent-skills/import", async (c) => {
-    const auth = await requireAuth(c);
+    const auth = await requireAdmin(c);
     if (!auth.ok) {
       return auth.response;
     }

@@ -7,6 +7,7 @@ import {
   type OutputFormat,
   type ReferenceImageInput
 } from "../../domain/contracts.js";
+import { validateProviderImageUrl } from "../../domain/security/outbound-url.js";
 
 export interface ImageProviderInput {
   originalPrompt: string;
@@ -296,7 +297,7 @@ async function downloadProviderImageUrl(url: string, signal?: AbortSignal): Prom
 
 function parseProviderImageUrl(url: string): URL | undefined {
   try {
-    const parsedUrl = new URL(url);
+    const parsedUrl = url.trim().startsWith("data:") ? new URL(url) : validateProviderImageUrl(url);
     return parsedUrl.protocol === "https:" || parsedUrl.protocol === "http:" || parsedUrl.protocol === "data:"
       ? parsedUrl
       : undefined;

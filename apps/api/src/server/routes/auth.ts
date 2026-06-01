@@ -12,7 +12,7 @@ import { getAuthStatus, logoutCodex, pollCodexDeviceLogin, startCodexDeviceLogin
 import { ProviderError } from "../../infrastructure/providers/image-provider.js";
 import { authMeResponse, clearSessionCookie, requireAdmin, requireAuth, SESSION_COOKIE_NAME, setSessionCookie } from "../http/auth.js";
 import { errorResponse, providerErrorJson } from "../http/errors.js";
-import { readJson } from "../http/json.js";
+import { jsonErrorStatus, readJson } from "../http/json.js";
 import {
   parseCodexPollPayload,
   parseLoginPayload,
@@ -26,7 +26,7 @@ export function registerAuthRoutes(app: Hono): void {
   app.post("/api/auth/registration-email-verifications", async (c) => {
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseRegisterEmailVerificationPayload(payload.value);
@@ -44,7 +44,7 @@ export function registerAuthRoutes(app: Hono): void {
   app.post("/api/auth/register", async (c) => {
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseRegisterPayload(payload.value);
@@ -68,7 +68,7 @@ export function registerAuthRoutes(app: Hono): void {
   app.post("/api/auth/login", async (c) => {
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseLoginPayload(payload.value);
@@ -77,7 +77,7 @@ export function registerAuthRoutes(app: Hono): void {
     }
 
     try {
-      const session = await loginUser(parsed.value);
+      const session = await loginUser(parsed.value, { ipAddress: loginIpAddress(c.req.raw) });
       setSessionCookie(c, session.token, session.expiresAt);
       return c.json({ user: session.user });
     } catch (error) {
@@ -138,7 +138,7 @@ export function registerAuthRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseCodexPollPayload(payload.value);
@@ -207,4 +207,18 @@ function cookieValue(header: string | undefined, name: string): string | undefin
   }
 
   return undefined;
+}
+
+function loginIpAddress(request: Request): string | undefined {
+  return headerSummary(request.headers.get("x-real-ip")) ?? firstForwardedIp(request.headers.get("x-forwarded-for"));
+}
+
+function firstForwardedIp(value: string | null): string | undefined {
+  const first = value?.split(",")[0]?.trim();
+  return headerSummary(first ?? null);
+}
+
+function headerSummary(value: string | null): string | undefined {
+  const sanitized = value?.replace(/[\r\n]/gu, " ").trim();
+  return sanitized ? sanitized.slice(0, 191) : undefined;
 }

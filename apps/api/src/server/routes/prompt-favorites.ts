@@ -18,7 +18,7 @@ import {
 } from "../../domain/prompt-favorites/prompt-favorites.js";
 import { requireAuth } from "../http/auth.js";
 import { errorResponse } from "../http/errors.js";
-import { readJson } from "../http/json.js";
+import { jsonErrorStatus, readJson } from "../http/json.js";
 
 export function registerPromptFavoriteRoutes(app: Hono): void {
   app.get("/api/prompt-favorites", async (c) => {
@@ -38,7 +38,7 @@ export function registerPromptFavoriteRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     try {
@@ -56,7 +56,7 @@ export function registerPromptFavoriteRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     try {
@@ -101,7 +101,7 @@ export function registerPromptFavoriteRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     try {
@@ -119,7 +119,7 @@ export function registerPromptFavoriteRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     try {

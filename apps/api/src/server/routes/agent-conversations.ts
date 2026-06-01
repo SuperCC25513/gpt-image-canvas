@@ -8,7 +8,7 @@ import {
 } from "../../domain/agent/conversation-store.js";
 import { requireAuth } from "../http/auth.js";
 import { errorResponse, type ErrorResponseBody } from "../http/errors.js";
-import { readJson } from "../http/json.js";
+import { AGENT_CONVERSATION_JSON_BODY_MAX_BYTES, jsonErrorStatus, readJson } from "../http/json.js";
 
 const AGENT_CONVERSATION_ROLES = new Set(["user", "assistant", "thinking", "system", "error", "question", "plan"]);
 
@@ -51,9 +51,9 @@ export function registerAgentConversationRoutes(app: Hono): void {
       return c.json(agentConversationStorageUnavailable(), 501);
     }
 
-    const payload = await readJson(c.req.raw);
+    const payload = await readJson(c.req.raw, { maxBytes: AGENT_CONVERSATION_JSON_BODY_MAX_BYTES });
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseSaveAgentConversationPayload(payload.value);

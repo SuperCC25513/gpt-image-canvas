@@ -22,6 +22,7 @@ import {
   type OpenAIImageProviderConfig
 } from "../../infrastructure/providers/image-provider.js";
 import { codexOAuthTokens, providerConfigs } from "../../infrastructure/schema.js";
+import { normalizeOutboundUrl } from "../security/outbound-url.js";
 
 const ACTIVE_PROVIDER_CONFIG_ID = "active";
 const CODEX_TOKEN_ROW_ID = "default";
@@ -282,7 +283,9 @@ function resolveLocalConfigForSave(
 
   return {
     localApiKey: resolveLocalApiKey(input, existing),
-    localBaseUrl: Object.hasOwn(input, "baseUrl") ? trimToNull(input.baseUrl) : (existing?.localBaseUrl ?? null),
+    localBaseUrl: Object.hasOwn(input, "baseUrl")
+      ? trimToNull(normalizeOutboundUrl(input.baseUrl ?? "", { purpose: "provider_base_url" }))
+      : (existing?.localBaseUrl ?? null),
     localModel: Object.hasOwn(input, "model") ? trimToNull(input.model) : (existing?.localModel ?? null),
     localTimeoutMs: Object.hasOwn(input, "timeoutMs")
       ? requiredPositiveInteger(input.timeoutMs, "Custom OpenAI timeout")

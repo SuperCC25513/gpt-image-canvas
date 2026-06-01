@@ -28,6 +28,7 @@ import type {
 import { localizedApiErrorMessage, useI18n, type Locale, type Translate } from "../../shared/i18n";
 
 interface AgentSkillDialogProps {
+  isAdmin: boolean;
   onClose: () => void;
 }
 
@@ -61,7 +62,7 @@ const MAX_AGENT_SKILL_IMPORT_BYTES = 2 * 1024 * 1024;
 const AGENT_SKILL_IMPORT_EXTENSIONS = [".md", ".zip"] as const;
 const AGENT_SKILL_IMPORT_MIME_TYPES = new Set(["text/markdown", "text/plain", "application/zip", "application/x-zip-compressed"]);
 
-export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
+export function AgentSkillDialog({ isAdmin, onClose }: AgentSkillDialogProps) {
   const { locale, t } = useI18n();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [skills, setSkills] = useState<AgentSkillSummary[]>([]);
@@ -74,6 +75,7 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const isReadOnly = !isAdmin;
 
   const selectedFile = useMemo(
     () => form.files.find((file) => file.path === form.selectedFilePath) ?? form.files[0],
@@ -182,14 +184,23 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
   }, [locale, t]);
 
   const startCreate = useCallback(() => {
+    if (isReadOnly) {
+      setMessage({ tone: "error", text: t("agentSkillsReadOnly") });
+      return;
+    }
     setMode("create");
     setSelectedSkillId(null);
     setSelectedSkill(null);
     setMessage(null);
     setForm(createFormState());
-  }, []);
+  }, [isReadOnly, t]);
 
   const saveSkill = useCallback(async () => {
+    if (isReadOnly) {
+      setMessage({ tone: "error", text: t("agentSkillsReadOnly") });
+      return;
+    }
+
     setIsSaving(true);
     setMessage(null);
     try {
@@ -220,10 +231,15 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [form, locale, mode, refreshSkills, t]);
+  }, [form, isReadOnly, locale, mode, refreshSkills, t]);
 
   const toggleSkill = useCallback(
     async (skill: AgentSkillSummary) => {
+      if (isReadOnly) {
+        setMessage({ tone: "error", text: t("agentSkillsReadOnly") });
+        return;
+      }
+
       if (skill.required) {
         setMessage({ tone: "error", text: t("agentSkillsCoreLocked") });
         return;
@@ -255,11 +271,16 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
         setMessage({ tone: "error", text: errorToText(error, t("agentSkillsSaveFailed")) });
       }
     },
-    [locale, refreshSkills, t]
+    [isReadOnly, locale, refreshSkills, t]
   );
 
   const importSkill = useCallback(
     async (file: File | undefined) => {
+      if (isReadOnly) {
+        setMessage({ tone: "error", text: t("agentSkillsReadOnly") });
+        return;
+      }
+
       if (!file) {
         return;
       }
@@ -301,10 +322,15 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
         }
       }
     },
-    [locale, refreshSkills, t]
+    [isReadOnly, locale, refreshSkills, t]
   );
 
   const resetBuiltInSkill = useCallback(async () => {
+    if (isReadOnly) {
+      setMessage({ tone: "error", text: t("agentSkillsReadOnly") });
+      return;
+    }
+
     if (!selectedSkill?.builtIn) {
       return;
     }
@@ -337,16 +363,23 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [locale, refreshSkills, selectedSkill, t]);
+  }, [isReadOnly, locale, refreshSkills, selectedSkill, t]);
 
   const updateFileContent = useCallback((content: string) => {
+    if (isReadOnly) {
+      return;
+    }
     setForm((current) => ({
       ...current,
       files: current.files.map((file) => (file.path === current.selectedFilePath ? { ...file, content } : file))
     }));
-  }, []);
+  }, [isReadOnly]);
 
   const addReferenceFile = useCallback(() => {
+    if (isReadOnly) {
+      setMessage({ tone: "error", text: t("agentSkillsReadOnly") });
+      return;
+    }
     setForm((current) => {
       const nextPath = nextReferencePath(current.files);
       return {
@@ -361,9 +394,13 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
         ]
       };
     });
-  }, []);
+  }, [isReadOnly, t]);
 
   const removeSelectedFile = useCallback(() => {
+    if (isReadOnly) {
+      setMessage({ tone: "error", text: t("agentSkillsReadOnly") });
+      return;
+    }
     setForm((current) => {
       if (current.selectedFilePath === SKILL_MARKDOWN_FILE) {
         return current;
@@ -376,9 +413,14 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
         selectedFilePath: nextFiles[0]?.path ?? SKILL_MARKDOWN_FILE
       };
     });
-  }, []);
+  }, [isReadOnly, t]);
 
-  const canSave = !isSaving && !isDetailLoading && Boolean(form.name.trim()) && Boolean(form.files.find((file) => file.path === SKILL_MARKDOWN_FILE)?.content.trim());
+  const canSave =
+    !isReadOnly &&
+    !isSaving &&
+    !isDetailLoading &&
+    Boolean(form.name.trim()) &&
+    Boolean(form.files.find((file) => file.path === SKILL_MARKDOWN_FILE)?.content.trim());
   const isEmpty = !isLoading && skills.length === 0 && mode !== "create";
 
   return createPortal(
@@ -409,11 +451,17 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
         <div className="agent-skill-dialog__body">
           <aside className="agent-skill-sidebar" aria-label={t("agentSkillsListLabel")}>
             <div className="agent-skill-sidebar__actions">
-              <button className="agent-skill-action" type="button" onClick={startCreate}>
+              <button className="agent-skill-action" disabled={isReadOnly} title={isReadOnly ? t("agentSkillsReadOnly") : undefined} type="button" onClick={startCreate}>
                 <Plus className="size-4" aria-hidden="true" />
                 {t("agentSkillsCreate")}
               </button>
-              <button className="agent-skill-action" disabled={isImporting} type="button" onClick={() => uploadInputRef.current?.click()}>
+              <button
+                className="agent-skill-action"
+                disabled={isReadOnly || isImporting}
+                title={isReadOnly ? t("agentSkillsReadOnly") : undefined}
+                type="button"
+                onClick={() => uploadInputRef.current?.click()}
+              >
                 {isImporting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Upload className="size-4" aria-hidden="true" />}
                 {t("agentSkillsUpload")}
               </button>
@@ -449,8 +497,8 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
                     aria-label={skill.enabled ? t("agentSkillsDisableSkill", { name: skill.name }) : t("agentSkillsEnableSkill", { name: skill.name })}
                     aria-pressed={skill.enabled}
                     className="agent-skill-switch"
-                    disabled={skill.required}
-                    title={skill.required ? t("agentSkillsCoreLocked") : undefined}
+                    disabled={isReadOnly || skill.required}
+                    title={isReadOnly ? t("agentSkillsReadOnly") : skill.required ? t("agentSkillsCoreLocked") : undefined}
                     type="button"
                     onClick={() => void toggleSkill(skill)}
                   >
@@ -479,33 +527,34 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
                     {form.builtIn ? <span>{t("agentSkillsBuiltin")}</span> : <span>{t("agentSkillsUser")}</span>}
                     {form.required ? <span>{t("agentSkillsRequired")}</span> : null}
                     {form.hasLocalChanges ? <span>{t("agentSkillsLocalOverride")}</span> : null}
+                    {isReadOnly ? <span>{t("agentSkillsReadOnlyBadge")}</span> : null}
                   </div>
                 </div>
 
                 <div className="agent-skill-form-grid">
                   <label className="agent-skill-field">
                     <span>{t("agentSkillsFieldName")}</span>
-                    <input value={form.name} onChange={(event) => setFormField(setForm, "name", event.target.value)} />
+                    <input disabled={isReadOnly} value={form.name} onChange={(event) => setFormField(setForm, "name", event.target.value)} />
                   </label>
                   <label className="agent-skill-field">
                     <span>{t("agentSkillsFieldSlug")}</span>
                     <input
-                      disabled={form.builtIn && mode === "detail"}
+                      disabled={isReadOnly || (form.builtIn && mode === "detail")}
                       value={form.slug}
                       onChange={(event) => setFormField(setForm, "slug", event.target.value)}
                     />
                   </label>
                   <label className="agent-skill-field agent-skill-field--wide">
                     <span>{t("agentSkillsFieldDescription")}</span>
-                    <textarea rows={2} value={form.description} onChange={(event) => setFormField(setForm, "description", event.target.value)} />
+                    <textarea disabled={isReadOnly} rows={2} value={form.description} onChange={(event) => setFormField(setForm, "description", event.target.value)} />
                   </label>
                   <label className="agent-skill-field">
                     <span>{t("agentSkillsFieldVersion")}</span>
-                    <input value={form.version} onChange={(event) => setFormField(setForm, "version", event.target.value)} />
+                    <input disabled={isReadOnly} value={form.version} onChange={(event) => setFormField(setForm, "version", event.target.value)} />
                   </label>
                   <label className="agent-skill-field">
                     <span>{t("agentSkillsFieldSource")}</span>
-                    <input value={form.source} onChange={(event) => setFormField(setForm, "source", event.target.value)} />
+                    <input disabled={isReadOnly} value={form.source} onChange={(event) => setFormField(setForm, "source", event.target.value)} />
                   </label>
                 </div>
 
@@ -513,7 +562,7 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
                   <label className="agent-skill-check">
                     <input
                       checked={form.enabled}
-                      disabled={form.required}
+                      disabled={isReadOnly || form.required}
                       type="checkbox"
                       onChange={(event) => setFormField(setForm, "enabled", event.target.checked)}
                     />
@@ -522,7 +571,7 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
                   <label className="agent-skill-field">
                     <span>{t("agentSkillsTriggerMode")}</span>
                     <select
-                      disabled={form.required}
+                      disabled={isReadOnly || form.required}
                       value={form.triggerMode}
                       onChange={(event) => setFormField(setForm, "triggerMode", event.target.value as AgentSkillTriggerMode)}
                     >
@@ -534,6 +583,7 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
                     <span>{t("agentSkillsKeywords")}</span>
                     <textarea
                       placeholder={t("agentSkillsKeywordsPlaceholder")}
+                      disabled={isReadOnly}
                       rows={2}
                       value={form.triggerKeywordsText}
                       onChange={(event) => setFormField(setForm, "triggerKeywordsText", event.target.value)}
@@ -545,7 +595,7 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
                   <div className="agent-skill-files__rail">
                     <div className="agent-skill-files__header">
                       <span>{t("agentSkillsFileList")}</span>
-                      <button aria-label={t("agentSkillsAddReference")} type="button" onClick={addReferenceFile}>
+                      <button aria-label={t("agentSkillsAddReference")} disabled={isReadOnly} title={isReadOnly ? t("agentSkillsReadOnly") : undefined} type="button" onClick={addReferenceFile}>
                         <FilePlus2 className="size-4" aria-hidden="true" />
                       </button>
                     </div>
@@ -567,13 +617,14 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
                   <div className="agent-skill-editor">
                     <div className="agent-skill-editor__bar">
                       <span>{selectedFile?.path ?? SKILL_MARKDOWN_FILE}</span>
-                      <button disabled={!selectedFile || selectedFile.path === SKILL_MARKDOWN_FILE} type="button" onClick={removeSelectedFile}>
+                      <button disabled={isReadOnly || !selectedFile || selectedFile.path === SKILL_MARKDOWN_FILE} type="button" onClick={removeSelectedFile}>
                         <Trash2 className="size-4" aria-hidden="true" />
                         {t("agentSkillsRemoveFile")}
                       </button>
                     </div>
                     <textarea
                       aria-label={t("agentSkillsEditorLabel")}
+                      disabled={isReadOnly}
                       spellCheck={false}
                       value={selectedFile?.content ?? ""}
                       onChange={(event) => updateFileContent(event.target.value)}
@@ -583,7 +634,7 @@ export function AgentSkillDialog({ onClose }: AgentSkillDialogProps) {
 
                 <footer className="agent-skill-detail__footer">
                   {selectedSkill?.builtIn ? (
-                    <button className="agent-skill-secondary" disabled={isSaving} type="button" onClick={() => void resetBuiltInSkill()}>
+                    <button className="agent-skill-secondary" disabled={isReadOnly || isSaving} type="button" onClick={() => void resetBuiltInSkill()}>
                       <RotateCcw className="size-4" aria-hidden="true" />
                       {t("agentSkillsResetFactory")}
                     </button>

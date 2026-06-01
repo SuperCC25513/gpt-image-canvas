@@ -36,6 +36,7 @@ Rules:
 - Read APIs should return masked secrets only.
 - `ADMIN_PASSWORD` is only used when creating the admin user for the first time. If the email already exists, startup only ensures `role=admin` and `status=active`; it must not reset the stored password.
 - Session cookies must be `HttpOnly`、`SameSite=Lax`、`Path=/`; the database stores only a SHA-256 hash of the session token.
+- Login failures are rate-limited by normalized email and request IP summary. Responses must not distinguish "email not found" from "wrong password"; repeated failures return `auth_rate_limited`.
 - Preserve existing secret values only when the request explicitly uses a preserve flag or leaves a masked value unchanged.
 - If a real key was committed, rotate it. `.gitignore` does not remove secrets from Git history.
 
@@ -52,6 +53,7 @@ When adding browser tests that save fake credentials, clear or restore local tes
 ## API And Error Handling
 
 - Validate JSON bodies and content types before using request data.
+- Enforce route-specific JSON body limits while reading the request stream. Oversized requests should return 413 with a stable error code and must not require buffering the full body first.
 - Prefer stable error codes from shared contracts or API helpers.
 - Do not pass raw upstream provider errors directly to clients if they may contain credentials or request internals.
 - Do not expose filesystem paths, shell details, environment contents, or database internals through API responses.
@@ -72,6 +74,12 @@ docker compose config --quiet --no-env-resolution
 Avoid plain `docker compose config` because it can expand and print env values.
 
 The local unauthenticated Redis default is only suitable for localhost or the private Docker Compose network. Do not expose Redis publicly without ACL/TLS and network controls.
+
+Docker Compose publishes the app to `127.0.0.1` by default. Set `DOCKER_BIND_ADDRESS=0.0.0.0` only for a reviewed deployment with TLS, network access control, strong admin credentials, and monitoring.
+
+`ADMIN_EMAIL`、`ADMIN_PASSWORD` and `ADMIN_NAME` must be set together for first-admin bootstrap. Do not use example passwords such as `change-me-*`; startup rejects weak bootstrap passwords when creating a new administrator.
+
+OpenAI-compatible provider and Agent LLM base URLs are outbound request targets. Saved UI configuration accepts HTTPS public endpoints by default. Loopback HTTP endpoints require explicit `ALLOW_LOCAL_PROVIDER_BASE_URL=true` for local proxy development; private, link-local, metadata, and credential-bearing URLs should remain blocked.
 
 Provider scheduler Redis permit keys must not contain prompts, API keys, reference image bytes, generation records, audit payloads, credit transaction data, or user-provided identifiers. Store only short-lived random permit ids and expiry scores.
 

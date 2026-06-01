@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { getProjectState, saveProjectSnapshot } from "../../domain/project/project-store.js";
 import { requireAuth } from "../http/auth.js";
-import { readJson } from "../http/json.js";
+import { PROJECT_JSON_BODY_MAX_BYTES, jsonErrorStatus, readJson } from "../http/json.js";
 import { logProjectSaveRejected, parseProjectPayload } from "../http/validation.js";
 
 export function registerProjectRoutes(app: Hono): void {
@@ -20,10 +20,10 @@ export function registerProjectRoutes(app: Hono): void {
       return auth.response;
     }
 
-    const payload = await readJson(c.req.raw);
+    const payload = await readJson(c.req.raw, { maxBytes: PROJECT_JSON_BODY_MAX_BYTES });
     if (!payload.ok) {
       logProjectSaveRejected(payload.error, c.req.raw);
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseProjectPayload(payload.value);

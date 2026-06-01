@@ -11,7 +11,7 @@ import {
 } from "../../domain/project/project-store.js";
 import { requireAuth } from "../http/auth.js";
 import { downloadFileName, errorResponse } from "../http/errors.js";
-import { readJson } from "../http/json.js";
+import { jsonErrorStatus, readJson } from "../http/json.js";
 import { parseGalleryVisibilityPayload } from "../http/validation.js";
 
 const MAX_GALLERY_EXPORT_OUTPUTS = 50;
@@ -105,7 +105,7 @@ export function registerGalleryRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseGalleryVisibilityPayload(payload.value);

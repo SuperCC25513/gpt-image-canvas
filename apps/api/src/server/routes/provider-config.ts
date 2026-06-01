@@ -2,7 +2,7 @@ import type { Hono } from "hono";
 import { getProviderConfig, saveProviderConfig } from "../../domain/providers/provider-config.js";
 import { requireAdmin } from "../http/auth.js";
 import { errorResponse } from "../http/errors.js";
-import { readJson } from "../http/json.js";
+import { jsonErrorStatus, readJson } from "../http/json.js";
 import { parseProviderConfigPayload } from "../http/validation.js";
 
 export function registerProviderConfigRoutes(app: Hono): void {
@@ -23,7 +23,7 @@ export function registerProviderConfigRoutes(app: Hono): void {
 
     const payload = await readJson(c.req.raw);
     if (!payload.ok) {
-      return c.json(payload.error, 400);
+      return c.json(payload.error, jsonErrorStatus(payload.error));
     }
 
     const parsed = parseProviderConfigPayload(payload.value);

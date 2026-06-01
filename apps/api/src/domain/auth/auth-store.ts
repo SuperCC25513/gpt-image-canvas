@@ -34,6 +34,7 @@ import {
   users
 } from "../../infrastructure/schema.js";
 import { AuthDomainError } from "./auth-errors.js";
+import { assertLoginAllowed, recordLoginFailure, recordLoginSuccess } from "./login-rate-limit.js";
 import { createSessionToken, hashPassword, hashSessionToken, verifyPassword } from "./password.js";
 import { consumeRegistrationEmailVerification } from "./registration-email-verification.js";
 
@@ -85,6 +86,10 @@ export interface CreatedSession {
   user: CurrentUser;
   token: string;
   expiresAt: string;
+}
+
+export interface LoginContext {
+  ipAddress?: string;
 }
 
 export type RegisterUserResult = CreatedSession | AuthPendingRegistrationResponse;
@@ -162,10 +167,14 @@ export async function registerUser(input: RegisterRequest): Promise<RegisterUser
   return createSessionForUser(row);
 }
 
-export async function loginUser(input: LoginRequest): Promise<CreatedSession> {
+export async function loginUser(input: LoginRequest, context: LoginContext = {}): Promise<CreatedSession> {
   const email = normalizeEmail(input.email);
+  const limitContext = { email, ipAddress: context.ipAddress };
+  await assertLoginAllowed(limitContext);
+
   const user = await findUserByEmail(email);
   if (!user) {
+    await recordLoginFailure(limitContext);
     throw new AuthDomainError("invalid_credentials", "邮箱或密码不正确。", 401);
   }
 
@@ -175,6 +184,7 @@ export async function loginUser(input: LoginRequest): Promise<CreatedSession> {
     hash: user.passwordHash
   });
   if (!passwordOk) {
+    await recordLoginFailure(limitContext);
     throw new AuthDomainError("invalid_credentials", "邮箱或密码不正确。", 401);
   }
 
@@ -182,6 +192,7 @@ export async function loginUser(input: LoginRequest): Promise<CreatedSession> {
     throw new AuthDomainError("account_inactive", "账号不可用，请联系管理员。", 403);
   }
 
+  await recordLoginSuccess(limitContext);
   return createSessionForUser(user);
 }
 
@@ -240,6 +251,7 @@ async function ensureAdminUser(input: { email: string; password: string; name: s
     return toCurrentUser(existing);
   }
 
+  assertSafeAdminBootstrapPassword(input.password);
   const password = await hashPassword(input.password);
   const row: UserRow = {
     id: `user-${randomUUID()}`,
@@ -281,6 +293,19 @@ function readAdminBootstrapConfig(): { email: string; password: string; name: st
     password,
     name
   };
+}
+
+function assertSafeAdminBootstrapPassword(password: string): void {
+  const normalized = password.trim().toLowerCase();
+  if (
+    normalized.startsWith("change-me") ||
+    normalized === "admin" ||
+    normalized === "password" ||
+    normalized === "admin123" ||
+    normalized === "12345678"
+  ) {
+    throw new Error("ADMIN_PASSWORD 不能使用示例或弱密码；请设置唯一的本地管理员密码。");
+  }
 }
 
 async function createSessionForUser(user: UserRow): Promise<CreatedSession> {
