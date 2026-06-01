@@ -1,0 +1,389 @@
+handoff:
+  version: 1
+  generated_at: '2026-06-01T19:32:39+08:00'
+  generated_by: release-image.sh
+app:
+  name: gpt-image-cc
+  type: node
+  git_commit: a9df43f28eccc0a734491c3ba7213b710bc8c4f9
+  git_branch: main
+  git_dirty: true
+  dirty_notes: Image built from current worktree; uncommitted changes were present.
+image:
+  tag: gpt-image-cc-20260601-003
+  platform: linux/amd64
+  dockerfile: docker-config/Dockerfile
+  dockerignore: docker-config/Dockerfile.dockerignore
+  image_public: crpi-9jyz42cz1n1dtzno.cn-hangzhou.personal.cr.aliyuncs.com/supercc25513/cc:gpt-image-cc-20260601-003
+  image_vpc: crpi-9jyz42cz1n1dtzno-vpc.cn-hangzhou.personal.cr.aliyuncs.com/supercc25513/cc:gpt-image-cc-20260601-003
+  rollback_image_vpc: crpi-9jyz42cz1n1dtzno-vpc.cn-hangzhou.personal.cr.aliyuncs.com/supercc25513/cc:gpt-image-cc-20260601-002
+  build_command: VERSION=gpt-image-cc-20260601-003 docker-config/release-image.sh
+  pushed: true
+  manifest_digest: sha256:5d54107ea72bf52e537b9d97161c047679514a758d8cb84fda60982f1f08a981
+runtime:
+  internal_port: 8787
+  health_path: /health
+  startup_command: pnpm start
+  logs: stdout/stderr
+  deployment_shape:
+    type: single-container
+    frontend_served_by_backend: true
+    api_prefix: /api/
+    static_dir: /app/apps/web/dist
+    spa_fallback: true
+  config_files:
+  - source: prompt-pool-data/prompts-all.json
+    path_in_image: /app/prompt-pool-data/prompts-all.json
+    required: true
+    secret: false
+    description: Bundled Prompt Pool catalog.
+  - source: prompt-pool-data/summary.json
+    path_in_image: /app/prompt-pool-data/summary.json
+    required: true
+    secret: false
+    description: Bundled Prompt Pool summary.
+  required_env:
+  - name: HOST
+    required: true
+    secret: false
+    example: 0.0.0.0
+    description: HTTP bind host inside the container.
+  - name: PORT
+    required: true
+    secret: false
+    example: '8787'
+    description: HTTP listen port; must match runtime.internal_port.
+  - name: DATA_DIR
+    required: true
+    secret: false
+    example: /app/data
+    description: Runtime data directory for local files and temporary state.
+  - name: PROMPT_POOL_DIR
+    required: true
+    secret: false
+    example: /app/prompt-pool-data
+    description: Directory containing bundled Prompt Pool JSON files.
+  - name: REDIS_URL
+    required: true
+    secret: true
+    example: ''
+    description: Redis queue and provider-permit backend; mark secret because production
+      URLs may contain credentials.
+  - name: GENERATION_QUEUE_DRIVER
+    required: true
+    secret: false
+    example: redis
+    description: Use redis in production; inline is only for tests/local debugging.
+  - name: REDIS_CONNECT_TIMEOUT_MS
+    required: false
+    secret: false
+    example: '5000'
+    description: Redis connection timeout.
+  - name: GENERATION_PROVIDER_GLOBAL_CONCURRENCY
+    required: false
+    secret: false
+    example: '2'
+    description: Global upstream image-provider concurrency cap.
+  - name: GENERATION_PROVIDER_PERMIT_TTL_MS
+    required: false
+    secret: false
+    example: '1800000'
+    description: Redis provider permit TTL.
+  - name: GENERATION_PROVIDER_MAX_RETRIES
+    required: false
+    secret: false
+    example: '2'
+    description: Retry count for recoverable provider errors.
+  - name: GENERATION_PROVIDER_RETRY_BASE_MS
+    required: false
+    secret: false
+    example: '1000'
+    description: Provider retry base delay.
+  - name: GENERATION_PROVIDER_RETRY_MAX_MS
+    required: false
+    secret: false
+    example: '30000'
+    description: Provider retry max delay.
+  - name: GENERATION_QUEUE_WORKER_CONCURRENCY
+    required: false
+    secret: false
+    example: '2'
+    description: Per-process generation queue worker concurrency.
+  - name: GENERATION_QUEUE_POLL_INTERVAL_MS
+    required: false
+    secret: false
+    example: '250'
+    description: Generation queue polling interval.
+  - name: USE_MYSQL
+    required: true
+    secret: false
+    example: 'true'
+    description: Production deployment uses MySQL metadata storage.
+  - name: MYSQL_HOST
+    required: true
+    secret: false
+    example: mysql
+    description: MySQL host.
+  - name: MYSQL_PORT
+    required: true
+    secret: false
+    example: '3306'
+    description: MySQL port.
+  - name: MYSQL_USER
+    required: true
+    secret: false
+    example: gpt_image_cc
+    description: MySQL application user.
+  - name: MYSQL_PASSWORD
+    required: true
+    secret: true
+    example: ''
+    description: MySQL application password from deployment project.
+  - name: MYSQL_DATABASE
+    required: true
+    secret: false
+    example: gpt_image_cc
+    description: MySQL database name.
+  - name: MYSQL_CONNECTION_LIMIT
+    required: false
+    secret: false
+    example: '10'
+    description: MySQL pool connection limit.
+  - name: MYSQL_CREATE_DATABASE
+    required: true
+    secret: false
+    example: 'false'
+    description: Keep false in production; deployment project creates database.
+  - name: OSS_ENDPOINT
+    required: true
+    secret: false
+    example: oss-cn-hangzhou.aliyuncs.com
+    description: Aliyun OSS endpoint.
+  - name: OSS_BUCKET_NAME
+    required: true
+    secret: false
+    example: ''
+    description: OSS bucket for generated assets.
+  - name: OSS_ACCESS_KEY_ID
+    required: true
+    secret: true
+    example: ''
+    description: OSS AccessKeyId.
+  - name: OSS_ACCESS_KEY_SECRET
+    required: true
+    secret: true
+    example: ''
+    description: OSS AccessKeySecret.
+  - name: OSS_EXPIRE
+    required: false
+    secret: false
+    example: '86400'
+    description: Signed GET URL expiry in seconds.
+  - name: OSS_UPLOAD_MAX
+    required: false
+    secret: false
+    example: '10485760'
+    description: Max single asset upload bytes.
+  - name: OSS_ROOT_PATH
+    required: true
+    secret: false
+    example: marketing/image/gpt-image/
+    description: OSS object key prefix.
+  - name: OSS_INTERNAL
+    required: false
+    secret: false
+    example: 'false'
+    description: Use OSS internal endpoint flag when appropriate.
+  - name: OPENAI_API_KEY
+    required: true
+    secret: true
+    example: ''
+    description: Image provider API key for first production deployment.
+  - name: OPENAI_BASE_URL
+    required: false
+    secret: false
+    example: ''
+    description: OpenAI-compatible /v1 endpoint override.
+  - name: OPENAI_IMAGE_MODEL
+    required: false
+    secret: false
+    example: gpt-image-2
+    description: Image generation model.
+  - name: OPENAI_IMAGE_TIMEOUT_MS
+    required: false
+    secret: false
+    example: '1200000'
+    description: Image request timeout.
+  - name: CODEX_RESPONSES_MODEL
+    required: false
+    secret: false
+    example: gpt-5.5
+    description: Responses model used by Codex image fallback.
+  - name: CODEX_IMAGE_TIMEOUT_MS
+    required: false
+    secret: false
+    example: '1200000'
+    description: Codex image fallback timeout.
+  - name: CODEX_RESPONSES_BASE_URL
+    required: false
+    secret: false
+    example: ''
+    description: Optional Codex Responses endpoint override.
+  - name: CODEX_AUTH_ISSUER
+    required: false
+    secret: false
+    example: ''
+    description: Optional Codex OAuth issuer override.
+  - name: CODEX_REFRESH_TOKEN_URL
+    required: false
+    secret: false
+    example: ''
+    description: Optional Codex token refresh URL override.
+  - name: CODEX_AUTH_TIMEOUT_MS
+    required: false
+    secret: false
+    example: '30000'
+    description: Codex OAuth timeout.
+  - name: MAIL_GATEWAY_BASE_URL
+    required: true
+    secret: false
+    example: http://cc-base:9000
+    description: Internal cc-base Mail Gateway base URL for registration email verification.
+  - name: MAIL_GATEWAY_API_KEY
+    required: true
+    secret: true
+    example: ''
+    description: Mail gateway API key and verification HMAC secret.
+  - name: MAIL_GATEWAY_TIMEOUT_MS
+    required: false
+    secret: false
+    example: '5000'
+    description: Mail gateway timeout.
+  - name: ADMIN_EMAIL
+    required: false
+    secret: false
+    example: ''
+    description: First admin bootstrap email; set with ADMIN_PASSWORD and ADMIN_NAME.
+  - name: ADMIN_PASSWORD
+    required: false
+    secret: true
+    example: ''
+    description: First admin bootstrap password; only used when creating the admin.
+  - name: ADMIN_NAME
+    required: false
+    secret: false
+    example: ''
+    description: First admin bootstrap display name.
+database:
+  required: true
+  engine: mysql
+  version_requirement: 8.0+
+  db_name_suggestion: gpt_image_cc
+  credentials_provider: Deployment project creates database/user/password and injects
+    MYSQL_*.
+  config_format: split
+  config_variables:
+  - USE_MYSQL
+  - MYSQL_HOST
+  - MYSQL_PORT
+  - MYSQL_USER
+  - MYSQL_PASSWORD
+  - MYSQL_DATABASE
+  - MYSQL_CONNECTION_LIMIT
+  - MYSQL_CREATE_DATABASE
+  required_permissions:
+    runtime:
+    - SELECT
+    - INSERT
+    - UPDATE
+    - DELETE
+    migration:
+    - CREATE
+    - ALTER
+    - INDEX
+  migration:
+    type: command
+    idempotent: true
+    command: Application startup runs MySQL schema ensure before serving traffic.
+    path_in_image: ''
+    files: []
+    schema_comments:
+      table_comments_required: true
+      column_comments_required: true
+      verified: true
+      notes: MySQL table and column comments are embedded in apps/api/src/infrastructure/mysql-database.ts.
+  seed:
+    required: false
+    command: Optional first admin bootstrap through ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_NAME.
+    files: []
+redis:
+  required: true
+  key_prefix: 'generation:'
+  config_variables:
+  - REDIS_URL
+  - GENERATION_QUEUE_DRIVER
+  - REDIS_CONNECT_TIMEOUT_MS
+  - GENERATION_PROVIDER_GLOBAL_CONCURRENCY
+  - GENERATION_PROVIDER_PERMIT_TTL_MS
+  - GENERATION_QUEUE_WORKER_CONCURRENCY
+  - GENERATION_QUEUE_POLL_INTERVAL_MS
+external_services:
+- name: OpenAI-compatible image provider
+  purpose: Image generation and editing.
+  endpoint: OPENAI_BASE_URL or official OpenAI API
+  credential_required: true
+- name: Aliyun OSS
+  purpose: Generated asset object storage in MySQL mode.
+  endpoint: OSS_ENDPOINT
+  credential_required: true
+- name: Mail Gateway
+  purpose: Registration email verification.
+  endpoint: http://cc-base:9000
+  credential_required: true
+verification:
+  deployment_shape:
+    result: passed
+    notes: Single Node container serves /api and built web bundle; /api/* 404 returns
+      JSON before SPA fallback.
+  tests_run:
+  - command: pnpm typecheck
+    result: passed
+  - command: pnpm build
+    result: passed
+  - command: docker compose config --quiet --no-env-resolution
+    result: passed
+  image_build:
+    command: docker buildx build --platform linux/amd64 -f docker-config/Dockerfile
+      -t crpi-9jyz42cz1n1dtzno.cn-hangzhou.personal.cr.aliyuncs.com/supercc25513/cc:gpt-image-cc-20260601-003
+      --push .
+    result: passed
+  image_push:
+    command: VERSION=gpt-image-cc-20260601-003 docker-config/release-image.sh
+    result: passed
+  local_smoke_test:
+    run_command: docker run -d --rm --name gpt-image-cc-prod-smoke -e USE_MYSQL=false
+      -e GENERATION_QUEUE_DRIVER=inline -e DATA_DIR=/app/data -e HOST=0.0.0.0 -e PORT=8787
+      -p 8878:8787 crpi-9jyz42cz1n1dtzno.cn-hangzhou.personal.cr.aliyuncs.com/supercc25513/cc:gpt-image-cc-20260601-003
+    health_check_command: curl -i http://127.0.0.1:8878/health
+    frontend_entry_command: curl -i http://127.0.0.1:8878/
+    spa_fallback_command: curl -i http://127.0.0.1:8878/canvas
+    api_404_command: curl -i http://127.0.0.1:8878/api/does-not-exist
+    result: passed
+    notes: Smoke used SQLite + inline queue to validate image startup and routing
+      without production secrets.
+  remote_manifest:
+    command: docker manifest inspect crpi-9jyz42cz1n1dtzno.cn-hangzhou.personal.cr.aliyuncs.com/supercc25513/cc:gpt-image-cc-20260601-003
+    result: passed
+deployment_request:
+  exposure: public
+  stack_name: gpt-image-cc
+  domain: gpt-image.jesuscc.cn
+  first_deploy: true
+  notes: Domain and TLS/network controls must be confirmed in the deployment project.
+    The app has local account auth but should not be exposed publicly without deployment-layer
+    controls.
+rollback:
+  previous_tag: gpt-image-cc-20260601-002
+  rollback_notes: No previous docker-config/release.yaml existed in the app repo;
+    deployment project should fill rollback from its current production record if
+    one exists.

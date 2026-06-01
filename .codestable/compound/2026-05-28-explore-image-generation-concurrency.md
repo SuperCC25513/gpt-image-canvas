@@ -11,9 +11,12 @@ keywords:
   - concurrency
   - image
   - agent
-status: active
+status: outdated
 confidence: high
+superseded-by: 2026-05-29-explore-generation-redis-task-rate-limit.md
 ---
+
+**[已过期]** 当前代码已实现 Redis provider scheduler、generation queue worker 和 Agent queue adapter。本旧结论已由 `2026-05-29-explore-generation-redis-task-rate-limit.md` 取代。
 
 ## 问题与范围
 

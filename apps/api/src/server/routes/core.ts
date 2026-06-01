@@ -1,10 +1,10 @@
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { GENERATION_COUNTS, IMAGE_QUALITIES, OUTPUT_FORMATS, SIZE_PRESETS, STYLE_PRESETS, type AppConfig } from "../../domain/contracts.js";
 import { getConfiguredImageModel } from "../../infrastructure/providers/image-provider.js";
 import { checkRedisHealth } from "../../infrastructure/redis-runtime.js";
 
 export function registerCoreRoutes(app: Hono): void {
-  app.get("/api/health", async (c) => {
+  const healthHandler = async (c: Context) => {
     const redis = await checkRedisHealth();
     const status = redis === "unavailable" ? "unhealthy" : "ok";
     return c.json(
@@ -16,7 +16,10 @@ export function registerCoreRoutes(app: Hono): void {
       },
       status === "ok" ? 200 : 503
     );
-  });
+  };
+
+  app.get("/health", healthHandler);
+  app.get("/api/health", healthHandler);
 
   app.get("/api/config", (c) => {
     const configuredModel = getConfiguredImageModel();

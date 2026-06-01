@@ -127,13 +127,13 @@ export async function listCreditTransactionsForUser(
   if (cursor) {
     params.push(cursor.createdAt, cursor.createdAt, cursor.id);
   }
-  params.push(limit + 1);
+  const pageLimit = limit + 1;
   const [rows] = await getMySqlPool().execute<CreditTransactionRow[]>(
     `${creditTransactionSelectSql()}
      WHERE user_id = ?
        ${cursorWhere}
      ORDER BY created_at DESC, id DESC
-     LIMIT ?`,
+     LIMIT ${pageLimit}`,
     params
   );
   const pageRows = rows.slice(0, limit);

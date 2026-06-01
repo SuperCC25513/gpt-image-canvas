@@ -118,12 +118,13 @@ export async function listAdminRedemptionCodes(options: { limit?: number; cursor
     };
   }
 
+  const pageLimit = limit + 1;
   const [rows] = await getMySqlPool().execute<RedemptionCodePacket[]>(
     `${redemptionCodeSelectSql()}
      ${cursor ? "WHERE redemption_codes.created_at < ? OR (redemption_codes.created_at = ? AND redemption_codes.id < ?)" : ""}
      ORDER BY redemption_codes.created_at DESC, redemption_codes.id DESC
-     LIMIT ?`,
-    cursor ? [cursor.createdAt, cursor.createdAt, cursor.id, limit + 1] : [limit + 1]
+     LIMIT ${pageLimit}`,
+    cursor ? [cursor.createdAt, cursor.createdAt, cursor.id] : []
   );
   const pageRows = rows.slice(0, limit);
 

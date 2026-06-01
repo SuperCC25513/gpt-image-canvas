@@ -11,6 +11,7 @@
     "db:generate": "drizzle-kit generate",
     "smoke:agent": "tsx src/smoke/agent-smoke.ts",
     "smoke:agent-generation-queue": "tsx src/smoke/agent-generation-queue-smoke.ts",
+    "smoke:admin-mysql": "tsx src/smoke/admin-mysql-smoke.ts",
     "smoke:auth-registration-domain": "tsx src/smoke/auth-registration-domain-smoke.ts",
     "smoke:auth-registration-email-verification": "tsx src/smoke/auth-registration-email-verification-smoke.ts",
     "smoke:executor": "tsx src/smoke/agent-executor-smoke.ts",
