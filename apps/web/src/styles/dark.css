@@ -131,11 +131,12 @@
   color: #15110d;
 }
 
-.app-root[data-canvas-theme="dark"] .brand-name__prefix {
+.app-root[data-canvas-theme="dark"] .brand-name__gpt,
+.app-root[data-canvas-theme="dark"] .brand-name__cc {
   color: #fff7ed;
 }
 
-.app-root[data-canvas-theme="dark"] .brand-name__canvas {
+.app-root[data-canvas-theme="dark"] .brand-name__image {
   color: #5eead4;
   text-shadow: 0 0.08rem 0 rgb(15 118 110 / 0.36);
 }

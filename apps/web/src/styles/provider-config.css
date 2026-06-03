@@ -1296,12 +1296,9 @@
   justify-content: center;
   width: 2.35rem;
   height: 2.35rem;
-  border: 1px solid rgb(255 253 248 / 0.82);
   border-radius: 8px;
-  background: rgb(255 253 248 / 0.64);
-  box-shadow:
-    inset 0 0 0 1px rgb(255 255 255 / 0.28),
-    0 13px 28px rgb(126 50 26 / 0.2);
+  background: transparent;
+  box-shadow: 0 13px 28px rgb(15 17 26 / 0.2);
 }
 
 .brand-mark::before {
@@ -1316,7 +1313,8 @@
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .brand-mark--large {
@@ -1347,7 +1345,7 @@
   left: 0;
   height: 0.16rem;
   border-radius: 999px;
-  background: linear-gradient(90deg, rgb(198 95 50 / 0.9), rgb(15 118 110 / 0.78));
+  background: linear-gradient(90deg, rgb(15 118 110 / 0.88), rgb(190 242 100 / 0.9), rgb(51 65 85 / 0.62));
   transform: skewX(-18deg);
 }
 
@@ -1356,7 +1354,11 @@
   vertical-align: baseline;
 }
 
-.brand-name__prefix {
+.brand-name span + span {
+  margin-left: 0.14em;
+}
+
+.brand-name__gpt {
   color: #2c211a;
   font-style: italic;
   font-weight: 700;
@@ -1370,16 +1372,11 @@
   -webkit-background-clip: text;
 }
 
-.brand-name__canvas {
-  color: #0f5f58;
+.brand-name__cc {
+  color: #15110d;
   font-size: 1.15em;
-  text-shadow: 0 0.08rem 0 rgb(231 177 112 / 0.36);
-}
-
-.brand-name__dash {
-  color: #b95b32;
-  margin: 0 0.04em;
-  transform: rotate(-10deg);
+  font-weight: 900;
+  text-shadow: 0 0.08rem 0 rgb(190 242 100 / 0.3);
 }
 
 .brand-tagline {

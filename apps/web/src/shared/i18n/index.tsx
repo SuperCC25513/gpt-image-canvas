@@ -269,7 +269,7 @@ const commonApiErrorMessages: Record<Locale, Record<string, string>> = {
 const zhMessages = {
   appCanvasAria: "创作画布",
   appGalleryLoading: "正在载入 Gallery...",
-  appTagline: "AI 图像画布",
+  appTagline: "AI 图像创作工作台",
   authAdminUnavailable: "未检测到管理员初始化配置。服务仍可使用登录能力，但后台能力会保持关闭。",
   authChecking: "正在检查登录状态...",
   authEmailLabel: "邮箱",
@@ -1222,7 +1222,7 @@ type I18nMessages = CatalogShape<typeof zhMessages>;
 const enMessages: I18nMessages = {
   appCanvasAria: "Creative canvas",
   appGalleryLoading: "Loading Gallery...",
-  appTagline: "AI image canvas",
+  appTagline: "AI image workspace",
   authAdminUnavailable: "No administrator bootstrap config was detected. Sign-in stays available, but admin features remain closed.",
   authChecking: "Checking sign-in...",
   authEmailLabel: "Email",

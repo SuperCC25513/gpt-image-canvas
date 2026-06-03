@@ -76,8 +76,8 @@
   height: 2rem;
   flex: none;
   border-radius: 0.55rem;
-  background: rgb(255 253 248 / 0.72);
-  box-shadow: 0 10px 22px rgb(126 50 26 / 0.18);
+  background: transparent;
+  box-shadow: 0 10px 22px rgb(15 17 26 / 0.2);
 }
 
 .brand-mark::before {
@@ -92,7 +92,8 @@
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .brand-mark--large {
@@ -108,6 +109,19 @@
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.brand-name__image {
+  color: #0f766e;
+}
+
+.brand-name span + span {
+  margin-left: 0.14em;
+}
+
+.brand-name__cc {
+  color: #15110d;
+  font-weight: 850;
 }
 
 .brand-tagline {

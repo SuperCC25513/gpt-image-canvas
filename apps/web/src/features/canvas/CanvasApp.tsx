@@ -170,6 +170,8 @@ const tldrawOptions = {
 const TLDRAW_LICENSE_KEY =
   "tldraw-2026-08-08/WyJ3dGU4bldjRyIsWyIqIl0sMTYsIjIwMjYtMDgtMDgiXQ.Xt7lTydUhMnKfHfp+g8Mrs9gtJjlB8uPyYMniFEfRfruCYdYEl9J0uZl0lMAf6o7GdDB1zXOVhWLFAipssI6Cw";
 const TLDRAW_USER_ID = "gpt-image-canvas-local-user";
+const APP_BRAND_NAME = "GPT Image CC";
+const APP_BRAND_ICON_SRC = "/icon-192.png";
 
 function tldrawLocaleForLocale(locale: Locale): NonNullable<TLUserPreferences["locale"]> {
   return locale === "zh-CN" ? "zh-cn" : "en";
@@ -2553,7 +2555,7 @@ function showGenerationCompleteNotification(record: GenerationRecord, insertedCo
 
   new Notification(isPartial ? t("generationNotificationPartialTitle") : t("generationNotificationTitle"), {
     body,
-    icon: "/icon-192.png",
+    icon: APP_BRAND_ICON_SRC,
     tag: `generation-${record.id}`
   });
 }
@@ -2593,19 +2595,17 @@ function SaveStatusIcon({ status }: { status: SaveStatus }) {
 function BrandMark({ className = "" }: { className?: string }) {
   return (
     <span className={`brand-mark ${className}`} aria-hidden="true">
-      <img className="brand-mark__image" src="/brand-logo.png" alt="" draggable={false} />
+      <img className="brand-mark__image" src={APP_BRAND_ICON_SRC} alt="" draggable={false} />
     </span>
   );
 }
 
 function BrandName() {
   return (
-    <p className="brand-name" title="gpt-image-canvas">
-      <span className="brand-name__prefix">gpt</span>
-      <span className="brand-name__dash">-</span>
-      <span className="brand-name__image">image</span>
-      <span className="brand-name__dash">-</span>
-      <span className="brand-name__canvas">canvas</span>
+    <p className="brand-name" title={APP_BRAND_NAME}>
+      <span className="brand-name__gpt">GPT</span>{" "}
+      <span className="brand-name__image">Image</span>{" "}
+      <span className="brand-name__cc">CC</span>
     </p>
   );
 }
