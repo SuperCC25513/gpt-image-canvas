@@ -2640,11 +2640,17 @@ function TopNavigation({
   isAdmin: boolean;
 }) {
   const { t } = useI18n();
+  const navigationLinksRef = useRef<HTMLElement | null>(null);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountUser = accountStatus?.authenticated ? accountStatus.user : undefined;
   const displayUser = currentUser ?? accountUser;
   const accountCredits = accountUser?.credits ?? displayUser?.credits;
+
+  useEffect(() => {
+    const activeLink = navigationLinksRef.current?.querySelector<HTMLElement>('.top-navigation__link[data-active="true"]');
+    activeLink?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [isAdmin, route]);
 
   useEffect(() => {
     if (!isAccountMenuOpen) {
@@ -2686,7 +2692,7 @@ function TopNavigation({
           </div>
         </div>
         <div className="top-navigation__actions">
-          <nav aria-label={t("navMainAria")} className="top-navigation__links">
+          <nav aria-label={t("navMainAria")} className="top-navigation__links" ref={navigationLinksRef}>
             <a
               aria-current={route === "home" ? "page" : undefined}
               className="top-navigation__link"

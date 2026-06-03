@@ -92,6 +92,16 @@ const redemptionCodeExpiryPresetOptions = [
 ] as const;
 
 type RedemptionCodeExpiryPresetOption = (typeof redemptionCodeExpiryPresetOptions)[number];
+type RedemptionCodeFilter = "all" | "available" | "disabled" | "redeemed" | "unredeemed" | "expired";
+
+interface RedemptionCodeStats {
+  total: number;
+  available: number;
+  disabled: number;
+  redeemed: number;
+  unredeemed: number;
+  expired: number;
+}
 
 export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig }: AdminPageProps) {
   const { formatDateTime, locale, t } = useI18n();
@@ -104,6 +114,10 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
   const [redemptionCodes, setRedemptionCodes] = useState<RedemptionCodeSummary[]>([]);
   const [createdRedemptionCodes, setCreatedRedemptionCodes] = useState<RedemptionCodeSummary[]>([]);
   const [redemptionCodeForm, setRedemptionCodeForm] = useState<RedemptionCodeFormState>(initialRedemptionCodeForm);
+  const [redemptionCodeFilter, setRedemptionCodeFilter] = useState<RedemptionCodeFilter>("all");
+  const [redemptionCodeSearch, setRedemptionCodeSearch] = useState("");
+  const [redemptionCodeNow, setRedemptionCodeNow] = useState(() => Date.now());
+  const [selectedRedemptionCodeExpiryPresetId, setSelectedRedemptionCodeExpiryPresetId] = useState("");
   const [copiedRedemptionCodeId, setCopiedRedemptionCodeId] = useState("");
   const [creditForms, setCreditForms] = useState<Record<string, CreditFormState>>({});
   const [loading, setLoading] = useState({
@@ -126,6 +140,31 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
     () => [...redemptionCodes].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)),
     [redemptionCodes]
   );
+
+  const redemptionCodeStats = useMemo(() => redemptionCodeStatsFor(redemptionCodes, redemptionCodeNow), [redemptionCodes, redemptionCodeNow]);
+  const normalizedRedemptionCodeSearch = useMemo(() => normalizeRedemptionCodeSearchText(redemptionCodeSearch), [redemptionCodeSearch]);
+  const visibleRedemptionCodes = useMemo(
+    () =>
+      sortedRedemptionCodes.filter(
+        (code) =>
+          matchesRedemptionCodeFilter(code, redemptionCodeFilter, redemptionCodeNow) &&
+          matchesRedemptionCodeSearch(code, normalizedRedemptionCodeSearch)
+      ),
+    [normalizedRedemptionCodeSearch, redemptionCodeFilter, redemptionCodeNow, sortedRedemptionCodes]
+  );
+  const redemptionCodeFilterOptions = useMemo(
+    () =>
+      [
+        { filter: "all", label: t("adminRedemptionFilterAll"), count: redemptionCodeStats.total },
+        { filter: "available", label: t("adminRedemptionFilterAvailable"), count: redemptionCodeStats.available },
+        { filter: "disabled", label: t("adminRedemptionFilterDisabled"), count: redemptionCodeStats.disabled },
+        { filter: "redeemed", label: t("adminRedemptionFilterRedeemed"), count: redemptionCodeStats.redeemed },
+        { filter: "unredeemed", label: t("adminRedemptionFilterUnredeemed"), count: redemptionCodeStats.unredeemed },
+        { filter: "expired", label: t("adminRedemptionFilterExpired"), count: redemptionCodeStats.expired }
+      ] satisfies Array<{ filter: RedemptionCodeFilter; label: string; count: number }>,
+    [redemptionCodeStats, t]
+  );
+  const hasRedemptionCodeFilters = redemptionCodeFilter !== "all" || normalizedRedemptionCodeSearch.length > 0;
 
   const loadUsers = useCallback(
     async (query = ""): Promise<void> => {
@@ -210,6 +249,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
       if (!isRedemptionCodeListResponse(body)) {
         throw new Error(t("adminRedemptionCodesInvalidData"));
       }
+      setRedemptionCodeNow(Date.now());
       setRedemptionCodes(body.items);
     } catch (requestError) {
       setError(errorMessage(requestError, t("adminRedemptionCodesLoadFailed")));
@@ -221,6 +261,16 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
   useEffect(() => {
     void Promise.all([loadUsers(""), loadSettings(), loadAudits(), loadQueueStatus(), loadRedemptionCodes()]);
   }, [loadAudits, loadQueueStatus, loadRedemptionCodes, loadSettings, loadUsers]);
+
+  useEffect(() => {
+    if (activeTab !== "redemptionCodes") {
+      return;
+    }
+
+    setRedemptionCodeNow(Date.now());
+    const intervalId = window.setInterval(() => setRedemptionCodeNow(Date.now()), 60_000);
+    return () => window.clearInterval(intervalId);
+  }, [activeTab]);
 
   async function submitUserSearch(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -343,8 +393,10 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
       }
 
       setCreatedRedemptionCodes(body.items);
+      setRedemptionCodeNow(Date.now());
       setRedemptionCodes((items) => mergeRedemptionCodes(body.items, items));
       setRedemptionCodeForm(initialRedemptionCodeForm);
+      setSelectedRedemptionCodeExpiryPresetId("");
 
       if (body.items.length === 1) {
         let copied = await finishPreparedClipboardWrite(asyncClipboardWrite);
@@ -369,6 +421,13 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
       ...value,
       expiresAt: redemptionCodeExpiryPresetValue(option)
     }));
+    setSelectedRedemptionCodeExpiryPresetId(option.id);
+  }
+
+  function clearRedemptionCodeFilters(): void {
+    setRedemptionCodeFilter("all");
+    setRedemptionCodeSearch("");
+    setRedemptionCodeNow(Date.now());
   }
 
   async function updateRedemptionCodeStatus(code: RedemptionCodeSummary, status: RedemptionCodeStatus): Promise<void> {
@@ -620,6 +679,71 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
               title={t("adminRedemptionCodesTitle")}
               description={t("adminRedemptionCodesSubtitle")}
             />
+
+            <div className="admin-redemption-summary" aria-label={t("adminRedemptionSummaryLabel")}>
+              <span className="admin-redemption-stat">
+                <strong>{numberFormat.format(redemptionCodeStats.total)}</strong>
+                {t("adminRedemptionStatTotal")}
+              </span>
+              <span className="admin-redemption-stat">
+                <strong>{numberFormat.format(redemptionCodeStats.available)}</strong>
+                {t("adminRedemptionStatAvailable")}
+              </span>
+              <span className="admin-redemption-stat">
+                <strong>{numberFormat.format(redemptionCodeStats.redeemed)}</strong>
+                {t("adminRedemptionStatRedeemed")}
+              </span>
+              <span className="admin-redemption-stat">
+                <strong>{numberFormat.format(redemptionCodeStats.disabled)}</strong>
+                {t("adminRedemptionStatDisabled")}
+              </span>
+              <span className="admin-redemption-stat">
+                <strong>{numberFormat.format(redemptionCodeStats.expired)}</strong>
+                {t("adminRedemptionStatExpired")}
+              </span>
+            </div>
+
+            <div className="admin-redemption-toolbar">
+              <div className="admin-redemption-filter-group" role="group" aria-label={t("adminRedemptionFilterLabel")}>
+                {redemptionCodeFilterOptions.map((option) => (
+                  <button
+                    aria-pressed={redemptionCodeFilter === option.filter}
+                    data-active={redemptionCodeFilter === option.filter}
+                    key={option.filter}
+                    type="button"
+                    onClick={() => {
+                      setRedemptionCodeFilter(option.filter);
+                      setRedemptionCodeNow(Date.now());
+                    }}
+                  >
+                    <span>{option.label}</span>
+                    <strong>{numberFormat.format(option.count)}</strong>
+                  </button>
+                ))}
+              </div>
+              <label className="admin-redemption-search">
+                <span>{t("adminRedemptionSearchLabel")}</span>
+                <Search className="size-4" aria-hidden="true" />
+                <input
+                  type="search"
+                  value={redemptionCodeSearch}
+                  placeholder={t("adminRedemptionSearchPlaceholder")}
+                  onChange={(event) => setRedemptionCodeSearch(event.target.value)}
+                />
+              </label>
+              {hasRedemptionCodeFilters ? (
+                <button className="admin-ghost-button admin-redemption-clear-button" type="button" onClick={clearRedemptionCodeFilters}>
+                  {t("adminRedemptionClearFilters")}
+                </button>
+              ) : null}
+              <p className="admin-redemption-toolbar__count">
+                {t("adminRedemptionVisibleCount", {
+                  count: visibleRedemptionCodes.length,
+                  total: redemptionCodeStats.total
+                })}
+              </p>
+            </div>
+
             <form className="admin-redemption-form" onSubmit={(event) => void createRedemptionCodes(event)}>
               <label>
                 <span>{t("adminRedemptionCodeCredits")}</span>
@@ -651,14 +775,21 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
                     step={1}
                     type="datetime-local"
                     value={redemptionCodeForm.expiresAt}
-                    onChange={(event) =>
-                      setRedemptionCodeForm((value) => ({ ...value, expiresAt: event.target.value }))
-                    }
+                    onChange={(event) => {
+                      setSelectedRedemptionCodeExpiryPresetId("");
+                      setRedemptionCodeForm((value) => ({ ...value, expiresAt: event.target.value }));
+                    }}
                   />
                 </label>
                 <div className="admin-redemption-expiry-presets" aria-label={t("adminRedemptionCodeExpiryQuickLabel")}>
                   {redemptionCodeExpiryPresetOptions.map((option) => (
-                    <button key={option.id} type="button" onClick={() => applyRedemptionCodeExpiryPreset(option)}>
+                    <button
+                      aria-pressed={selectedRedemptionCodeExpiryPresetId === option.id}
+                      data-active={selectedRedemptionCodeExpiryPresetId === option.id}
+                      key={option.id}
+                      type="button"
+                      onClick={() => applyRedemptionCodeExpiryPreset(option)}
+                    >
                       {t(option.labelKey)}
                     </button>
                   ))}
@@ -690,7 +821,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
 
             {loading.redemptionCodes ? (
               <LoadingState label={t("adminLoading")} />
-            ) : sortedRedemptionCodes.length > 0 ? (
+            ) : visibleRedemptionCodes.length > 0 ? (
               <div className="admin-table-wrap">
                 <table className="admin-table admin-redemption-table">
                   <thead>
@@ -705,7 +836,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedRedemptionCodes.map((code) => {
+                    {visibleRedemptionCodes.map((code) => {
                       const isRedeemed = Boolean(code.redeemedAt || code.redeemedByUserId);
                       const nextStatus: RedemptionCodeStatus = code.status === "active" ? "disabled" : "active";
                       const statusBusy = busyKey === `redemption:status:${code.id}`;
@@ -768,6 +899,14 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
                     })}
                   </tbody>
                 </table>
+              </div>
+            ) : redemptionCodes.length > 0 ? (
+              <div className="admin-empty-state admin-empty-state--stacked" role="status">
+                <strong>{t("adminRedemptionCodesNoMatches")}</strong>
+                <span>{t("adminRedemptionCodesNoMatchesHint")}</span>
+                <button className="admin-ghost-button" type="button" onClick={clearRedemptionCodeFilters}>
+                  {t("adminRedemptionClearFilters")}
+                </button>
               </div>
             ) : (
               <EmptyState label={t("adminRedemptionCodesEmpty")} />
@@ -1179,6 +1318,98 @@ function DomainListSetting({
 
 function redemptionStatusLabel(status: RedemptionCodeStatus, t: Translate): string {
   return status === "disabled" ? t("adminRedemptionCodeStatusDisabled") : t("adminRedemptionCodeStatusActive");
+}
+
+function redemptionCodeStatsFor(codes: RedemptionCodeSummary[], now: number): RedemptionCodeStats {
+  return codes.reduce<RedemptionCodeStats>(
+    (stats, code) => {
+      const redeemed = isRedemptionCodeRedeemed(code);
+      const expired = isRedemptionCodeExpired(code, now);
+      return {
+        total: stats.total + 1,
+        available: stats.available + (isRedemptionCodeAvailable(code, now) ? 1 : 0),
+        disabled: stats.disabled + (code.status === "disabled" ? 1 : 0),
+        redeemed: stats.redeemed + (redeemed ? 1 : 0),
+        unredeemed: stats.unredeemed + (redeemed ? 0 : 1),
+        expired: stats.expired + (expired ? 1 : 0)
+      };
+    },
+    {
+      total: 0,
+      available: 0,
+      disabled: 0,
+      redeemed: 0,
+      unredeemed: 0,
+      expired: 0
+    }
+  );
+}
+
+function isRedemptionCodeRedeemed(code: RedemptionCodeSummary): boolean {
+  return Boolean(code.redeemedAt || code.redeemedByUserId);
+}
+
+function isRedemptionCodeExpired(code: RedemptionCodeSummary, now: number): boolean {
+  if (!code.expiresAt || isRedemptionCodeRedeemed(code)) {
+    return false;
+  }
+
+  const expiresAt = Date.parse(code.expiresAt);
+  return Number.isFinite(expiresAt) && expiresAt <= now;
+}
+
+function isRedemptionCodeAvailable(code: RedemptionCodeSummary, now: number): boolean {
+  return code.status === "active" && !isRedemptionCodeRedeemed(code) && !isRedemptionCodeExpired(code, now);
+}
+
+function matchesRedemptionCodeFilter(code: RedemptionCodeSummary, filter: RedemptionCodeFilter, now: number): boolean {
+  switch (filter) {
+    case "all":
+      return true;
+    case "available":
+      return isRedemptionCodeAvailable(code, now);
+    case "disabled":
+      return code.status === "disabled";
+    case "redeemed":
+      return isRedemptionCodeRedeemed(code);
+    case "unredeemed":
+      return !isRedemptionCodeRedeemed(code);
+    case "expired":
+      return isRedemptionCodeExpired(code, now);
+  }
+
+  const exhaustiveFilter: never = filter;
+  return exhaustiveFilter;
+}
+
+function matchesRedemptionCodeSearch(code: RedemptionCodeSummary, search: string): boolean {
+  if (!search) {
+    return true;
+  }
+
+  const target = normalizeRedemptionCodeSearchText(redemptionCodeSearchText(code));
+  const compactTarget = compactRedemptionCodeSearchText(target);
+  const compactSearch = compactRedemptionCodeSearchText(search);
+  return target.includes(search) || (compactSearch.length > 0 && compactTarget.includes(compactSearch));
+}
+
+function redemptionCodeSearchText(code: RedemptionCodeSummary): string {
+  return [
+    code.code,
+    code.redeemedByUserName,
+    code.redeemedByUserEmail,
+    code.redeemedByUserId
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function normalizeRedemptionCodeSearchText(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function compactRedemptionCodeSearchText(value: string): string {
+  return normalizeRedemptionCodeSearchText(value).replace(/[\s-]+/gu, "");
 }
 
 function mergeRedemptionCodes(newItems: RedemptionCodeSummary[], currentItems: RedemptionCodeSummary[]): RedemptionCodeSummary[] {

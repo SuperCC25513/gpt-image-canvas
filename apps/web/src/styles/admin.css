@@ -71,6 +71,8 @@
 .admin-credit-form button,
 .admin-row-actions button,
 .admin-redemption-created button,
+.admin-redemption-filter-group button,
+.admin-redemption-clear-button,
 .admin-redemption-expiry-presets button {
   display: inline-flex;
   min-height: 2.3rem;
@@ -96,8 +98,11 @@
 }
 
 .admin-tabs button.is-active {
-  background: var(--ink);
-  color: var(--paper-panel);
+  box-shadow:
+    inset 0 -2px 0 var(--focus),
+    0 8px 18px rgb(15 118 110 / 0.12);
+  background: var(--focus-soft);
+  color: var(--focus);
 }
 
 .admin-tabs button:active,
@@ -107,8 +112,32 @@
 .admin-credit-form button:active,
 .admin-row-actions button:active,
 .admin-redemption-created button:active,
+.admin-redemption-filter-group button:active,
+.admin-redemption-clear-button:active,
 .admin-redemption-expiry-presets button:active {
   transform: scale(var(--motion-scale-press));
+}
+
+.admin-tabs button:focus-visible,
+.admin-ghost-button:focus-visible,
+.admin-primary-button:focus-visible,
+.admin-search button:focus-visible,
+.admin-credit-form button:focus-visible,
+.admin-row-actions button:focus-visible,
+.admin-redemption-created button:focus-visible,
+.admin-redemption-filter-group button:focus-visible,
+.admin-redemption-clear-button:focus-visible,
+.admin-redemption-expiry-presets button:focus-visible,
+.admin-search input:focus-visible,
+.admin-table select:focus-visible,
+.admin-credit-form input:focus-visible,
+.admin-credit-form select:focus-visible,
+.admin-number-row input:focus-visible,
+.admin-domain-row textarea:focus-visible,
+.admin-redemption-form input:focus-visible,
+.admin-redemption-search input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .admin-ghost-button,
@@ -189,7 +218,8 @@
 .admin-credit-form select,
 .admin-number-row input,
 .admin-domain-row textarea,
-.admin-redemption-form input {
+.admin-redemption-form input,
+.admin-redemption-search input {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -313,6 +343,124 @@
   gap: 0.4rem;
 }
 
+.admin-redemption-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-redemption-stat {
+  display: flex;
+  min-width: 0;
+  min-height: 3.8rem;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.18rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: var(--muted-ink);
+  padding: 0.55rem 0.65rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.admin-redemption-stat strong {
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.admin-redemption-toolbar {
+  display: grid;
+  grid-template-columns: minmax(20rem, 1fr) minmax(14rem, 0.8fr) auto;
+  align-items: end;
+  gap: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgb(255 253 248 / 0.84);
+  margin-bottom: 0.75rem;
+  padding: 0.65rem;
+}
+
+.admin-redemption-filter-group {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.admin-redemption-filter-group button {
+  min-height: 2.45rem;
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--muted-ink);
+  padding: 0 0.62rem;
+}
+
+.admin-redemption-filter-group button:hover,
+.admin-redemption-expiry-presets button:hover {
+  border-color: rgb(15 118 110 / 0.28);
+  background: #eefbf7;
+  color: var(--focus);
+}
+
+.admin-redemption-filter-group button[data-active="true"],
+.admin-redemption-expiry-presets button[data-active="true"] {
+  border-color: rgb(15 118 110 / 0.36);
+  background: var(--focus-soft);
+  box-shadow: inset 0 -2px 0 var(--focus);
+  color: var(--focus);
+}
+
+.admin-redemption-filter-group button strong {
+  border-radius: 999px;
+  background: rgb(15 118 110 / 0.08);
+  color: var(--focus);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0.18rem 0.38rem;
+}
+
+.admin-redemption-search {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.3rem 0.45rem;
+}
+
+.admin-redemption-search span {
+  grid-column: 1 / -1;
+  color: var(--muted-ink);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.admin-redemption-search svg {
+  color: var(--focus);
+}
+
+.admin-redemption-search input {
+  min-height: 2.45rem;
+}
+
+.admin-redemption-clear-button {
+  min-height: 2.45rem;
+  white-space: nowrap;
+}
+
+.admin-redemption-toolbar__count {
+  grid-column: 1 / -1;
+  margin: -0.2rem 0 0;
+  color: var(--muted-ink);
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
 .admin-redemption-form {
   display: grid;
   grid-template-columns: minmax(8rem, 0.7fr) minmax(7rem, 0.6fr) minmax(12rem, 1fr) auto;
@@ -354,12 +502,6 @@
   white-space: nowrap;
 }
 
-.admin-redemption-expiry-presets button:hover {
-  border-color: rgb(130 84 50 / 0.36);
-  background: #fffaf0;
-  color: var(--copper);
-}
-
 .admin-redemption-form span,
 .admin-redemption-created strong {
   color: var(--muted-ink);
@@ -387,9 +529,15 @@
 
 .admin-redemption-created button {
   min-height: 2.25rem;
-  background: var(--ink);
-  border-color: var(--ink);
-  color: #fffdf8;
+  background: var(--focus-soft);
+  border-color: rgb(15 118 110 / 0.34);
+  color: var(--focus);
+}
+
+.admin-redemption-created button:hover {
+  background: #eefbf7;
+  border-color: var(--focus);
+  color: #0f5f58;
 }
 
 .admin-redemption-table {
@@ -752,6 +900,20 @@
   text-align: center;
 }
 
+.admin-empty-state--stacked {
+  flex-direction: column;
+}
+
+.admin-empty-state--stacked strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.admin-empty-state--stacked span {
+  color: var(--muted-ink);
+  font-size: 0.85rem;
+}
+
 @media (max-width: 900px) {
   .admin-header,
   .admin-audit-row {
@@ -770,7 +932,12 @@
 
   .admin-settings-grid,
   .admin-queue-status__metrics,
+  .admin-redemption-summary,
   .admin-audit-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-redemption-toolbar {
     grid-template-columns: 1fr;
   }
 
@@ -808,5 +975,10 @@
   .admin-credit-form,
   .admin-redemption-form {
     grid-template-columns: 1fr;
+  }
+
+  .admin-redemption-filter-group button,
+  .admin-redemption-clear-button {
+    flex: 1 1 9rem;
   }
 }

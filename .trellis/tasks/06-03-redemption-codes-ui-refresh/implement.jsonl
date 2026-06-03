@@ -1,0 +1,6 @@
+{"file":"docs/DESIGN.md","reason":"可见 UI 改动必须遵守项目暖纸、深墨、铜色、青绿视觉方向。"}
+{"file":"docs/FRONTEND.md","reason":"web 前端实现、CSS、i18n 和浏览器验证规则。"}
+{"file":"docs/design-docs/interaction-quality.md","reason":"按钮、表单、状态反馈、响应式和交互打磨标准。"}
+{"file":"docs/PRODUCT_SENSE.md","reason":"后台运营功能仍需符合本地优先、信任可见、可恢复流程原则。"}
+{"file":".trellis/spec/guides/index.md","reason":"开发前思考触发器和验证注意事项。"}
+{"file":".trellis/spec/web/frontend/index.md","reason":"web/frontend Trellis 规范入口。"}

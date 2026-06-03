@@ -1,0 +1,10 @@
+{"file":"docs/DESIGN.md","reason":"检查视觉方向是否仍符合项目设计系统。"}
+{"file":"docs/FRONTEND.md","reason":"检查 typecheck、build、i18n 和浏览器验证要求。"}
+{"file":"docs/design-docs/interaction-quality.md","reason":"检查 hover、focus、hit area、响应式和动效质量。"}
+{"file":".trellis/spec/guides/index.md","reason":"检查是否遗漏跨层或复用风险。"}
+{"file":".trellis/spec/web/frontend/index.md","reason":"检查 web/frontend 规范入口。"}
+{"command":"pnpm typecheck","result":"pass","note":"需先执行 nvm use 24.15.0。首次运行受并发 dev watcher 重启影响出现瞬态 Agent 类型错误，重跑通过。"}
+{"command":"pnpm build","result":"pass","note":"构建通过；Vite 仍提示 index chunk 超过 500 kB，非本任务新增阻断。"}
+{"command":"Playwright CLI redemption-ui","result":"pass","note":"验证兑换码快捷过期 selected、手动日期清除 selected、状态筛选、紧凑搜索、无匹配空态、清除筛选、可兑换筛选排除已停用和已兑换、375px 无横向溢出。"}
+{"command":"Playwright CLI canvas navigation style","result":"pass","note":"验证画布页顶部导航和语言切换在 light/dark 主题下 active 都使用青绿色语义，无纯黑 selected。"}
+{"command":"audit-fix typecheck/build/browser","result":"pass","note":"修复审计 3 条 P2：前端过期边界改为 <= now；兑换码统计/搜索文案标明已加载、最近最多 200 条；移动端顶部导航 route 变化后 active 项滚入可见。pnpm typecheck、pnpm build 通过；375px 浏览器验证 active=后台 可见、document/body scrollWidth=375。"}

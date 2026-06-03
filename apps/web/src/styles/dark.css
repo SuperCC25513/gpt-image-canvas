@@ -97,11 +97,13 @@
 }
 
 .app-root[data-canvas-theme="dark"] .top-navigation__link:hover {
+  background: rgb(20 184 166 / 0.12);
   color: #fff7ed;
 }
 
 .app-root[data-canvas-theme="dark"] .language-switcher__button:hover {
-  color: #fff7ed;
+  background: rgb(20 184 166 / 0.12);
+  color: #99f6e4;
 }
 
 .app-root[data-canvas-theme="dark"] .top-navigation__settings {
@@ -118,17 +120,23 @@
 }
 
 .app-root[data-canvas-theme="dark"] .top-navigation__link[data-active="true"] {
-  background: #2d211c;
+  background: rgb(20 184 166 / 0.16);
   box-shadow:
-    inset 0 0 0 1px rgb(247 178 103 / 0.22),
+    inset 0 0 0 1px rgb(45 212 191 / 0.28),
     0 10px 24px rgb(0 0 0 / 0.28);
-  color: #f7b267;
+  color: #99f6e4;
+}
+
+.app-root[data-canvas-theme="dark"] .top-navigation__link[data-active="true"]::after {
+  background: #5eead4;
 }
 
 .app-root[data-canvas-theme="dark"] .language-switcher__button[data-active="true"] {
-  background: #fff7ed;
-  box-shadow: none;
-  color: #15110d;
+  background: rgb(20 184 166 / 0.16);
+  box-shadow:
+    inset 0 0 0 1px rgb(45 212 191 / 0.28),
+    inset 0 -2px 0 #5eead4;
+  color: #99f6e4;
 }
 
 .app-root[data-canvas-theme="dark"] .brand-name__gpt,
