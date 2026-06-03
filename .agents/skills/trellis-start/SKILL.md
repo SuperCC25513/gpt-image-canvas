@@ -18,6 +18,9 @@ python3 ./.trellis/scripts/get_context.py
 
 If this output includes a line beginning `Trellis update available:`, copy the full line verbatim when summarizing session context. Do not shorten operational command hints.
 
+## Step 1.5: Developer preferences
+用 Step 1 输出里的开发者名称定位偏好文件。如果 `.trellis/workspace/<developer>/preferences.md` 存在，先读取它，再决定浏览器验证工具、外部工具和任务执行方式。
+
 ## Step 2: Workflow overview
 Compact Phase Index, request triage rules, planning artifact contract, and the step-detail command.
 
