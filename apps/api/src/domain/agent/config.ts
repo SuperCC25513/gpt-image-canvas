@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { RowDataPacket } from "mysql2/promise";
-import type { AgentLlmConfigView, MaskedSecret, SaveAgentLlmConfigRequest } from "../contracts.js";
+import type { AgentLlmConfigView, AgentLlmStatusView, MaskedSecret, SaveAgentLlmConfigRequest } from "../contracts.js";
 import { databaseDriver, db, getMySqlPool } from "../../infrastructure/database.js";
 import { agentLlmConfigs } from "../../infrastructure/schema.js";
 import { normalizeOutboundUrl } from "../security/outbound-url.js";
@@ -22,6 +22,14 @@ export interface UsableAgentLlmConfig {
 
 export async function getAgentLlmConfig(): Promise<AgentLlmConfigView> {
   return toAgentLlmConfigView(await getAgentLlmConfigRow());
+}
+
+export async function getAgentLlmStatus(): Promise<AgentLlmStatusView> {
+  const usableConfig = await getUsableAgentLlmConfig();
+  return {
+    configured: Boolean(usableConfig),
+    supportsVision: usableConfig?.supportsVision === true
+  };
 }
 
 export async function getUsableAgentLlmConfig(): Promise<UsableAgentLlmConfig | undefined> {

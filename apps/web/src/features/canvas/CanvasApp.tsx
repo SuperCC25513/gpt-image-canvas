@@ -4,7 +4,6 @@ import {
   Bookmark,
   BookmarkCheck,
   BookOpenCheck,
-  BrainCircuit,
   CalendarCheck,
   Check,
   CheckCircle2,
@@ -71,7 +70,6 @@ import {
   isGenerationPlan,
   summarizeGenerationPlanOutputs
 } from "../agent/AgentPlanNodeShape";
-import { AgentSkillDialog } from "../agent/AgentSkillDialog";
 import type { AdminTab } from "../admin/AdminPage";
 import { HomePage } from "../home/HomePage";
 import { SimpleGenerationPage } from "../simple-generation/SimpleGenerationPage";
@@ -94,12 +92,9 @@ import {
   type AgentConversationListResponse,
   type AgentConversationMessage,
   type AgentConversationSummary,
-  type AgentLlmConfigView,
-  type AgentPlannerOptions,
-  type AgentReasoningEffort,
+  type AgentLlmStatusView,
   type AgentSelectedCanvasReference,
   type AgentServerEvent,
-  type AgentThinkingType,
   type AuthStatusResponse,
   type AuthMeResponse,
   type AssetMetadataResponse,
@@ -189,52 +184,10 @@ function localeForTldrawLocale(locale: TLUserPreferences["locale"]): Locale | un
   return undefined;
 }
 
-function isDeepSeekAgentConfigView(config: Pick<AgentLlmConfigView, "baseUrl" | "model"> | null | undefined): boolean {
-  if (!config) {
-    return false;
-  }
-
-  const model = config.model.trim().toLowerCase();
-  const baseUrl = config.baseUrl.trim().toLowerCase();
-  return model.startsWith("deepseek-") || baseUrl.includes("deepseek.");
-}
-
 function agentThinkingSummaryText(locale: Locale): string {
   return locale === "zh-CN"
     ? "正在分析任务，整理生图计划与确认节点。"
     : "Reviewing the request and shaping a generation plan with confirmation steps.";
-}
-
-function agentThinkingChipLabel(locale: Locale, thinkingType: AgentThinkingType, effort: AgentReasoningEffort): string {
-  if (locale === "zh-CN") {
-    return thinkingType === "disabled" ? "思考 Off" : `思考 ${effort === "max" ? "Max" : "High"}`;
-  }
-
-  return thinkingType === "disabled" ? "Thinking Off" : `Thinking ${effort === "max" ? "Max" : "High"}`;
-}
-
-function agentThinkingModeLabel(locale: Locale): string {
-  return locale === "zh-CN" ? "思考模式" : "Thinking mode";
-}
-
-function agentThinkingEffortLabel(locale: Locale): string {
-  return locale === "zh-CN" ? "思考强度" : "Reasoning effort";
-}
-
-function agentThinkingEnabledLabel(locale: Locale): string {
-  return locale === "zh-CN" ? "开启" : "On";
-}
-
-function agentThinkingDisabledLabel(locale: Locale): string {
-  return locale === "zh-CN" ? "关闭" : "Off";
-}
-
-function agentThinkingRawToggleLabel(locale: Locale, expanded: boolean): string {
-  if (locale === "zh-CN") {
-    return expanded ? "收起原始思考" : "查看原始思考";
-  }
-
-  return expanded ? "Hide raw reasoning" : "Show raw reasoning";
 }
 
 function agentPreviewDisclosureLabel(locale: Locale, count: number): string {
@@ -353,6 +306,7 @@ const ADMIN_TAB_PATHS = {
   users: "/admin/users",
   redemptionCodes: "/admin/redemption-codes",
   providers: "/admin/providers",
+  agentSkills: "/admin/agent-skills",
   audits: "/admin/audits",
   settings: "/admin/settings"
 } satisfies Record<AdminTab, string>;
@@ -731,6 +685,10 @@ function generationWarningMessage(record: GenerationRecord, insertedCount: numbe
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isAgentLlmStatusView(value: unknown): value is AgentLlmStatusView {
+  return isRecord(value) && typeof value.configured === "boolean" && typeof value.supportsVision === "boolean";
 }
 
 function isLoadingGenerationPlaceholderRecord(value: unknown): boolean {
@@ -2492,12 +2450,6 @@ function AgentHistoryMessage({
         <time dateTime={message.timestamp}>{formatDateTime(message.timestamp, { hour: "2-digit", minute: "2-digit" })}</time>
       </div>
       <p className="agent-message__content">{message.content}</p>
-      {message.role === "thinking" && message.details ? (
-        <details className="agent-thinking-details">
-          <summary className="agent-thinking-details__toggle">{t("agentHistoryThinkingDetails")}</summary>
-          <pre className="agent-thinking-details__content">{message.details}</pre>
-        </details>
-      ) : null}
       {message.plan ? (
         <AgentPlanCard
           isAgentConfigured={false}
@@ -2923,32 +2875,32 @@ function providerStatusDetails(authStatus: AuthStatusResponse | null, isAuthLoad
   if (authStatus?.provider === "openai") {
     if (authStatus.activeSource?.id === "local-openai") {
       return {
-        copy: t("providerStatusLocalCopy"),
+        copy: t("providerStatusAvailableCopy"),
         provider: "openai",
-        title: t("providerStatusLocalTitle")
+        title: t("providerStatusAvailableTitle")
       };
     }
 
     if (authStatus.activeSource?.id === "env-openai") {
       return {
-        copy: t("providerStatusEnvCopy"),
+        copy: t("providerStatusAvailableCopy"),
         provider: "openai",
-        title: t("providerStatusEnvTitle")
+        title: t("providerStatusAvailableTitle")
       };
     }
 
     return {
-      copy: t("providerStatusGenericOpenAICopy"),
+      copy: t("providerStatusAvailableCopy"),
       provider: "openai",
-      title: "OpenAI API"
+      title: t("providerStatusAvailableTitle")
     };
   }
 
   if (authStatus?.provider === "codex") {
     return {
-      copy: authStatus.codex.email ?? authStatus.codex.accountId ?? t("providerStatusCodexCopy"),
+      copy: t("providerStatusAvailableCopy"),
       provider: "codex",
-      title: t("providerStatusCodexTitle")
+      title: t("providerStatusAvailableTitle")
     };
   }
 
@@ -2961,7 +2913,7 @@ function providerStatusDetails(authStatus: AuthStatusResponse | null, isAuthLoad
   }
 
   return {
-    copy: t("providerStatusNoneCopy"),
+    copy: t("providerStatusUnavailableCopy"),
     provider: "none",
     title: t("providerStatusNoneTitle")
   };
@@ -2970,21 +2922,14 @@ function providerStatusDetails(authStatus: AuthStatusResponse | null, isAuthLoad
 function ProviderStatusPopover({
   authError,
   authStatus,
-  codexLoginStatus,
-  isAuthLoading,
-  onLogoutCodex,
-  onStartCodexLogin
+  isAuthLoading
 }: {
   authError: string;
   authStatus: AuthStatusResponse | null;
-  codexLoginStatus: CodexLoginStatus;
   isAuthLoading: boolean;
-  onLogoutCodex: () => void;
-  onStartCodexLogin: () => void;
 }) {
   const { t } = useI18n();
   const details = providerStatusDetails(authStatus, isAuthLoading, t);
-  const isCodexStarting = codexLoginStatus === "starting";
 
   return (
     <div className="provider-status-popover" data-provider={details.provider} data-testid="auth-provider-card">
@@ -3012,35 +2957,6 @@ function ProviderStatusPopover({
             {authError}
           </p>
         ) : null}
-
-        {details.provider === "codex" ? (
-          <button
-            className="provider-status-popover__action"
-            type="button"
-            title={t("providerLogoutCodex")}
-            data-testid="codex-logout-button"
-            disabled={isAuthLoading}
-            onClick={onLogoutCodex}
-          >
-            <LogOut className="size-4" aria-hidden="true" />
-            {t("providerLogoutCodex")}
-          </button>
-        ) : details.provider === "openai" ? null : (
-          <button
-            className="provider-status-popover__action"
-            type="button"
-            data-testid="codex-login-button"
-            disabled={isAuthLoading || isCodexStarting}
-            onClick={onStartCodexLogin}
-          >
-            {isCodexStarting ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <KeyRound className="size-4" aria-hidden="true" />
-            )}
-            {t("providerLoginCodex")}
-          </button>
-        )}
       </div>
     </div>
   );
@@ -3297,7 +3213,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   const [isHistoryExpanded, setIsHistoryExpanded] = useState(false);
   const [isMobileDrawer, setIsMobileDrawer] = useState(false);
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
-  const [isAgentSkillDialogOpen, setIsAgentSkillDialogOpen] = useState(false);
   const [authStatus, setAuthStatus] = useState<AuthStatusResponse | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState("");
@@ -3316,7 +3231,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   const [agentQuality, setAgentQuality] = useState<ImageQuality>(DEFAULT_IMAGE_QUALITY);
   const [agentOutputFormat, setAgentOutputFormat] = useState<OutputFormat>("png");
   const [agentInput, setAgentInput] = useState("");
-  const [agentConfig, setAgentConfig] = useState<AgentLlmConfigView | null>(null);
+  const [agentConfig, setAgentConfig] = useState<AgentLlmStatusView | null>(null);
   const [isAgentConfigLoading, setIsAgentConfigLoading] = useState(true);
   const [agentConfigError, setAgentConfigError] = useState("");
   const [agentMessages, setAgentMessages] = useState<AgentChatMessage[]>([]);
@@ -3329,11 +3244,8 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   const [isAgentHistoryDetailLoading, setIsAgentHistoryDetailLoading] = useState(false);
   const [agentHistoryError, setAgentHistoryError] = useState("");
   const [copiedAgentMessageId, setCopiedAgentMessageId] = useState<string | null>(null);
-  const [expandedThinkingMessageIds, setExpandedThinkingMessageIds] = useState<string[]>([]);
   const [agentRunStatus, setAgentRunStatus] = useState<AgentRunStatus>("idle");
   const [agentReferenceSelection, setAgentReferenceSelection] = useState<AgentReferenceSelection>(() => emptyAgentReferenceSelection(t));
-  const [agentThinkingType, setAgentThinkingType] = useState<AgentThinkingType>("enabled");
-  const [agentReasoningEffort, setAgentReasoningEffort] = useState<AgentReasoningEffort>("high");
   const [isAgentSettingsOpen, setIsAgentSettingsOpen] = useState(false);
   const [isCanvasDarkMode, setIsCanvasDarkMode] = useState(false);
   const canvasShellRef = useRef<HTMLElement | null>(null);
@@ -3375,19 +3287,9 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   const agentCancelRunLabel = `${agentRunStatusLabel}: ${t("agentCancelRun")}`;
   const trimmedAgentInput = agentInput.trim();
   const isAgentConfigured = Boolean(agentConfig?.configured);
-  const supportsAgentThinkingControls = isDeepSeekAgentConfigView(agentConfig);
   const agentDefaultsValidationMessage = sizeValidationMessage(agentWidth, agentHeight, t, locale);
   const canSendAgentMessage = Boolean(
     trimmedAgentInput && isAgentConfigured && !isAgentConfigLoading && !isAgentRunning && !agentDefaultsValidationMessage
-  );
-  const agentPlannerOptions = useMemo<AgentPlannerOptions>(
-    () => ({
-      thinking: {
-        type: agentThinkingType
-      },
-      reasoningEffort: agentThinkingType === "enabled" ? agentReasoningEffort : undefined
-    }),
-    [agentReasoningEffort, agentThinkingType]
   );
   const agentDefaults = useMemo(
     () => ({
@@ -3404,7 +3306,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   const agentCompactSizeSummary = `${agentWidth}x${agentHeight}`;
   const agentQualitySummary = t("qualityLabel", { quality: agentQuality });
   const agentFormatSummary = t("outputFormatLabel", { format: agentOutputFormat });
-  const agentThinkingSummary = agentThinkingChipLabel(locale, agentThinkingType, agentReasoningEffort);
   const agentReferenceCount = agentReferenceSelection.references.length;
   const agentReferenceSummary = t("agentParamReferences", {
     count: agentReferenceCount,
@@ -3427,7 +3328,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   const isReferenceReady = isReferenceMode && referenceSelection.status === "ready";
   const referenceValidationMessage = isReferenceMode && !isReferenceReady ? referenceSelection.hint : "";
   const providerValidationMessage =
-    isAuthLoading || hasGenerationProvider ? "" : authError || t("providerStatusNoneCopy");
+    isAuthLoading || hasGenerationProvider ? "" : authError || t("providerStatusUnavailableCopy");
   const accountUser = accountStatus?.authenticated ? accountStatus.user : undefined;
   const isCurrentUserAdmin = accountUser?.role === "admin";
   const creditSettings = accountStatus?.settings;
@@ -3545,24 +3446,29 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
     () => filterPromptFavorites(promptFavoriteItems, deferredFavoritePanelQuery, favoritePanelGroupId),
     [deferredFavoritePanelQuery, favoritePanelGroupId, promptFavoriteItems]
   );
-  const loadAgentConfig = useCallback(async (signal?: AbortSignal): Promise<AgentLlmConfigView | null> => {
+  const loadAgentConfig = useCallback(async (signal?: AbortSignal): Promise<AgentLlmStatusView | null> => {
     setIsAgentConfigLoading(true);
     setAgentConfigError("");
 
     try {
-      const response = await fetch("/api/agent-config", { signal });
+      const response = await fetch("/api/agent-config/status", { signal });
       if (!response.ok) {
         throw new Error(await readErrorMessage(response, locale, t));
       }
 
-      const config = (await response.json()) as AgentLlmConfigView;
+      const config = (await response.json()) as unknown;
+      if (!isAgentLlmStatusView(config)) {
+        throw new Error(t("agentConfigStatusLoadFailed"));
+      }
+
       if (!signal?.aborted) {
         setAgentConfig(config);
       }
       return config;
     } catch (error) {
       if (!signal?.aborted) {
-        setAgentConfigError(error instanceof Error ? error.message : t("agentConfigLoadFailed"));
+        setAgentConfig(null);
+        setAgentConfigError(error instanceof Error ? error.message : t("agentConfigStatusLoadFailed"));
       }
       return null;
     } finally {
@@ -5110,7 +5016,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
     deleteAgentJobLoadingPlaceholdersForRun();
     agentJobPlaceholdersRef.current.clear();
     clearCanvasAgentPlanNodes();
-    setExpandedThinkingMessageIds([]);
     setCopiedAgentMessageId(null);
     setAgentInput("");
     setIsAgentSettingsOpen(false);
@@ -5141,7 +5046,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   }
 
   async function copyAgentMessage(message: AgentChatMessage): Promise<void> {
-    const text = (message.role === "thinking" ? message.details ?? message.content : message.content).trim();
+    const text = message.content.trim();
     if (!text) {
       return;
     }
@@ -5162,12 +5067,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
         content: t("agentCopyMessageFailed")
       });
     }
-  }
-
-  function toggleThinkingMessage(messageId: string): void {
-    setExpandedThinkingMessageIds((currentIds) =>
-      currentIds.includes(messageId) ? currentIds.filter((id) => id !== messageId) : [...currentIds, messageId]
-    );
   }
 
   function isAgentStreamEventForActiveRun(event: Pick<AgentServerEvent, "runId">): boolean {
@@ -5227,10 +5126,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
   }
 
   function upsertAgentThinkingSummary(runId?: string): void {
-    const content =
-      locale === "zh-CN"
-        ? "正在分析任务，整理生图计划与确认节点。"
-        : "Reviewing the request and shaping a generation plan with confirmation steps.";
+    const content = agentThinkingSummaryText(locale);
     setAgentMessages((messages) => {
       for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
@@ -5277,47 +5173,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
       return;
     }
 
-    const content = agentThinkingSummaryText(locale);
-    setAgentMessages((messages) => {
-      let existingIndex = -1;
-      for (let index = messages.length - 1; index >= 0; index -= 1) {
-        const message = messages[index];
-        if (message?.role !== "thinking" || message.plan || message.runId !== runId) {
-          continue;
-        }
-
-        existingIndex = index;
-        break;
-      }
-
-      if (existingIndex >= 0) {
-        return messages.map((message, index) =>
-          index === existingIndex
-            ? {
-                ...message,
-                content,
-                details: `${message.details ?? ""}${delta}`
-              }
-            : message
-        );
-      }
-
-      if (!delta.trim()) {
-        return messages;
-      }
-
-      return [
-        ...messages,
-        {
-          id: `agent-message-${crypto.randomUUID()}`,
-          role: "thinking",
-          content,
-          details: delta,
-          timestamp: new Date().toISOString(),
-          runId
-        }
-      ];
-    });
+    upsertAgentThinkingSummary(runId);
   }
 
   function upsertAgentPlanAttachment(
@@ -6144,7 +6000,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
           runId,
           text: trimmedAgentInput,
           defaults: agentDefaults,
-          plannerOptions: supportsAgentThinkingControls ? agentPlannerOptions : undefined,
           selectedReferences,
           selectedReferenceIds: selectedReferences.map((reference) => reference.assetId)
         })
@@ -6483,10 +6338,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
               <ProviderStatusPopover
                 authError={authError}
                 authStatus={authStatus}
-                codexLoginStatus={codexLoginStatus}
                 isAuthLoading={isAuthLoading}
-                onLogoutCodex={logoutCodexSession}
-                onStartCodexLogin={startCodexLogin}
               />
               <div
                 className={`inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium ${
@@ -7069,17 +6921,16 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
           ) : null}
 
           <div className="agent-chat-head" data-testid="agent-config-state" data-configured={isAgentConfigured}>
-            <button
+            <div
               className="agent-model-pill"
               data-configured={isAgentConfigured}
-              disabled={!isCurrentUserAdmin}
-              title={isCurrentUserAdmin ? t("agentOpenModelConfig") : t("agentConfigAskAdmin")}
-              type="button"
-              onClick={() => {
-                if (isCurrentUserAdmin) {
-                  navigateToAdminTab("providers");
-                }
-              }}
+              role="status"
+              title={
+                agentConfigError ||
+                (isAgentConfigured
+                  ? t(agentConfig?.supportsVision ? "agentConfigReadyVisionCopy" : "agentConfigReadyTextCopy")
+                  : t("agentConfigMissingCopy"))
+              }
             >
               <span className="agent-model-pill__icon" data-state={isAgentConfigured ? "ready" : "missing"}>
                 {isAgentConfigLoading ? (
@@ -7095,30 +6946,18 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
                   {isAgentConfigLoading
                     ? t("agentConfigLoading")
                     : isAgentConfigured
-                      ? t(agentConfig?.supportsVision ? "agentVisionMode" : "agentTextOnlyMode")
+                      ? t("agentConfigReadyTitle")
                       : t("agentConfigMissingTitle")}
                 </strong>
                 <span>
                   {agentConfigError ||
                     (isAgentConfigured
-                      ? t("agentConfigReadyCopy", { model: agentConfig?.model ?? "" })
-                      : isCurrentUserAdmin
-                        ? t("agentOpenModelConfig")
-                        : t("agentConfigAskAdmin"))}
+                      ? t(agentConfig?.supportsVision ? "agentConfigReadyVisionCopy" : "agentConfigReadyTextCopy")
+                      : t("agentConfigMissingCopy"))}
                 </span>
               </span>
-            </button>
+            </div>
             <div className="agent-chat-head__actions">
-              <button
-                aria-label={t("agentSkillsOpen")}
-                className="agent-icon-button"
-                data-testid="agent-skills-open"
-                title={t("agentSkillsOpen")}
-                type="button"
-                onClick={() => setIsAgentSkillDialogOpen(true)}
-              >
-                <BookOpenCheck className="size-4" aria-hidden="true" />
-              </button>
               <button
                 aria-label={t("agentConfigRefresh")}
                 className="agent-icon-button"
@@ -7166,9 +7005,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
                 const canCopyAgentMessage = isCopyableAgentMessageRole(message.role) && message.content.trim().length > 0;
                 const isAgentMessageCopied = copiedAgentMessageId === message.id;
                 const copyMessageLabel = isAgentMessageCopied ? t("agentCopiedMessage") : t("agentCopyMessage");
-                const hasThinkingDetails = message.role === "thinking" && Boolean(message.details?.trim());
-                const isThinkingExpanded = hasThinkingDetails && expandedThinkingMessageIds.includes(message.id);
-                const thinkingToggleLabel = hasThinkingDetails ? agentThinkingRawToggleLabel(locale, isThinkingExpanded) : "";
                 const previewCount = message.previews?.length ?? 0;
 
                 return (
@@ -7208,26 +7044,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
                       </div>
                     )}
                     <p className="agent-message__content">{message.content}</p>
-                    {hasThinkingDetails ? (
-                      <div className="agent-thinking-details">
-                        <button
-                          aria-expanded={isThinkingExpanded}
-                          aria-label={thinkingToggleLabel}
-                          className="agent-thinking-details__toggle"
-                          data-testid="agent-thinking-toggle"
-                          type="button"
-                          onClick={() => toggleThinkingMessage(message.id)}
-                        >
-                          <span>{thinkingToggleLabel}</span>
-                          <ChevronDown className="size-3.5" aria-hidden="true" data-expanded={isThinkingExpanded} />
-                        </button>
-                        {isThinkingExpanded ? (
-                          <pre className="agent-thinking-details__content" data-testid="agent-thinking-content">
-                            {message.details}
-                          </pre>
-                        ) : null}
-                      </div>
-                    ) : null}
                     {message.plan ? (
                       <AgentPlanCard
                         isAgentConfigured={isAgentConfigured}
@@ -7301,19 +7117,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
                 <ImageIcon className="size-3.5" aria-hidden="true" />
                 <span>{agentFormatSummary}</span>
               </button>
-              {supportsAgentThinkingControls ? (
-                <button
-                  aria-expanded={isAgentSettingsOpen}
-                  className="agent-param-chip"
-                  data-testid="agent-thinking-chip"
-                  title={agentThinkingSummary}
-                  type="button"
-                  onClick={() => setIsAgentSettingsOpen((isOpen) => !isOpen)}
-                >
-                  <BrainCircuit className="size-3.5" aria-hidden="true" />
-                  <span>{agentThinkingSummary}</span>
-                </button>
-              ) : null}
               <button
                 aria-expanded={isAgentSettingsOpen}
                 className="agent-param-chip"
@@ -7459,65 +7262,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
                   {agentDefaultsValidationMessage}
                 </p>
               ) : null}
-              {supportsAgentThinkingControls ? (
-                <section className="agent-thinking-controls" aria-label={agentThinkingModeLabel(locale)} data-testid="agent-thinking-controls">
-                  <div className="agent-thinking-controls__header">
-                    <div>
-                      <strong>{agentThinkingModeLabel(locale)}</strong>
-                      <span>{agentThinkingSummary}</span>
-                    </div>
-                  </div>
-                  <div className="agent-thinking-controls__group" role="group" aria-label={agentThinkingModeLabel(locale)}>
-                    <button
-                      aria-pressed={agentThinkingType === "enabled"}
-                      className="agent-thinking-controls__option"
-                      data-selected={agentThinkingType === "enabled"}
-                      data-testid="agent-thinking-enabled"
-                      type="button"
-                      onClick={() => setAgentThinkingType("enabled")}
-                    >
-                      {agentThinkingEnabledLabel(locale)}
-                    </button>
-                    <button
-                      aria-pressed={agentThinkingType === "disabled"}
-                      className="agent-thinking-controls__option"
-                      data-selected={agentThinkingType === "disabled"}
-                      data-testid="agent-thinking-disabled"
-                      type="button"
-                      onClick={() => setAgentThinkingType("disabled")}
-                    >
-                      {agentThinkingDisabledLabel(locale)}
-                    </button>
-                  </div>
-                  <div className="agent-thinking-controls__effort">
-                    <span className="control-label">{agentThinkingEffortLabel(locale)}</span>
-                    <div className="agent-thinking-controls__group" role="group" aria-label={agentThinkingEffortLabel(locale)}>
-                      <button
-                        aria-pressed={agentReasoningEffort === "high"}
-                        className="agent-thinking-controls__option"
-                        data-selected={agentReasoningEffort === "high"}
-                        data-testid="agent-thinking-effort-high"
-                        disabled={agentThinkingType === "disabled"}
-                        type="button"
-                        onClick={() => setAgentReasoningEffort("high")}
-                      >
-                        High
-                      </button>
-                      <button
-                        aria-pressed={agentReasoningEffort === "max"}
-                        className="agent-thinking-controls__option"
-                        data-selected={agentReasoningEffort === "max"}
-                        data-testid="agent-thinking-effort-max"
-                        disabled={agentThinkingType === "disabled"}
-                        type="button"
-                        onClick={() => setAgentReasoningEffort("max")}
-                      >
-                        Max
-                      </button>
-                    </div>
-                  </div>
-                </section>
-              ) : null}
               <div className="agent-reference-summary">
                 <div>
                   <strong>{t("agentReferencesTitle")}</strong>
@@ -7611,9 +7355,6 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
           onSelectConversation={selectAgentHistoryConversation}
         />
       ) : null}
-
-      {isAgentSkillDialogOpen ? <AgentSkillDialog isAdmin={isCurrentUserAdmin} onClose={() => setIsAgentSkillDialogOpen(false)} /> : null}
-
       {isCodexLoginOpen ? createPortal(
         (
         <div className="app-modal-backdrop fixed inset-0 z-[3000] flex items-center justify-center bg-neutral-950/45 px-4 py-6" data-testid="codex-login-dialog">

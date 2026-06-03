@@ -38,7 +38,7 @@ export interface ProviderConfigPanelProps {
   isCodexStarting: boolean;
   onClose?: () => void;
   onLogoutCodex: () => Promise<void>;
-  onRefreshAgentConfig: () => Promise<AgentLlmConfigView | null>;
+  onRefreshAgentConfig: () => Promise<unknown>;
   onRefreshAuthStatus: () => Promise<AuthStatusResponse | null>;
   onStartCodexLogin: () => Promise<void>;
   variant?: ProviderConfigPanelVariant;

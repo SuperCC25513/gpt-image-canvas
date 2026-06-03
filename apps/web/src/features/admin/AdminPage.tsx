@@ -9,6 +9,7 @@ import {
   KeyRound,
   ListChecks,
   Loader2,
+  Puzzle,
   Power,
   PowerOff,
   RefreshCw,
@@ -45,9 +46,10 @@ import {
   isAdminCreateRedemptionCodesResponse,
   isRedemptionCodeListResponse
 } from "../../shared/api/generation";
+import { AgentSkillDialog } from "../agent/AgentSkillDialog";
 import { ProviderConfigPanel, type ProviderConfigPanelProps } from "../provider-config/ProviderConfigDialog";
 
-export type AdminTab = "users" | "redemptionCodes" | "providers" | "settings" | "audits";
+export type AdminTab = "users" | "redemptionCodes" | "providers" | "agentSkills" | "settings" | "audits";
 
 interface AdminPageProps {
   activeTab: AdminTab;
@@ -119,6 +121,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
   const [redemptionCodeNow, setRedemptionCodeNow] = useState(() => Date.now());
   const [selectedRedemptionCodeExpiryPresetId, setSelectedRedemptionCodeExpiryPresetId] = useState("");
   const [copiedRedemptionCodeId, setCopiedRedemptionCodeId] = useState("");
+  const [isAgentSkillDialogOpen, setIsAgentSkillDialogOpen] = useState(false);
   const [creditForms, setCreditForms] = useState<Record<string, CreditFormState>>({});
   const [loading, setLoading] = useState({
     users: true,
@@ -537,6 +540,7 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
             onSelect={onSelectTab}
           />
           <TabButton active={activeTab === "providers"} label={t("adminProvidersTab")} tab="providers" onSelect={onSelectTab} />
+          <TabButton active={activeTab === "agentSkills"} label={t("adminAgentSkillsTab")} tab="agentSkills" onSelect={onSelectTab} />
           <TabButton active={activeTab === "audits"} label={t("adminAuditsTab")} tab="audits" onSelect={onSelectTab} />
           <TabButton active={activeTab === "settings"} label={t("adminSettingsTab")} tab="settings" onSelect={onSelectTab} />
         </div>
@@ -922,6 +926,21 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
               description={t("adminProvidersSubtitle")}
             />
             <ProviderConfigPanel {...providerConfig} variant="page" />
+          </section>
+        ) : null}
+
+        {activeTab === "agentSkills" ? (
+          <section className="admin-panel" aria-labelledby="admin-agent-skills-title">
+            <PanelHeading
+              icon={<Puzzle className="size-5" aria-hidden="true" />}
+              title={t("adminAgentSkillsTitle")}
+              description={t("adminAgentSkillsSubtitle")}
+            />
+            <button className="admin-ghost-button" type="button" onClick={() => setIsAgentSkillDialogOpen(true)}>
+              <Puzzle className="size-4" aria-hidden="true" />
+              {t("adminAgentSkillsOpen")}
+            </button>
+            {isAgentSkillDialogOpen ? <AgentSkillDialog isAdmin onClose={() => setIsAgentSkillDialogOpen(false)} /> : null}
           </section>
         ) : null}
 

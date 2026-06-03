@@ -190,6 +190,7 @@ export type {
   AgentJobFailedEvent,
   AgentJobStartedEvent,
   AgentLlmConfigView,
+  AgentLlmStatusView,
   AgentPingClientMessage,
   AgentPlanCreatedEvent,
   AgentPlanUpdatedEvent,

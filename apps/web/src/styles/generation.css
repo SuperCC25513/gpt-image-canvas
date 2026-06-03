@@ -367,43 +367,6 @@
   overflow-wrap: anywhere;
 }
 
-.provider-status-popover__action {
-  display: inline-flex;
-  width: 100%;
-  min-height: 2.35rem;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: #fffdf8;
-  color: var(--ink);
-  font-size: 0.8rem;
-  font-weight: 800;
-  line-height: 1;
-  margin-top: 0.65rem;
-  transition:
-    border-color 150ms ease,
-    background-color 150ms ease,
-    color 150ms ease;
-}
-
-.provider-status-popover__action:hover {
-  border-color: var(--line-strong);
-  background: #f9f1e5;
-  color: var(--ink);
-}
-
-.provider-status-popover__action:focus-visible {
-  outline: 2px solid rgb(15 118 110 / 0.28);
-  outline-offset: 2px;
-}
-
-.provider-status-popover__action:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
 .provider-status-popover__error {
   margin: 0.55rem 0 0;
   border: 1px solid #f2b8ad;

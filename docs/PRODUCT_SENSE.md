@@ -12,15 +12,15 @@ The product should help users move from intent to usable image assets without lo
 
 - Creators arranging generated images on an infinite canvas.
 - Operators producing batches of marketing, ecommerce, product, or social visuals.
-- Power users who need local history, provider control, and repeatable Agent plans.
-- Developers running the app locally with `.env`, local provider settings, or Codex login.
+- 需要本地历史、可重复 Agent 计划和清晰服务状态的高频创作者。
+- 在后台 Providers 页面维护 provider、Codex 和 Agent LLM 配置的管理员与开发者。
 
 ## Product Principles
 
-- Local first: project state, history, provider settings, generated assets, and optional credentials live on the user's machine.
+- 本地优先：项目状态、历史记录、生成资产和后台 provider 配置都保留在部署所有者的机器上。
 - Creator control: every plan can be inspected before execution. Users decide when to execute, retry, cancel, rerun, download, or locate assets.
 - Reference fidelity: when selected canvas images are used as references, preserve their subject, composition, and intended role unless the user asks otherwise.
-- 信任优先于魔法：让当前提供方、凭据状态、资产保存状态、错误和缺失配置保持可见。
+- 信任优先于魔法：让服务可用状态、资产保存状态、错误和缺失配置保持可见；ToC 创作页不展示 provider 凭据、source order 或模型配置细节。
 - Useful defaults: default generation settings should be fast enough to try and clear enough to upgrade to higher quality.
 - 可恢复流程：失败任务、阻塞任务、本地资产保存失败和缺失提供方都应给出清晰的下一步。
 
@@ -49,13 +49,13 @@ Important plan limits:
 
 Gallery 应让本地输出易于浏览、定位、下载、重跑和检查。本地资产文件是唯一可用性来源。用户主动公开的单张输出可以进入图片广场；未公开输出和其资产默认保持私密。
 
-### Provider Configuration
+### Provider 配置
 
-Provider configuration is part of the product, not an admin afterthought. Users should understand the source order: environment OpenAI-compatible config, local OpenAI-compatible config, then Codex fallback. Agent LLM configuration is separate from image provider configuration.
+Provider 配置是后台系统能力。管理员在 Providers 页面维护图片 provider、source order、Codex 会话和 Agent LLM 设置；ToC 创作页只展示服务状态和提示词、尺寸、质量、输出格式、数量、风格、参考图等生图参数。
 
 ## Anti-Patterns
 
-- Do not hide provider or credential problems behind generic failure messages.
+- 不要在 ToC 创作流里暴露 provider 凭据、source order、Codex 登录、Agent LLM 模型名或推理控制项。
 - Do not create Agent plans that imply execution already happened.
 - Do not invent selected image contents when vision is not available.
 - 不要因为其他位置发生提供方错误或本地保存错误而丢弃已经可用的本地资产。

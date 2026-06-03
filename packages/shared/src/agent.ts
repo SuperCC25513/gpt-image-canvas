@@ -18,6 +18,11 @@ export interface AgentLlmConfigView {
   updatedAt: string;
 }
 
+export interface AgentLlmStatusView {
+  configured: boolean;
+  supportsVision: boolean;
+}
+
 export interface SaveAgentLlmConfigRequest {
   apiKey?: string;
   preserveApiKey?: boolean;

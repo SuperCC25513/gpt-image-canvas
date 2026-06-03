@@ -269,13 +269,6 @@
   color: #cbd5e1;
 }
 
-.app-root[data-canvas-theme="dark"] .agent-thinking-details__toggle,
-.app-root[data-canvas-theme="dark"] .agent-thinking-details__content {
-  border-color: rgb(148 163 184 / 0.35);
-  background: rgb(15 23 42 / 0.26);
-  color: #cbd5e1;
-}
-
 .app-root[data-canvas-theme="dark"] .agent-message-copy-button:hover,
 .app-root[data-canvas-theme="dark"] .agent-message-copy-button:focus-visible {
   border-color: rgb(198 95 50 / 0.35);
@@ -395,8 +388,7 @@
 }
 
 .app-root[data-canvas-theme="dark"] .agent-message--system,
-.app-root[data-canvas-theme="dark"] .agent-reference-summary,
-.app-root[data-canvas-theme="dark"] .agent-thinking-controls {
+.app-root[data-canvas-theme="dark"] .agent-reference-summary {
   border-color: rgb(198 95 50 / 0.26);
   background: #1d1713;
 }
@@ -417,26 +409,6 @@
   background: rgb(126 50 26 / 0.22);
   color: #f8d8b1;
   box-shadow: 0 0 0 3px rgb(198 95 50 / 0.12);
-}
-
-.app-root[data-canvas-theme="dark"] .agent-thinking-controls__header strong {
-  color: #f8d8b1;
-}
-
-.app-root[data-canvas-theme="dark"] .agent-thinking-controls__header span {
-  color: var(--muted-ink);
-}
-
-.app-root[data-canvas-theme="dark"] .agent-thinking-controls__option {
-  border-color: var(--line);
-  background: #161210;
-  color: var(--ink);
-}
-
-.app-root[data-canvas-theme="dark"] .agent-thinking-controls__option[data-selected="true"] {
-  border-color: rgb(198 95 50 / 0.28);
-  background: rgb(126 50 26 / 0.16);
-  color: #f8d8b1;
 }
 
 .app-root[data-canvas-theme="dark"] .agent-send-or-cancel {
@@ -730,7 +702,6 @@
 }
 
 .app-root[data-canvas-theme="dark"] .provider-status-popover__trigger,
-.app-root[data-canvas-theme="dark"] .provider-status-popover__action,
 .app-root[data-canvas-theme="dark"] .codex-device-code {
   border-color: rgb(198 95 50 / 0.36);
   background: rgb(126 50 26 / 0.22);
@@ -750,8 +721,7 @@
 }
 
 .app-root[data-canvas-theme="dark"] .provider-status-popover__trigger:hover,
-.app-root[data-canvas-theme="dark"] .provider-status-popover:focus-within .provider-status-popover__trigger,
-.app-root[data-canvas-theme="dark"] .provider-status-popover__action:hover {
+.app-root[data-canvas-theme="dark"] .provider-status-popover:focus-within .provider-status-popover__trigger {
   border-color: var(--line-strong);
   background: #241d19;
   color: var(--ink);

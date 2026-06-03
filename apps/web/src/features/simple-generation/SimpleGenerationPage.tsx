@@ -891,7 +891,7 @@ export function SimpleGenerationPage({
                     </div>
                   </details>
 
-                  <span className="simple-provider-chip" title={providerDetails.copy}>
+                  <span className="simple-provider-chip" data-testid="simple-provider-chip" title={providerDetails.copy}>
                     <Sparkles className="size-4" aria-hidden="true" />
                     {providerDetails.title}
                   </span>
@@ -1200,22 +1200,22 @@ function simpleProviderDetails(authStatus: AuthStatusResponse | null, isAuthLoad
 
   if (authStatus?.provider === "openai") {
     return {
-      copy: t("providerStatusGenericOpenAICopy"),
+      copy: t("providerStatusAvailableCopy"),
       provider: "openai",
-      title: t("providerStatusImageService")
+      title: t("providerStatusAvailableTitle")
     };
   }
 
   if (authStatus?.provider === "codex") {
     return {
-      copy: authStatus.codex.email ?? authStatus.codex.accountId ?? t("providerStatusCodexCopy"),
+      copy: t("providerStatusAvailableCopy"),
       provider: "codex",
-      title: t("providerStatusCodexTitle")
+      title: t("providerStatusAvailableTitle")
     };
   }
 
   return {
-    copy: t("providerStatusNoneCopy"),
+    copy: t("providerStatusUnavailableCopy"),
     provider: "none",
     title: t("providerStatusNoneTitle")
   };
