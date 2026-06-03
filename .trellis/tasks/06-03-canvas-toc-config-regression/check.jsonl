@@ -1,0 +1,9 @@
+{"file":"docs/PRODUCT_SENSE.md","reason":"确认 ToC 创作入口和后台系统配置的新产品边界。"}
+{"file":"docs/DESIGN.md","reason":"确认 UI 调整应符合现有视觉和交互约束。"}
+{"file":"docs/FRONTEND.md","reason":"确认前端实现和浏览器验证要求。"}
+{"file":"docs/SECURITY.md","reason":"确认配置接口、凭据和权限边界。"}
+{"file":"docs/product-specs/provider-configuration.md","reason":"确认 provider 与 Agent LLM 配置后台化规格。"}
+{"file":".codestable/architecture/ARCHITECTURE.md","reason":"确认 Provider/Agent 配置属于 admin-only 全局配置。"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"确认 ToC 非敏感状态接口与后台配置详情接口的权限和响应契约。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查新增状态接口的跨层数据流与共享契约。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查文案、类型和状态守卫复用，避免重复契约。"}
