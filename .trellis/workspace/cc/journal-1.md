@@ -43,3 +43,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: 修复简单生成积分刷新
+
+**Date**: 2026-06-04
+**Task**: 修复简单生成积分刷新
+**Branch**: `main`
+
+### Summary
+
+修复简单生成页进入时重新请求当前账号积分，并在后台调整当前用户积分后同步全局账号状态；补充前端状态管理规范；归档画布 ToC 配置回归任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b2ed838` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
