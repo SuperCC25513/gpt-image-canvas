@@ -35,6 +35,7 @@ import type {
   AdminUserSummary,
   AdminUsersResponse,
   AdminUpdateRedemptionCodeRequest,
+  AuthMeResponse,
   CurrentUser,
   RedemptionCodeStatus,
   RedemptionCodeSummary,
@@ -54,6 +55,7 @@ export type AdminTab = "users" | "redemptionCodes" | "providers" | "agentSkills"
 interface AdminPageProps {
   activeTab: AdminTab;
   currentUser?: CurrentUser;
+  onRefreshAccountStatus: () => void | Promise<AuthMeResponse | null>;
   onSelectTab: (tab: AdminTab) => void;
   providerConfig: Omit<ProviderConfigPanelProps, "onClose" | "variant">;
 }
@@ -105,7 +107,7 @@ interface RedemptionCodeStats {
   expired: number;
 }
 
-export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig }: AdminPageProps) {
+export function AdminPage({ activeTab, currentUser, onRefreshAccountStatus, onSelectTab, providerConfig }: AdminPageProps) {
   const { formatDateTime, locale, t } = useI18n();
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
@@ -328,6 +330,9 @@ export function AdminPage({ activeTab, currentUser, onSelectTab, providerConfig 
         }
       );
       setUsers((items) => items.map((item) => (item.id === body.user.id ? body.user : item)));
+      if (currentUser?.id === body.user.id) {
+        void onRefreshAccountStatus();
+      }
       setNotice(t("adminCreditsSaved", { credits: body.user.credits }));
       setCreditForms((items) => ({
         ...items,

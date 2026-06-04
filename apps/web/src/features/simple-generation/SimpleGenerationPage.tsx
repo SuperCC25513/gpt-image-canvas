@@ -75,7 +75,7 @@ interface SimpleGenerationPageProps {
   onContinueOnCanvas: (input: { assets: GeneratedAsset[]; prompt: string }) => void;
   onOpenCanvas: () => void;
   onOpenGallery: () => void;
-  onRefreshAccountStatus: () => void;
+  onRefreshAccountStatus: (signal?: AbortSignal) => Promise<AuthMeResponse | null>;
 }
 
 interface SimpleReferenceImage {
@@ -156,6 +156,14 @@ export function SimpleGenerationPage({
       generationControllerRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void onRefreshAccountStatus(controller.signal);
+    return () => {
+      controller.abort();
+    };
+  }, [onRefreshAccountStatus]);
 
   const accountUser = accountStatus?.authenticated ? accountStatus.user : undefined;
   const creditSettings = accountStatus?.settings;
@@ -431,7 +439,7 @@ export function SimpleGenerationPage({
       }
 
       finishGeneration(record);
-      onRefreshAccountStatus();
+      void onRefreshAccountStatus();
       await loadGalleryItems(controller.signal);
     } catch (error) {
       if (!controller.signal.aborted) {

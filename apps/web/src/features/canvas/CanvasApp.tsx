@@ -6190,7 +6190,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
           onContinueOnCanvas={continueGeneratedAssetsOnCanvas}
           onOpenCanvas={() => navigateToRoute("canvas")}
           onOpenGallery={() => navigateToRoute("gallery")}
-          onRefreshAccountStatus={() => void loadAccountStatus()}
+          onRefreshAccountStatus={loadAccountStatus}
         />
       ) : null}
       {route === "credits" ? (
@@ -6229,6 +6229,7 @@ export function App({ currentUser, sessionError = "", onLogout }: CanvasAppProps
           <LazyAdminPage
             activeTab={activeAdminTab}
             currentUser={accountUser}
+            onRefreshAccountStatus={loadAccountStatus}
             onSelectTab={navigateToAdminTab}
             providerConfig={{
               isAuthLoading,
